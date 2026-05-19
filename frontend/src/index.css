@@ -1,0 +1,76 @@
+:root {
+  --text: #334155;
+  --text-h: #0f172a;
+  --muted: #64748b;
+  --bg: #eef4ff;
+  --border: rgba(15, 23, 42, 0.12);
+  --code-bg: rgba(15, 23, 42, 0.06);
+  --shadow:
+    rgba(15, 23, 42, 0.12) 0 20px 48px -20px, rgba(15, 23, 42, 0.08) 0 8px 18px -12px;
+
+  --sans: 'Trebuchet MS', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont,
+    sans-serif;
+  --heading: 'Avenir Next', 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+
+  font: 16px/1.5 var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100svh;
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+code {
+  font-family: var(--mono);
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+  color: var(--text-h);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
