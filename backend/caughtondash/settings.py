@@ -8,6 +8,7 @@ from pathlib import Path
 import os
 
 from dotenv import load_dotenv
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
@@ -61,12 +62,35 @@ TEMPLATES = [
 WSGI_APPLICATION = 'caughtondash.wsgi.application'
 ASGI_APPLICATION = 'caughtondash.asgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Database configuration: use DATABASE_URL for production (AWS RDS, etc.),
+# otherwise fall back to local sqlite3 for development.
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            DATABASE_URL,
+            engine='django.db.backends.postgresql',
+            conn_max_age=600,  # Persistent connection pool: 10 minutes
+        )
     }
-}
+    # Enforce SSL for RDS (sslmode=require by default in DATABASE_URL)
+    # If using AWS RDS Certificate Bundle for verify-full, add below:
+    # DATABASES['default']['OPTIONS'] = {
+    #     'sslmode': 'verify-full',
+    #     'sslrootcert': '/path/to/rds-ca-bundle.pem',
+    # }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+
+# Connection pooling: persistent connections reduce overhead.
+# CONN_MAX_AGE is set via dj_database_url but can be overridden here if needed.
+if 'CONN_MAX_AGE' not in DATABASES['default'].get('OPTIONS', {}):
+    DATABASES['default']['CONN_MAX_AGE'] = 600
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
