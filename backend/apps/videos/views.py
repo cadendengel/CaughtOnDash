@@ -1,3 +1,4 @@
+from django.views.decorators.csrf import csrf_exempt
 from uuid import UUID
 
 from django.http import JsonResponse
@@ -12,6 +13,7 @@ def _method_not_allowed(*allowed_methods: str) -> JsonResponse:
     return JsonResponse({'detail': 'Method not allowed.', 'allowed': list(allowed_methods)}, status=405)
 
 
+@csrf_exempt
 def upload_url_view(request):
     # POST /api/videos/upload-url/ - create a presigned upload target for a new video.
     if request.method != 'POST':
