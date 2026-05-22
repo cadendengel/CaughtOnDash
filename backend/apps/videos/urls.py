@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    upload_file_view,
     complete_upload_view,
     upload_url_view,
     video_detail_view,
@@ -11,6 +12,7 @@ from .views import (
 urlpatterns = [
     # POST /api/videos/upload-url/ - create a presigned upload target for a new video.
     path('upload-url/', upload_url_view, name='video-upload-url'),
+    path('upload/', upload_file_view, name='video-upload'),
     # POST /api/videos/complete/ - mark an upload complete and enqueue processing.
     path('complete/', complete_upload_view, name='video-complete-upload'),
     # GET /api/videos/<video_id>/ - return the full video object and metadata.
