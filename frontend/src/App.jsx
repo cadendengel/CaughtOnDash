@@ -1,13 +1,27 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { SignIn, UserButton, useUser } from '@clerk/react'
 import './App.css'
 
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const [activePage, setActivePage] = useState('feed')
+  const [posts, setPosts] = useState([])
 
-  const posts = useMemo(() => {
-    return []
+  useEffect(() => {
+    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+    const fetchFeed = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/feed/`)
+        if (!res.ok) return
+        const data = await res.json()
+        // backend returns { kind: 'feed', items: [...] }
+        setPosts(data.items || [])
+      } catch (err) {
+        // ignore for now
+      }
+    }
+
+    fetchFeed()
   }, [])
 
   if (!isLoaded) {
@@ -42,16 +56,16 @@ function App() {
   const renderPostCard = (post) => (
     <article key={post.id} className="feed-card">
       <div className="feed-card-head">
-        <span className="author">@{post.author.username}</span>
-        <span className="timestamp">{post.createdAt}</span>
+        <span className="author">@{post.owner_clerk_user_id}</span>
+        <span className="timestamp">{post.created_at}</span>
       </div>
 
       <h2>{post.title}</h2>
       <p>{post.description}</p>
 
       <div className="video-meta">
-        <span>{post.video.duration}</span>
-        <span>{post.video.views} views</span>
+        <span>{post.duration_seconds}s</span>
+        <span>{post.views} views</span>
       </div>
     </article>
   )
