@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 
+from apps.accounts.models import Profile
 from apps.videos.models import Video
 from apps.store import response_envelope
 
@@ -15,7 +16,18 @@ def feed_view(request):
         deleted_at__isnull=True,
     ).order_by('-created_at')[:100]  # Limit to 100 for now
 
-    items = [video.to_dict() for video in videos]
+    profiles_by_clerk_id = {
+        profile.clerk_user_id: profile
+        for profile in Profile.objects.filter(clerk_user_id__in={video.owner_clerk_user_id for video in videos})
+    }
+
+    items = []
+    for video in videos:
+        item = video.to_dict()
+        profile = profiles_by_clerk_id.get(video.owner_clerk_user_id)
+        item['username'] = profile.username if profile else video.owner_clerk_user_id
+        item['display_name'] = profile.display_name if profile else video.owner_clerk_user_id
+        items.append(item)
     
     return JsonResponse(
         response_envelope(
