@@ -104,7 +104,10 @@ function App() {
   const renderPostCard = (post) => (
     <article key={post.id} className="feed-card">
       <div className="feed-card-head">
-        <span className="author">@{post.username || post.owner_clerk_user_id}</span>
+        <div className="author-block">
+          <span className="author-name">{post.display_name || post.username || post.owner_clerk_user_id}</span>
+          <span className="author-handle">@{post.username || post.owner_clerk_user_id}</span>
+        </div>
         <span className="timestamp">{post.created_at}</span>
       </div>
 
