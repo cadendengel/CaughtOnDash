@@ -69,9 +69,21 @@ function App() {
       <h2>{post.title}</h2>
       <p>{post.description}</p>
 
+      {post.playback_url ? (
+        <video className="feed-video" controls playsInline preload="metadata">
+          <source src={post.playback_url} type="video/mp4" />
+          Your browser does not support the video tag.
+        </video>
+      ) : (
+        <div className="feed-video-placeholder">
+          Video not available yet.
+        </div>
+      )}
+
       <div className="video-meta">
-        <span>{post.duration_seconds}s</span>
+        <span>{post.duration_seconds ? `${post.duration_seconds}s` : 'Duration unavailable'}</span>
         <span>{post.views} views</span>
+        <span>Status: {post.status}</span>
       </div>
     </article>
   )
