@@ -192,6 +192,61 @@
   max-width: 60ch;
 }
 
+.upload-form {
+  display: grid;
+  gap: 16px;
+}
+
+.upload-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.upload-form span {
+  font-size: 0.94rem;
+}
+
+.upload-form input[type='text'],
+.upload-form textarea,
+.upload-form input[type='file'] {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-h);
+  padding: 12px 14px;
+  font: inherit;
+}
+
+.upload-form textarea {
+  resize: vertical;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.form-message {
+  border-radius: 16px;
+  padding: 12px 14px;
+  font-weight: 600;
+}
+
+.form-message.error {
+  background: rgba(220, 38, 38, 0.08);
+  color: #991b1b;
+}
+
+.form-message.success {
+  background: rgba(22, 163, 74, 0.08);
+  color: #166534;
+}
+
 .feed-list {
   display: grid;
   gap: 14px;

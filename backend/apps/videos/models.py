@@ -1,0 +1,188 @@
+"""Video and video interaction models."""
+
+import uuid
+
+from django.db import models
+
+
+class Video(models.Model):
+    """Dashcam video asset."""
+
+    STATUS_CHOICES = (
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("ready", "Ready"),
+        ("failed", "Failed"),
+    )
+    VISIBILITY_CHOICES = (
+        ("public", "Public"),
+        ("private", "Private"),
+        ("unlisted", "Unlisted"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner_clerk_user_id = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="Clerk user ID of the video owner",
+    )
+    title = models.CharField(
+        max_length=255,
+        default="Untitled dashcam clip",
+        help_text="Video title",
+    )
+    description = models.TextField(
+        blank=True,
+        default="",
+        help_text="Video description",
+    )
+    visibility = models.CharField(
+        max_length=10,
+        choices=VISIBILITY_CHOICES,
+        default="public",
+        help_text="Video visibility setting",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending",
+        help_text="Processing status (pending, processing, ready, failed)",
+    )
+    original_filename = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Original filename from upload",
+    )
+    upload_url = models.URLField(
+        blank=True,
+        default="",
+        help_text="Presigned upload URL (temporary)",
+    )
+    playback_url = models.URLField(
+        blank=True,
+        default="",
+        help_text="CDN/playback URL for the video",
+    )
+    thumbnail_url = models.URLField(
+        blank=True,
+        default="",
+        help_text="Thumbnail image URL",
+    )
+    duration_seconds = models.IntegerField(
+        default=0,
+        help_text="Video duration in seconds",
+    )
+    views = models.IntegerField(
+        default=0,
+        help_text="Number of views",
+    )
+    tags = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of tag strings",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Soft delete timestamp",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["owner_clerk_user_id", "-created_at"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["visibility"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.id})"
+
+    def to_dict(self):
+        """Serialize to API response format."""
+        return {
+            "id": str(self.id),
+            "owner_clerk_user_id": self.owner_clerk_user_id,
+            "title": self.title,
+            "description": self.description,
+            "visibility": self.visibility,
+            "status": self.status,
+            "original_filename": self.original_filename,
+            "upload_url": self.upload_url,
+            "playback_url": self.playback_url,
+            "thumbnail_url": self.thumbnail_url,
+            "duration_seconds": self.duration_seconds,
+            "views": self.views,
+            "tags": self.tags,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
+        }
+
+
+class VideoLike(models.Model):
+    """Like interaction on a video."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    video = models.ForeignKey(
+        Video,
+        on_delete=models.CASCADE,
+        related_name="likes",
+        help_text="The video being liked",
+    )
+    user_clerk_user_id = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="Clerk user ID of the liker",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [["video", "user_clerk_user_id"]]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user_clerk_user_id} liked {self.video.id}"
+
+
+class VideoComment(models.Model):
+    """Comment on a video."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    video = models.ForeignKey(
+        Video,
+        on_delete=models.CASCADE,
+        related_name="comments",
+        help_text="The video being commented on",
+    )
+    user_clerk_user_id = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="Clerk user ID of the commenter",
+    )
+    text = models.TextField(help_text="Comment text")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["video", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Comment on {self.video.id} by {self.user_clerk_user_id}"
+
+    def to_dict(self):
+        """Serialize to API response format."""
+        return {
+            "id": str(self.id),
+            "video_id": str(self.video.id),
+            "user_clerk_user_id": self.user_clerk_user_id,
+            "text": self.text,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
