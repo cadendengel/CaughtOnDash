@@ -17,6 +17,7 @@ class VideoUploadFlowTests(TestCase):
                     'title': 'Test clip',
                     'description': 'demo',
                     'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 42,
                 }
             ),
             content_type='application/json',
@@ -30,6 +31,7 @@ class VideoUploadFlowTests(TestCase):
         self.assertEqual(payload['upload']['url'], '/api/videos/upload/')
         self.assertEqual(payload['video']['title'], 'Test clip')
         self.assertEqual(payload['video']['status'], 'pending')
+        self.assertEqual(payload['video']['duration_seconds'], 42)
         self.assertEqual(Video.objects.count(), 1)
 
     @patch('apps.videos.views.upload_bytes_to_supabase')
@@ -44,6 +46,7 @@ class VideoUploadFlowTests(TestCase):
                     'title': 'Test clip',
                     'description': 'demo',
                     'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 99,
                 }
             ),
             content_type='application/json',
@@ -68,3 +71,31 @@ class VideoUploadFlowTests(TestCase):
         video = Video.objects.get(id=video_id)
         self.assertEqual(video.status, 'ready')
         self.assertEqual(video.playback_url, mock_upload_bytes.return_value)
+        self.assertEqual(video.duration_seconds, 99)
+
+    def test_view_endpoint_increments_views(self):
+        create_response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Test clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 12,
+                }
+            ),
+            content_type='application/json',
+        )
+        video_id = create_response.json()['video']['id']
+
+        response = self.client.post(f'/api/videos/{video_id}/view/')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['kind'], 'video-view')
+        self.assertEqual(payload['video']['id'], video_id)
+        self.assertEqual(payload['video']['views'], 1)
+
+        video = Video.objects.get(id=video_id)
+        self.assertEqual(video.views, 1)

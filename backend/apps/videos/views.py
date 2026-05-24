@@ -5,6 +5,7 @@ import os
 from django.views.decorators.csrf import csrf_exempt
 
 from django.http import JsonResponse
+from django.db.models import F
 from django.utils import timezone
 
 from apps.accounts.models import Profile
@@ -45,6 +46,7 @@ def upload_url_view(request):
         visibility=str(payload.get('visibility') or 'public').strip() or 'public',
         status='pending',
         original_filename=str(payload.get('original_filename') or payload.get('filename') or ''),
+        duration_seconds=max(0, int(float(payload.get('duration_seconds') or 0))),
         tags=[str(tag).strip() for tag in payload.get('tags', []) if str(tag).strip()] if isinstance(payload.get('tags', []), list) else [],
     )
 
@@ -192,6 +194,39 @@ def video_status_view(request, video_id):
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
     return JsonResponse(response_envelope('video-status', {'video': {'id': str(video.id), 'status': video.status}}), status=200)
+
+
+@csrf_exempt
+def video_view_count_view(request, video_id):
+    # POST /api/videos/<video_id>/view/ - increment the view count once per play.
+    if request.method != 'POST':
+        return _method_not_allowed('POST')
+
+    try:
+        video_uuid = UUID(str(video_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
+
+    updated = Video.objects.filter(id=video_uuid, deleted_at__isnull=True).update(
+        views=F('views') + 1,
+        updated_at=timezone.now(),
+    )
+    if updated == 0:
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    video = Video.objects.get(id=video_uuid)
+    return JsonResponse(
+        response_envelope(
+            'video-view',
+            {
+                'video': {
+                    'id': str(video.id),
+                    'views': video.views,
+                }
+            },
+        ),
+        status=200,
+    )
 
 
 def video_update_delete_view(request, video_id):

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SignIn, UserButton, useUser } from '@clerk/react'
 import './App.css'
 
@@ -12,8 +12,50 @@ function App() {
   const [uploadError, setUploadError] = useState('')
   const [uploadSuccess, setUploadSuccess] = useState('')
   const [uploading, setUploading] = useState(false)
+  const viewedVideoIdsRef = useRef(new Set())
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+
+  const getVideoDurationSeconds = (file) => {
+    return new Promise((resolve) => {
+      const videoElement = document.createElement('video')
+      const objectUrl = URL.createObjectURL(file)
+
+      const cleanup = () => {
+        URL.revokeObjectURL(objectUrl)
+      }
+
+      videoElement.preload = 'metadata'
+      videoElement.onloadedmetadata = () => {
+        const duration = Number.isFinite(videoElement.duration)
+          ? Math.max(0, Math.round(videoElement.duration))
+          : 0
+        cleanup()
+        resolve(duration)
+      }
+      videoElement.onerror = () => {
+        cleanup()
+        resolve(0)
+      }
+      videoElement.src = objectUrl
+    })
+  }
+
+  const markVideoViewed = async (videoId) => {
+    if (!videoId || viewedVideoIdsRef.current.has(videoId)) {
+      return
+    }
+
+    viewedVideoIdsRef.current.add(videoId)
+
+    try {
+      await fetch(`${API_BASE}/api/videos/${videoId}/view/`, {
+        method: 'POST',
+      })
+    } catch (err) {
+      // ignore view-count failures for now
+    }
+  }
 
   const loadFeed = async () => {
     try {
@@ -70,7 +112,13 @@ function App() {
       <p>{post.description}</p>
 
       {post.playback_url ? (
-        <video className="feed-video" controls playsInline preload="metadata">
+        <video
+          className="feed-video"
+          controls
+          playsInline
+          preload="metadata"
+          onPlay={() => markVideoViewed(post.id)}
+        >
           <source src={post.playback_url} type="video/mp4" />
           Your browser does not support the video tag.
         </video>
@@ -83,7 +131,6 @@ function App() {
       <div className="video-meta">
         <span>{post.duration_seconds ? `${post.duration_seconds}s` : 'Duration unavailable'}</span>
         <span>{post.views} views</span>
-        <span>Status: {post.status}</span>
       </div>
     </article>
   )
@@ -105,6 +152,8 @@ function App() {
 
     setUploading(true)
     try {
+      const durationSeconds = await getVideoDurationSeconds(uploadFile)
+
       const bootstrapResponse = await fetch(`${API_BASE}/api/videos/upload-url/`, {
         method: 'POST',
         headers: {
@@ -115,6 +164,7 @@ function App() {
           title: uploadTitle || uploadFile.name,
           description: uploadDescription,
           original_filename: uploadFile.name,
+          duration_seconds: durationSeconds,
         }),
       })
 
