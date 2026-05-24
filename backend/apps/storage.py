@@ -14,6 +14,7 @@ import requests
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY') or os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 SUPABASE_BUCKET = os.getenv('SUPABASE_BUCKET', 'videos')
+SUPABASE_PROJECT_REF = SUPABASE_URL.rstrip('/').split('://', 1)[-1].split('.', 1)[0] if SUPABASE_URL else ''
 
 
 def _storage_upload_endpoint(bucket: str, object_path: str) -> str:
@@ -52,7 +53,8 @@ def upload_bytes_to_supabase(object_path: str, data: bytes, content_type: str | 
         resp.raise_for_status()
     except Exception as exc:
         raise RuntimeError(
-            f'Failed uploading to Supabase Storage bucket "{SUPABASE_BUCKET}": '
+            f'Failed uploading to Supabase Storage bucket "{SUPABASE_BUCKET}" '
+            f'for project "{SUPABASE_PROJECT_REF}": '
             f'{resp.status_code} {resp.text}'
         ) from exc
 
