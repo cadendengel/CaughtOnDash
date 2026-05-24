@@ -64,7 +64,7 @@ def get_identity(request, payload: dict[str, Any] | None = None) -> dict[str, st
     username = (
         payload.get('username')
         or request.GET.get('username')
-        or display_name.lower().replace(' ', '_')
+        or f"{display_name.lower().replace(' ', '_')}_{clerk_user_id.replace('-', '_')[:8]}"
     )
     avatar_url = payload.get('avatar_url') or request.GET.get('avatar_url') or ''
 
