@@ -11,7 +11,7 @@ from typing import Tuple
 import requests
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
+SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY') or os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 SUPABASE_BUCKET = os.getenv('SUPABASE_BUCKET', 'videos')
 
 
