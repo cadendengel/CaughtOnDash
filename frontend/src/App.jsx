@@ -16,6 +16,22 @@ function App() {
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
+  const clerkEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || ''
+  const clerkUsername = user?.username || clerkEmail.split('@')[0] || ''
+  const clerkDisplayName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() ||
+    user?.fullName ||
+    clerkUsername ||
+    'Dash User'
+
+  const identityPayload = {
+    clerk_user_id: user?.id,
+    email: clerkEmail,
+    username: clerkUsername,
+    display_name: clerkDisplayName,
+    avatar_url: user?.imageUrl || '',
+  }
+
   const getVideoDurationSeconds = (file) => {
     return new Promise((resolve) => {
       const videoElement = document.createElement('video')
@@ -68,9 +84,36 @@ function App() {
     }
   }
 
+  const syncProfile = async () => {
+    if (!user?.id) {
+      return
+    }
+
+    try {
+      await fetch(`${API_BASE}/api/auth/bootstrap/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(identityPayload),
+      })
+    } catch (err) {
+      // ignore bootstrap failures for now
+    }
+  }
+
   useEffect(() => {
-    loadFeed()
-  }, [])
+    if (!isSignedIn || !user?.id) {
+      return
+    }
+
+    const syncAndLoad = async () => {
+      await syncProfile()
+      await loadFeed()
+    }
+
+    syncAndLoad()
+  }, [isSignedIn, user?.id])
 
   if (!isLoaded) {
     return (
@@ -104,14 +147,13 @@ function App() {
   const renderPostCard = (post) => (
     <article key={post.id} className="feed-card">
       <div className="feed-card-head">
-        <div className="author-block">
-          <span className="author-name">{post.display_name || post.username || post.owner_clerk_user_id}</span>
-          <span className="author-handle">@{post.username || post.owner_clerk_user_id}</span>
-        </div>
         <span className="timestamp">{post.created_at}</span>
       </div>
 
       <h2>{post.title}</h2>
+      <div className="author-block">
+        <span className="author-handle">@{post.username || post.owner_clerk_user_id}</span>
+      </div>
       <p>{post.description}</p>
 
       {post.playback_url ? (
@@ -163,7 +205,7 @@ function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          clerk_user_id: user.id,
+          ...identityPayload,
           title: uploadTitle || uploadFile.name,
           description: uploadDescription,
           original_filename: uploadFile.name,

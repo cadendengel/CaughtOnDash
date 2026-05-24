@@ -55,15 +55,18 @@ def get_identity(request, payload: dict[str, Any] | None = None) -> dict[str, st
         or _header_value(request, 'X-Clerk-Email', 'Clerk-Email')
         or f'{clerk_user_id}@example.com'
     )
+    email_local_part = email.split('@', 1)[0].strip().lower().replace(' ', '_')
     display_name = (
         payload.get('display_name')
         or request.GET.get('display_name')
         or _header_value(request, 'X-Clerk-Name', 'Clerk-Name')
+        or email_local_part
         or 'Dash User'
     )
     username = (
         payload.get('username')
         or request.GET.get('username')
+        or email_local_part
         or f"{display_name.lower().replace(' ', '_')}_{clerk_user_id.replace('-', '_')[:8]}"
     )
     avatar_url = payload.get('avatar_url') or request.GET.get('avatar_url') or ''
