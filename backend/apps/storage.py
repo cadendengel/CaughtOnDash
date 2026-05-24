@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from typing import Tuple
+from urllib.parse import quote
 
 import requests
 
@@ -15,10 +16,11 @@ SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY') or os.getenv('SUPABASE_
 SUPABASE_BUCKET = os.getenv('SUPABASE_BUCKET', 'videos')
 
 
-def _storage_upload_endpoint(bucket: str) -> str:
+def _storage_upload_endpoint(bucket: str, object_path: str) -> str:
     if not SUPABASE_URL:
         raise RuntimeError('SUPABASE_URL is not configured')
-    return f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/{bucket}"
+    encoded_path = '/'.join(quote(part, safe='') for part in object_path.split('/'))
+    return f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/{bucket}/{encoded_path}"
 
 
 def public_object_url(bucket: str, object_path: str) -> str:
@@ -36,7 +38,7 @@ def upload_bytes_to_supabase(object_path: str, data: bytes, content_type: str | 
     if SUPABASE_SERVICE_KEY is None:
         raise RuntimeError('SUPABASE_SERVICE_KEY is not configured')
 
-    endpoint = _storage_upload_endpoint(SUPABASE_BUCKET)
+    endpoint = _storage_upload_endpoint(SUPABASE_BUCKET, object_path)
     headers = {
         'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
     }
