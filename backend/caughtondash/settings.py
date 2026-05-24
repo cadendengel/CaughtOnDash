@@ -5,6 +5,7 @@ Use sqlite for local development and swap to Postgres when you are ready.
 """
 
 from pathlib import Path
+import sys
 import os
 
 from dotenv import load_dotenv
@@ -84,6 +85,16 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+
+# Keep automated tests isolated from the managed Postgres instance so they do not
+# leave behind open sessions or depend on external cleanup behavior.
+if 'test' in sys.argv:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
         }
     }
 
