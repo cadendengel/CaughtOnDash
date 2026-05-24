@@ -1,3 +1,4 @@
+from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 
 from apps.accounts.models import Profile
@@ -33,6 +34,7 @@ def get_profile_by_username(username: str) -> Profile | None:
         return None
 
 
+@csrf_exempt
 def bootstrap_view(request):
     # POST /api/auth/bootstrap/ - create or sync the local user after Clerk login.
     if request.method != 'POST':
