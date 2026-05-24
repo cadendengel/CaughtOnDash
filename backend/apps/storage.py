@@ -51,6 +51,9 @@ def upload_bytes_to_supabase(object_path: str, data: bytes, content_type: str | 
     try:
         resp.raise_for_status()
     except Exception as exc:
-        raise RuntimeError(f'Failed uploading to Supabase Storage: {resp.status_code} {resp.text}') from exc
+        raise RuntimeError(
+            f'Failed uploading to Supabase Storage bucket "{SUPABASE_BUCKET}": '
+            f'{resp.status_code} {resp.text}'
+        ) from exc
 
     return public_object_url(SUPABASE_BUCKET, object_path)
