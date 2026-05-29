@@ -22,6 +22,37 @@ function App() {
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
+  const formatTimestamp = (value) => {
+    if (!value) {
+      return ''
+    }
+
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) {
+      return value
+    }
+
+    const diffSeconds = Math.round((date.getTime() - Date.now()) / 1000)
+    const absoluteSeconds = Math.abs(diffSeconds)
+
+    if (absoluteSeconds < 60) {
+      return diffSeconds < 0 ? 'just now' : 'in a moment'
+    }
+
+    const units = [
+      { label: 'year', seconds: 60 * 60 * 24 * 365 },
+      { label: 'month', seconds: 60 * 60 * 24 * 30 },
+      { label: 'day', seconds: 60 * 60 * 24 },
+      { label: 'hour', seconds: 60 * 60 },
+      { label: 'minute', seconds: 60 },
+    ]
+
+    const unit = units.find((entry) => absoluteSeconds >= entry.seconds) || units[units.length - 1]
+    const valueInUnit = Math.round(absoluteSeconds / unit.seconds)
+    const suffix = valueInUnit === 1 ? '' : 's'
+    return diffSeconds < 0 ? `${valueInUnit} ${unit.label}${suffix} ago` : `in ${valueInUnit} ${unit.label}${suffix}`
+  }
+
   const clerkEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || ''
   const clerkUsername = user?.username || clerkEmail.split('@')[0] || ''
   const clerkDisplayName =
@@ -281,7 +312,7 @@ function App() {
           <span className="author-name">{post.display_name || post.username || post.owner_clerk_user_id}</span>
           <span className="author-handle">@{post.username || post.owner_clerk_user_id}</span>
         </div>
-        <span className="timestamp">{post.created_at}</span>
+        <span className="timestamp">{formatTimestamp(post.created_at)}</span>
       </div>
 
       <h2>{post.title}</h2>
@@ -317,8 +348,9 @@ function App() {
           className={post.liked ? 'ghost-btn active' : 'ghost-btn'}
           onClick={() => toggleLike(post.id)}
           disabled={likeLoadingByPostId[post.id]}
+          aria-pressed={Boolean(post.liked)}
         >
-          {post.liked ? 'Unlike' : 'Like'}
+          {post.liked ? 'Unlike' : 'Like'} · {post.likes_count || 0}
         </button>
         <button
           type="button"
@@ -327,7 +359,7 @@ function App() {
         >
           {commentsVisibleByPostId[post.id]
             ? 'Hide comments'
-            : `Comments (${post.comments_count || 0})`}
+            : `Comments · ${post.comments_count || 0}`}
         </button>
       </div>
 
@@ -349,7 +381,7 @@ function App() {
                     <span className="comment-author-name">{comment.display_name || comment.username}</span>
                     <span className="comment-author-handle">@{comment.username || comment.user_clerk_user_id}</span>
                   </div>
-                  <span className="comment-timestamp">{comment.created_at}</span>
+                  <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
                 </div>
                 <p>{comment.text}</p>
               </article>

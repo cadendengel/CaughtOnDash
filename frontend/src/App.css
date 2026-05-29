@@ -253,7 +253,7 @@
 }
 
 .feed-card {
-  padding: 20px;
+  padding: 22px;
 }
 
 .feed-card-head {
@@ -261,6 +261,7 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
+  padding-bottom: 2px;
 }
 
 .author-block {
@@ -285,7 +286,7 @@
 }
 
 .feed-card h2 {
-  margin-top: 10px;
+  margin-top: 8px;
   color: #0f172a;
   font-size: clamp(1.55rem, 2.8vw, 2.2rem);
   line-height: 1.08;
@@ -293,7 +294,7 @@
 }
 
 .feed-card p {
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--muted);
   font-size: 1rem;
   line-height: 1.6;
@@ -303,7 +304,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .video-meta span {
@@ -339,7 +340,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .ghost-btn {
@@ -373,8 +374,10 @@
 
 .comments-panel {
   margin-top: 14px;
-  padding-top: 14px;
+  padding: 14px;
   border-top: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.02);
   display: grid;
   gap: 12px;
 }
@@ -425,6 +428,11 @@
 .comment-form {
   display: grid;
   gap: 10px;
+}
+
+.comment-form .primary-btn {
+  justify-self: start;
+  margin-top: 0;
 }
 
 .comment-input {
@@ -524,5 +532,23 @@
   .auth-widget,
   .hero-card {
     padding: 24px;
+  }
+
+  .feed-card {
+    padding: 18px;
+  }
+
+  .feed-card-head {
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .video-meta,
+  .post-actions {
+    gap: 8px;
+  }
+
+  .comments-panel {
+    padding: 12px;
   }
 }
