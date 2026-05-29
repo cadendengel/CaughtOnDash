@@ -430,29 +430,6 @@ function App() {
         </div>
       )}
 
-      <div className="feed-meta-row">
-        <div className="feed-meta-item">
-          <span className="feed-meta-label">Posted</span>
-          <strong>{formatTimestamp(post.created_at)}</strong>
-        </div>
-        <div className="feed-meta-item">
-          <span className="feed-meta-label">Views</span>
-          <strong>{post.views}</strong>
-        </div>
-        <div className="feed-meta-item">
-          <span className="feed-meta-label">Likes</span>
-          <strong>{post.likes_count || 0}</strong>
-        </div>
-        <div className="feed-meta-item">
-          <span className="feed-meta-label">Comments</span>
-          <strong>{post.comments_count || 0}</strong>
-        </div>
-        <div className="feed-meta-item">
-          <span className="feed-meta-label">Shares</span>
-          <strong>{post.shares_count || 0}</strong>
-        </div>
-      </div>
-
       <div className="post-actions feed-actions-row">
         <button
           type="button"

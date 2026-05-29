@@ -304,51 +304,23 @@
 .feed-video {
   width: 100%;
   margin-top: 14px;
-  border-radius: 22px;
+  border-radius: 20px;
   background: #000;
-  aspect-ratio: 9 / 16;
-  object-fit: cover;
+  aspect-ratio: 16 / 9;
+  max-height: 72vh;
+  object-fit: contain;
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
 }
 
 .feed-video-placeholder {
   margin-top: 14px;
-  min-height: 320px;
-  border-radius: 22px;
+  min-height: 360px;
+  border-radius: 20px;
   display: grid;
   place-items: center;
   background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(29, 78, 216, 0.82));
   color: #fff;
   font-weight: 600;
-}
-
-.feed-meta-row {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.feed-meta-item {
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.04);
-  border: 1px solid rgba(15, 23, 42, 0.06);
-}
-
-.feed-meta-label {
-  display: block;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--muted);
-}
-
-.feed-meta-item strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 1rem;
-  color: var(--text-h);
 }
 
 .video-meta {
@@ -597,10 +569,6 @@
 
   .feed-card {
     padding: 18px;
-  }
-
-  .feed-meta-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .feed-card-head {
