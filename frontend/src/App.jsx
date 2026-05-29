@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { SignIn, UserButton, useUser } from '@clerk/react'
 import './App.css'
+import './VideoDetail.css'
 
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
@@ -19,6 +20,9 @@ function App() {
   const [uploadSuccess, setUploadSuccess] = useState('')
   const [uploading, setUploading] = useState(false)
   const viewedVideoIdsRef = useRef(new Set())
+  const [currentVideoId, setCurrentVideoId] = useState(null)
+  const [currentVideo, setCurrentVideo] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
@@ -138,6 +142,31 @@ function App() {
     } finally {
       setLoadingCommentsByPostId((current) => ({ ...current, [videoId]: false }))
     }
+  }
+
+  const loadVideoDetail = async (videoId) => {
+    if (!videoId) return
+    setDetailLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/videos/${videoId}/`)
+      if (!res.ok) return
+      const data = await res.json()
+      // Response envelope: payload.video
+      const video = (data.payload && data.payload.video) || data.video || null
+      setCurrentVideo(video)
+      // preload comments for the detail page
+      await loadComments(videoId)
+    } catch (err) {
+      // ignore
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const openDetail = async (videoId) => {
+    setCurrentVideoId(videoId)
+    setActivePage('detail')
+    await loadVideoDetail(videoId)
   }
 
   const toggleComments = async (videoId) => {
@@ -361,6 +390,9 @@ function App() {
             ? 'Hide comments'
             : `Comments · ${post.comments_count || 0}`}
         </button>
+        <button type="button" className="ghost-btn" onClick={() => openDetail(post.id)}>
+          View
+        </button>
       </div>
 
       {commentsVisibleByPostId[post.id] ? (
@@ -506,6 +538,124 @@ function App() {
     </section>
   )
 
+  const renderDetailPage = () => {
+    const video = currentVideo
+    if (detailLoading) {
+      return (
+        <section className="page-content">
+          <div className="page-heading">
+            <h2>Loading…</h2>
+          </div>
+          <p>Loading video details…</p>
+        </section>
+      )
+    }
+
+    if (!video) {
+      return (
+        <section className="page-content">
+          <div className="page-heading">
+            <h2>Video not found</h2>
+          </div>
+          <p>The requested video could not be loaded.</p>
+          <div className="form-actions">
+            <button type="button" className="secondary-btn" onClick={() => setActivePage('feed')}>
+              Back to Feed
+            </button>
+          </div>
+        </section>
+      )
+    }
+
+    return (
+      <section className="page-content video-detail-page">
+        <div className="page-heading">
+          <h2>{video.title}</h2>
+          <p className="muted">{video.description}</p>
+        </div>
+
+        {video.playback_url ? (
+          <video className="detail-video" controls preload="metadata">
+            <source src={video.playback_url} type="video/mp4" />
+            Your browser does not support the video tag.
+          </video>
+        ) : (
+          <div className="feed-video-placeholder">Video not available yet.</div>
+        )}
+
+        <div className="video-meta">
+          <span>{video.duration_seconds ? `${video.duration_seconds}s` : 'Duration unavailable'}</span>
+          <span>{video.views} views</span>
+          <span>{video.likes_count || 0} likes</span>
+          <span>{video.comments_count || 0} comments</span>
+        </div>
+
+        <div className="post-actions">
+          <button
+            type="button"
+            className={video.liked ? 'ghost-btn active' : 'ghost-btn'}
+            onClick={() => toggleLike(video.id)}
+            disabled={likeLoadingByPostId[video.id]}
+            aria-pressed={Boolean(video.liked)}
+          >
+            {video.liked ? 'Unlike' : 'Like'} · {video.likes_count || 0}
+          </button>
+          <button type="button" className="ghost-btn" onClick={() => toggleComments(video.id)}>
+            {commentsVisibleByPostId[video.id] ? 'Hide comments' : `Comments · ${video.comments_count || 0}`}
+          </button>
+          <button type="button" className="secondary-btn" onClick={() => setActivePage('feed')}>
+            Back to Feed
+          </button>
+        </div>
+
+        {commentsVisibleByPostId[video.id] ? (
+          <div className="comments-panel detail-comments">
+            {loadingCommentsByPostId[video.id] ? (
+              <p className="comments-empty">Loading comments...</p>
+            ) : null}
+
+            {!loadingCommentsByPostId[video.id] && (commentsByPostId[video.id] || []).length === 0 ? (
+              <p className="comments-empty">No comments yet. Be the first to reply.</p>
+            ) : null}
+
+            <div className="comments-list">
+              {(commentsByPostId[video.id] || []).map((comment) => (
+                <article key={comment.id} className="comment-card">
+                  <div className="comment-head">
+                    <div className="comment-author-block">
+                      <span className="comment-author-name">{comment.display_name || comment.username}</span>
+                      <span className="comment-author-handle">@{comment.username || comment.user_clerk_user_id}</span>
+                    </div>
+                    <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
+                  </div>
+                  <p>{comment.text}</p>
+                </article>
+              ))}
+            </div>
+
+            <form className="comment-form" onSubmit={(event) => handleCommentSubmit(video.id, event)}>
+              <textarea
+                className="comment-input"
+                value={commentDraftsByPostId[video.id] || ''}
+                onChange={(event) =>
+                  setCommentDraftsByPostId((current) => ({
+                    ...current,
+                    [video.id]: event.target.value,
+                  }))
+                }
+                rows="3"
+                placeholder="Add a comment..."
+              />
+              <button type="submit" className="primary-btn" disabled={commentLoadingByPostId[video.id]}>
+                {commentLoadingByPostId[video.id] ? 'Posting...' : 'Post comment'}
+              </button>
+            </form>
+          </div>
+        ) : null}
+      </section>
+    )
+  }
+
   const renderPostVideoPage = () => (
     <section className="page-content">
       <div className="page-heading">
@@ -589,7 +739,7 @@ function App() {
         </div>
       </header>
 
-      {activePage === 'feed' ? renderFeedPage() : renderPostVideoPage()}
+      {activePage === 'feed' ? renderFeedPage() : activePage === 'post-video' ? renderPostVideoPage() : renderDetailPage()}
     </main>
   )
 }
