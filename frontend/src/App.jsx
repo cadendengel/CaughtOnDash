@@ -615,58 +615,53 @@ function App() {
           >
             {video.liked ? 'Unlike' : 'Like'} · {video.likes_count || 0}
           </button>
-          <button type="button" className="ghost-btn" onClick={() => toggleComments(video.id)}>
-            {commentsVisibleByPostId[video.id] ? 'Hide comments' : `Comments · ${video.comments_count || 0}`}
-          </button>
           <button type="button" className="secondary-btn" onClick={closeDetail}>
             Back to Feed
           </button>
         </div>
 
-        {commentsVisibleByPostId[video.id] ? (
-          <div className="comments-panel detail-comments detail-comments-sheet">
-            {loadingCommentsByPostId[video.id] ? (
-              <p className="comments-empty">Loading comments...</p>
-            ) : null}
+        <div className="comments-panel detail-comments detail-comments-sheet">
+          {loadingCommentsByPostId[video.id] ? (
+            <p className="comments-empty">Loading comments...</p>
+          ) : null}
 
-            {!loadingCommentsByPostId[video.id] && (commentsByPostId[video.id] || []).length === 0 ? (
-              <p className="comments-empty">No comments yet. Be the first to reply.</p>
-            ) : null}
+          {!loadingCommentsByPostId[video.id] && (commentsByPostId[video.id] || []).length === 0 ? (
+            <p className="comments-empty">No comments yet. Be the first to reply.</p>
+          ) : null}
 
-            <div className="comments-list">
-              {(commentsByPostId[video.id] || []).map((comment) => (
-                <article key={comment.id} className="comment-card">
-                  <div className="comment-head">
-                    <div className="comment-author-block">
-                      <span className="comment-author-name">{comment.display_name || comment.username}</span>
-                      <span className="comment-author-handle">@{comment.username || comment.user_clerk_user_id}</span>
-                    </div>
-                    <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
+          <div className="comments-list">
+            {(commentsByPostId[video.id] || []).map((comment) => (
+              <article key={comment.id} className="comment-card">
+                <div className="comment-head">
+                  <div className="comment-author-block">
+                    <span className="comment-author-name">{comment.display_name || comment.username}</span>
+                    <span className="comment-author-handle">@{comment.username || comment.user_clerk_user_id}</span>
                   </div>
-                  <p>{comment.text}</p>
-                </article>
-              ))}
-            </div>
-
-            <form className="comment-form" onSubmit={(event) => handleCommentSubmit(video.id, event)}>
-              <textarea
-                className="comment-input"
-                value={commentDraftsByPostId[video.id] || ''}
-                onChange={(event) =>
-                  setCommentDraftsByPostId((current) => ({
-                    ...current,
-                    [video.id]: event.target.value,
-                  }))
-                }
-                rows="3"
-                placeholder="Add a comment..."
-              />
-              <button type="submit" className="primary-btn" disabled={commentLoadingByPostId[video.id]}>
-                {commentLoadingByPostId[video.id] ? 'Posting...' : 'Post comment'}
-              </button>
-            </form>
+                  <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
+                </div>
+                <p>{comment.text}</p>
+              </article>
+            ))}
           </div>
-        ) : null}
+
+          <form className="comment-form" onSubmit={(event) => handleCommentSubmit(video.id, event)}>
+            <textarea
+              className="comment-input"
+              value={commentDraftsByPostId[video.id] || ''}
+              onChange={(event) =>
+                setCommentDraftsByPostId((current) => ({
+                  ...current,
+                  [video.id]: event.target.value,
+                }))
+              }
+              rows="3"
+              placeholder="Add a comment..."
+            />
+            <button type="submit" className="primary-btn" disabled={commentLoadingByPostId[video.id]}>
+              {commentLoadingByPostId[video.id] ? 'Posting...' : 'Post comment'}
+            </button>
+          </form>
+        </div>
       </section>
     )
   }
