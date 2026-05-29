@@ -20,9 +20,9 @@ function App() {
   const [uploadSuccess, setUploadSuccess] = useState('')
   const [uploading, setUploading] = useState(false)
   const viewedVideoIdsRef = useRef(new Set())
-  const [currentVideoId, setCurrentVideoId] = useState(null)
   const [currentVideo, setCurrentVideo] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [shareStatusByPostId, setShareStatusByPostId] = useState({})
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
@@ -144,9 +144,20 @@ function App() {
     }
   }
 
+  const getDetailUrl = (videoId) => {
+    if (typeof window === 'undefined') {
+      return ''
+    }
+
+    const url = new URL(window.location.href)
+    url.searchParams.set('video', videoId)
+    return `${url.pathname}?${url.searchParams.toString()}`
+  }
+
   const loadVideoDetail = async (videoId) => {
     if (!videoId) return
     setDetailLoading(true)
+    setCurrentVideo(null)
     try {
       const res = await fetch(`${API_BASE}/api/videos/${videoId}/`)
       if (!res.ok) return
@@ -163,10 +174,49 @@ function App() {
     }
   }
 
-  const openDetail = async (videoId) => {
-    setCurrentVideoId(videoId)
+  const openDetail = async (videoId, options = {}) => {
+    const { updateHistory = true } = options
+
     setActivePage('detail')
+    if (updateHistory && typeof window !== 'undefined') {
+      window.history.pushState({}, '', getDetailUrl(videoId))
+    }
     await loadVideoDetail(videoId)
+  }
+
+  const closeDetail = () => {
+    setActivePage('feed')
+    setCurrentVideo(null)
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', window.location.pathname)
+    }
+  }
+
+  const shareVideo = async (post) => {
+    if (!post?.id) {
+      return
+    }
+
+    const shareUrl = getDetailUrl(post.id)
+    const shareText = `${post.title} on CaughtOnDash`
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: post.title, text: shareText, url: shareUrl })
+      } else {
+        await navigator.clipboard.writeText(`${window.location.origin}${shareUrl}`)
+      }
+
+      setShareStatusByPostId((current) => ({ ...current, [post.id]: 'shared' }))
+      window.setTimeout(() => {
+        setShareStatusByPostId((current) => ({ ...current, [post.id]: '' }))
+      }, 1400)
+    } catch (err) {
+      setShareStatusByPostId((current) => ({ ...current, [post.id]: 'failed' }))
+      window.setTimeout(() => {
+        setShareStatusByPostId((current) => ({ ...current, [post.id]: '' }))
+      }, 1400)
+    }
   }
 
   const toggleComments = async (videoId) => {
@@ -213,6 +263,15 @@ function App() {
               }
             : post,
         ),
+      )
+      setCurrentVideo((current) =>
+        current && current.id === videoId
+          ? {
+              ...current,
+              likes_count: result.likes_count ?? current.likes_count,
+              liked: result.liked ?? current.liked,
+            }
+          : current,
       )
     } catch (err) {
       // ignore for now
@@ -300,6 +359,14 @@ function App() {
     const syncAndLoad = async () => {
       await syncProfile()
       await loadFeed()
+
+      const videoIdFromUrl = typeof window === 'undefined'
+        ? ''
+        : new URL(window.location.href).searchParams.get('video') || ''
+
+      if (videoIdFromUrl) {
+        await openDetail(videoIdFromUrl, { updateHistory: false })
+      }
     }
 
     syncAndLoad()
@@ -345,7 +412,6 @@ function App() {
       </div>
 
       <h2>{post.title}</h2>
-      <p>{post.description}</p>
 
       {post.playback_url ? (
         <video
@@ -364,14 +430,30 @@ function App() {
         </div>
       )}
 
-      <div className="video-meta">
-        <span>{post.duration_seconds ? `${post.duration_seconds}s` : 'Duration unavailable'}</span>
-        <span>{post.views} views</span>
-        <span>{post.likes_count || 0} likes</span>
-        <span>{post.comments_count || 0} comments</span>
+      <div className="feed-meta-row">
+        <div className="feed-meta-item">
+          <span className="feed-meta-label">Posted</span>
+          <strong>{formatTimestamp(post.created_at)}</strong>
+        </div>
+        <div className="feed-meta-item">
+          <span className="feed-meta-label">Views</span>
+          <strong>{post.views}</strong>
+        </div>
+        <div className="feed-meta-item">
+          <span className="feed-meta-label">Likes</span>
+          <strong>{post.likes_count || 0}</strong>
+        </div>
+        <div className="feed-meta-item">
+          <span className="feed-meta-label">Comments</span>
+          <strong>{post.comments_count || 0}</strong>
+        </div>
+        <div className="feed-meta-item">
+          <span className="feed-meta-label">Shares</span>
+          <strong>{post.shares_count || 0}</strong>
+        </div>
       </div>
 
-      <div className="post-actions">
+      <div className="post-actions feed-actions-row">
         <button
           type="button"
           className={post.liked ? 'ghost-btn active' : 'ghost-btn'}
@@ -384,61 +466,14 @@ function App() {
         <button
           type="button"
           className="ghost-btn"
-          onClick={() => toggleComments(post.id)}
+          onClick={() => openDetail(post.id)}
         >
-          {commentsVisibleByPostId[post.id]
-            ? 'Hide comments'
-            : `Comments · ${post.comments_count || 0}`}
+          Comment · {post.comments_count || 0}
         </button>
-        <button type="button" className="ghost-btn" onClick={() => openDetail(post.id)}>
-          View
+        <button type="button" className="ghost-btn" onClick={() => shareVideo(post)}>
+          {shareStatusByPostId[post.id] === 'shared' ? 'Copied' : 'Share'}
         </button>
       </div>
-
-      {commentsVisibleByPostId[post.id] ? (
-        <div className="comments-panel">
-          {loadingCommentsByPostId[post.id] ? (
-            <p className="comments-empty">Loading comments...</p>
-          ) : null}
-
-          {!loadingCommentsByPostId[post.id] && (commentsByPostId[post.id] || []).length === 0 ? (
-            <p className="comments-empty">No comments yet. Be the first to reply.</p>
-          ) : null}
-
-          <div className="comments-list">
-            {(commentsByPostId[post.id] || []).map((comment) => (
-              <article key={comment.id} className="comment-card">
-                <div className="comment-head">
-                  <div className="comment-author-block">
-                    <span className="comment-author-name">{comment.display_name || comment.username}</span>
-                    <span className="comment-author-handle">@{comment.username || comment.user_clerk_user_id}</span>
-                  </div>
-                  <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
-                </div>
-                <p>{comment.text}</p>
-              </article>
-            ))}
-          </div>
-
-          <form className="comment-form" onSubmit={(event) => handleCommentSubmit(post.id, event)}>
-            <textarea
-              className="comment-input"
-              value={commentDraftsByPostId[post.id] || ''}
-              onChange={(event) =>
-                setCommentDraftsByPostId((current) => ({
-                  ...current,
-                  [post.id]: event.target.value,
-                }))
-              }
-              rows="3"
-              placeholder="Add a comment..."
-            />
-            <button type="submit" className="primary-btn" disabled={commentLoadingByPostId[post.id]}>
-              {commentLoadingByPostId[post.id] ? 'Posting...' : 'Post comment'}
-            </button>
-          </form>
-        </div>
-      ) : null}
     </article>
   )
 
@@ -571,7 +606,6 @@ function App() {
       <section className="page-content video-detail-page">
         <div className="page-heading">
           <h2>{video.title}</h2>
-          <p className="muted">{video.description}</p>
         </div>
 
         {video.playback_url ? (
@@ -583,14 +617,17 @@ function App() {
           <div className="feed-video-placeholder">Video not available yet.</div>
         )}
 
-        <div className="video-meta">
+        <p className="detail-description">{video.description}</p>
+
+        <div className="video-meta detail-meta-row">
           <span>{video.duration_seconds ? `${video.duration_seconds}s` : 'Duration unavailable'}</span>
           <span>{video.views} views</span>
           <span>{video.likes_count || 0} likes</span>
           <span>{video.comments_count || 0} comments</span>
+          <span>{video.shares_count || 0} shares</span>
         </div>
 
-        <div className="post-actions">
+        <div className="post-actions detail-actions-row">
           <button
             type="button"
             className={video.liked ? 'ghost-btn active' : 'ghost-btn'}
@@ -603,7 +640,7 @@ function App() {
           <button type="button" className="ghost-btn" onClick={() => toggleComments(video.id)}>
             {commentsVisibleByPostId[video.id] ? 'Hide comments' : `Comments · ${video.comments_count || 0}`}
           </button>
-          <button type="button" className="secondary-btn" onClick={() => setActivePage('feed')}>
+          <button type="button" className="secondary-btn" onClick={closeDetail}>
             Back to Feed
           </button>
         </div>

@@ -1,16 +1,73 @@
-.video-detail-page { max-width: 900px; margin: 24px auto; padding: 0 16px; }
-.detail-video { width: 100%; max-height: 560px; background: #000; border-radius: 8px; }
-.video-meta { display: flex; gap: 12px; color: #666; margin: 8px 0 16px; }
-.post-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-.detail-comments { margin-top: 12px; }
-.comment-card { border-top: 1px solid #eee; padding: 8px 0; }
-.comment-head { display: flex; justify-content: space-between; align-items: center; }
-.comment-author-block { display: flex; gap: 8px; align-items: baseline; }
-.comment-author-name { font-weight: 600; }
-.comment-author-handle { color: #888; font-size: 0.9rem; }
-.comments-empty { color: #777; padding: 12px 0; }
+.video-detail-page {
+  max-width: 900px;
+  margin: 24px auto 0;
+  padding: 0 16px;
+}
+
+.video-detail-page .detail-video {
+  width: 100%;
+  max-height: 560px;
+  background: #000;
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+
+.video-detail-page .detail-description {
+  margin-top: 16px;
+  color: var(--text);
+  line-height: 1.65;
+  font-size: 1.02rem;
+}
+
+.video-detail-page .detail-meta-row {
+  margin-top: 14px;
+}
+
+.video-detail-page .detail-actions-row {
+  margin-top: 12px;
+}
+
+.video-detail-page .detail-comments {
+  margin-top: 12px;
+}
+
+.video-detail-page .comment-card {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 8px 0;
+}
+
+.video-detail-page .comment-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.video-detail-page .comment-author-block {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.video-detail-page .comment-author-name {
+  font-weight: 600;
+}
+
+.video-detail-page .comment-author-handle {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.video-detail-page .comments-empty {
+  color: #777;
+  padding: 12px 0;
+}
 
 @media (max-width: 640px) {
-  .video-detail-page { padding: 0 12px; }
-  .detail-video { max-height: 360px; }
+  .video-detail-page {
+    padding: 0 12px;
+  }
+
+  .video-detail-page .detail-video {
+    max-height: 360px;
+  }
 }
