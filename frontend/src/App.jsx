@@ -178,6 +178,7 @@ function App() {
     const { updateHistory = true } = options
 
     setActivePage('detail')
+    setCommentsVisibleByPostId((current) => ({ ...current, [videoId]: true }))
     if (updateHistory && typeof window !== 'undefined') {
       window.history.pushState({}, '', getDetailUrl(videoId))
     }
@@ -623,7 +624,7 @@ function App() {
         </div>
 
         {commentsVisibleByPostId[video.id] ? (
-          <div className="comments-panel detail-comments">
+          <div className="comments-panel detail-comments detail-comments-sheet">
             {loadingCommentsByPostId[video.id] ? (
               <p className="comments-empty">Loading comments...</p>
             ) : null}
