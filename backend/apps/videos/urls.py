@@ -5,6 +5,8 @@ from .views import (
     complete_upload_view,
     upload_url_view,
     video_view_count_view,
+    video_like_view,
+    video_comments_view,
     video_detail_view,
     video_status_view,
     video_update_delete_view,
@@ -18,6 +20,10 @@ urlpatterns = [
     path('complete/', complete_upload_view, name='video-complete-upload'),
     # POST /api/videos/<video_id>/view/ - increment the view count once per play.
     path('<uuid:video_id>/view/', video_view_count_view, name='video-view-count'),
+    # GET/POST /api/videos/<video_id>/comments/ - list or add comments.
+    path('<uuid:video_id>/comments/', video_comments_view, name='video-comments'),
+    # POST /api/videos/<video_id>/like/ - toggle a like for the current user.
+    path('<uuid:video_id>/like/', video_like_view, name='video-like'),
     # GET /api/videos/<video_id>/ - return the full video object and metadata.
     path('<uuid:video_id>/', video_detail_view, name='video-detail'),
     # GET /api/videos/<video_id>/status/ - return processing/upload status.

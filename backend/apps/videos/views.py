@@ -18,6 +18,28 @@ def _method_not_allowed(*allowed_methods: str) -> JsonResponse:
     return JsonResponse({'detail': 'Method not allowed.', 'allowed': list(allowed_methods)}, status=405)
 
 
+def _profile_for_clerk_user_id(clerk_user_id: str) -> Profile | None:
+    try:
+        return Profile.objects.get(clerk_user_id=clerk_user_id)
+    except Profile.DoesNotExist:
+        return None
+
+
+def _serialize_comment(comment: VideoComment) -> dict:
+    profile = _profile_for_clerk_user_id(comment.user_clerk_user_id)
+    return {
+        'id': str(comment.id),
+        'video_id': str(comment.video.id),
+        'user_clerk_user_id': comment.user_clerk_user_id,
+        'username': profile.username if profile else comment.user_clerk_user_id,
+        'display_name': profile.display_name if profile else comment.user_clerk_user_id,
+        'avatar_url': profile.avatar_url if profile else '',
+        'text': comment.text,
+        'created_at': comment.created_at.isoformat(),
+        'updated_at': comment.updated_at.isoformat(),
+    }
+
+
 @csrf_exempt
 def upload_url_view(request):
     # POST /api/videos/upload-url/ - create a presigned upload target for a new video.
@@ -207,14 +229,15 @@ def video_view_count_view(request, video_id):
     except ValueError:
         return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
 
-    updated = Video.objects.filter(id=video_uuid, deleted_at__isnull=True).update(
-        views=F('views') + 1,
-        updated_at=timezone.now(),
-    )
-    if updated == 0:
+    try:
+        video = Video.objects.get(id=video_uuid, deleted_at__isnull=True)
+    except Video.DoesNotExist:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
-    video = Video.objects.get(id=video_uuid)
+    # Increment view count.
+    video.views += 1
+    video.save(update_fields=['views', 'updated_at'])
+
     return JsonResponse(
         response_envelope(
             'video-view',
@@ -227,6 +250,106 @@ def video_view_count_view(request, video_id):
         ),
         status=200,
     )
+
+
+@csrf_exempt
+def video_like_view(request, video_id):
+    # POST /api/videos/<video_id>/like/ - toggle a like for the current user.
+    if request.method != 'POST':
+        return _method_not_allowed('POST')
+
+    try:
+        video_uuid = UUID(str(video_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
+
+    try:
+        video = Video.objects.get(id=video_uuid, deleted_at__isnull=True)
+    except Video.DoesNotExist:
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    payload = parse_json_request(request)
+    identity = get_identity(request, payload)
+
+    like = VideoLike.objects.filter(video=video, user_clerk_user_id=identity['clerk_user_id']).first()
+    liked = False
+
+    if like is None:
+        VideoLike.objects.create(video=video, user_clerk_user_id=identity['clerk_user_id'])
+        liked = True
+    else:
+        like.delete()
+
+    return JsonResponse(
+        response_envelope(
+            'video-like',
+            {
+                'video': {
+                    'id': str(video.id),
+                    'likes_count': VideoLike.objects.filter(video=video).count(),
+                    'liked': liked,
+                }
+            },
+        ),
+        status=200,
+    )
+
+
+@csrf_exempt
+def video_comments_view(request, video_id):
+    # GET /api/videos/<video_id>/comments/ - list comments.
+    # POST /api/videos/<video_id>/comments/ - add a comment.
+    try:
+        video_uuid = UUID(str(video_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
+
+    try:
+        video = Video.objects.get(id=video_uuid, deleted_at__isnull=True)
+    except Video.DoesNotExist:
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    if request.method == 'GET':
+        comments = [
+            _serialize_comment(comment)
+            for comment in VideoComment.objects.filter(video=video).order_by('created_at')
+        ]
+        return JsonResponse(
+            response_envelope(
+                'video-comments',
+                {
+                    'video_id': str(video.id),
+                    'count': len(comments),
+                    'items': comments,
+                },
+            ),
+            status=200,
+        )
+
+    if request.method == 'POST':
+        payload = parse_json_request(request)
+        text = str(payload.get('text') or '').strip()
+        if not text:
+            return JsonResponse({'detail': 'text is required.'}, status=400)
+
+        identity = get_identity(request, payload)
+        comment = VideoComment.objects.create(
+            video=video,
+            user_clerk_user_id=identity['clerk_user_id'],
+            text=text,
+        )
+
+        return JsonResponse(
+            response_envelope(
+                'video-comment',
+                {
+                    'comment': _serialize_comment(comment),
+                },
+            ),
+            status=201,
+        )
+
+    return _method_not_allowed('GET', 'POST')
 
 
 def video_update_delete_view(request, video_id):

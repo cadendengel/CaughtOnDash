@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
+from apps.accounts.models import Profile
 from apps.videos.models import Video
 
 
@@ -99,3 +100,86 @@ class VideoUploadFlowTests(TestCase):
 
         video = Video.objects.get(id=video_id)
         self.assertEqual(video.views, 1)
+
+    def test_comments_endpoint_creates_and_lists_comments(self):
+        Profile.objects.create(
+            clerk_user_id='comment-user',
+            email='comment@example.com',
+            username='commenter',
+            display_name='Comment User',
+        )
+        create_response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Test clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 15,
+                }
+            ),
+            content_type='application/json',
+        )
+        video_id = create_response.json()['video']['id']
+
+        post_response = self.client.post(
+            f'/api/videos/{video_id}/comments/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'comment-user',
+                    'text': 'Nice catch.',
+                }
+            ),
+            content_type='application/json',
+        )
+
+        self.assertEqual(post_response.status_code, 201)
+        post_payload = post_response.json()
+        self.assertEqual(post_payload['kind'], 'video-comment')
+        self.assertEqual(post_payload['comment']['text'], 'Nice catch.')
+        self.assertEqual(post_payload['comment']['username'], 'commenter')
+
+        list_response = self.client.get(f'/api/videos/{video_id}/comments/')
+        self.assertEqual(list_response.status_code, 200)
+        list_payload = list_response.json()
+        self.assertEqual(list_payload['count'], 1)
+        self.assertEqual(list_payload['items'][0]['text'], 'Nice catch.')
+
+    def test_like_endpoint_toggles_like(self):
+        create_response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Test clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 15,
+                }
+            ),
+            content_type='application/json',
+        )
+        video_id = create_response.json()['video']['id']
+
+        like_response = self.client.post(
+            f'/api/videos/{video_id}/like/',
+            data=json.dumps({'clerk_user_id': 'liker-user'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(like_response.status_code, 200)
+        like_payload = like_response.json()
+        self.assertTrue(like_payload['video']['liked'])
+        self.assertEqual(like_payload['video']['likes_count'], 1)
+
+        unlike_response = self.client.post(
+            f'/api/videos/{video_id}/like/',
+            data=json.dumps({'clerk_user_id': 'liker-user'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(unlike_response.status_code, 200)
+        unlike_payload = unlike_response.json()
+        self.assertFalse(unlike_payload['video']['liked'])
+        self.assertEqual(unlike_payload['video']['likes_count'], 0)
