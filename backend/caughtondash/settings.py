@@ -10,6 +10,7 @@ import os
 
 from dotenv import load_dotenv
 import dj_database_url
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
@@ -122,6 +123,10 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173').split(',')
     if origin.strip()
+]
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'x-clerk-user-id',
 ]
 
 REST_FRAMEWORK = {
