@@ -6,6 +6,12 @@ function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const [activePage, setActivePage] = useState('feed')
   const [posts, setPosts] = useState([])
+  const [commentsByPostId, setCommentsByPostId] = useState({})
+  const [commentsVisibleByPostId, setCommentsVisibleByPostId] = useState({})
+  const [commentDraftsByPostId, setCommentDraftsByPostId] = useState({})
+  const [loadingCommentsByPostId, setLoadingCommentsByPostId] = useState({})
+  const [likeLoadingByPostId, setLikeLoadingByPostId] = useState({})
+  const [commentLoadingByPostId, setCommentLoadingByPostId] = useState({})
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadDescription, setUploadDescription] = useState('')
   const [uploadFile, setUploadFile] = useState(null)
@@ -75,12 +81,136 @@ function App() {
 
   const loadFeed = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/feed/`)
+      const headers = user?.id ? { 'X-Clerk-User-Id': user.id } : {}
+      const res = await fetch(`${API_BASE}/api/feed/`, { headers })
       if (!res.ok) return
       const data = await res.json()
       setPosts(data.items || [])
     } catch (err) {
       // ignore for now
+    }
+  }
+
+  const loadComments = async (videoId) => {
+    if (!videoId) {
+      return
+    }
+
+    setLoadingCommentsByPostId((current) => ({ ...current, [videoId]: true }))
+    try {
+      const res = await fetch(`${API_BASE}/api/videos/${videoId}/comments/`)
+      if (!res.ok) return
+      const data = await res.json()
+      setCommentsByPostId((current) => ({ ...current, [videoId]: data.items || [] }))
+    } catch (err) {
+      // ignore for now
+    } finally {
+      setLoadingCommentsByPostId((current) => ({ ...current, [videoId]: false }))
+    }
+  }
+
+  const toggleComments = async (videoId) => {
+    if (!videoId) {
+      return
+    }
+
+    const nextVisible = !commentsVisibleByPostId[videoId]
+    setCommentsVisibleByPostId((current) => ({ ...current, [videoId]: nextVisible }))
+
+    if (nextVisible && !commentsByPostId[videoId]) {
+      await loadComments(videoId)
+    }
+  }
+
+  const toggleLike = async (videoId) => {
+    if (!videoId || likeLoadingByPostId[videoId]) {
+      return
+    }
+
+    setLikeLoadingByPostId((current) => ({ ...current, [videoId]: true }))
+    try {
+      const response = await fetch(`${API_BASE}/api/videos/${videoId}/like/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(identityPayload),
+      })
+
+      if (!response.ok) {
+        throw new Error('Could not update like.')
+      }
+
+      const data = await response.json()
+      const result = data.video || {}
+      setPosts((current) =>
+        current.map((post) =>
+          post.id === videoId
+            ? {
+                ...post,
+                likes_count: result.likes_count ?? post.likes_count,
+                liked: result.liked ?? post.liked,
+              }
+            : post,
+        ),
+      )
+    } catch (err) {
+      // ignore for now
+    } finally {
+      setLikeLoadingByPostId((current) => ({ ...current, [videoId]: false }))
+    }
+  }
+
+  const handleCommentSubmit = async (videoId, event) => {
+    event.preventDefault()
+    if (!videoId || commentLoadingByPostId[videoId]) {
+      return
+    }
+
+    const text = (commentDraftsByPostId[videoId] || '').trim()
+    if (!text) {
+      return
+    }
+
+    setCommentLoadingByPostId((current) => ({ ...current, [videoId]: true }))
+    try {
+      const response = await fetch(`${API_BASE}/api/videos/${videoId}/comments/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...identityPayload,
+          text,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Could not post comment.')
+      }
+
+      const data = await response.json()
+      const comment = data.comment
+      setCommentsByPostId((current) => ({
+        ...current,
+        [videoId]: [...(current[videoId] || []), comment],
+      }))
+      setPosts((current) =>
+        current.map((post) =>
+          post.id === videoId
+            ? {
+                ...post,
+                comments_count: (post.comments_count || 0) + 1,
+              }
+            : post,
+        ),
+      )
+      setCommentDraftsByPostId((current) => ({ ...current, [videoId]: '' }))
+      setCommentsVisibleByPostId((current) => ({ ...current, [videoId]: true }))
+    } catch (err) {
+      // ignore for now
+    } finally {
+      setCommentLoadingByPostId((current) => ({ ...current, [videoId]: false }))
     }
   }
 
@@ -147,13 +277,14 @@ function App() {
   const renderPostCard = (post) => (
     <article key={post.id} className="feed-card">
       <div className="feed-card-head">
+        <div className="author-block">
+          <span className="author-name">{post.display_name || post.username || post.owner_clerk_user_id}</span>
+          <span className="author-handle">@{post.username || post.owner_clerk_user_id}</span>
+        </div>
         <span className="timestamp">{post.created_at}</span>
       </div>
 
       <h2>{post.title}</h2>
-      <div className="author-block">
-        <span className="author-handle">@{post.username || post.owner_clerk_user_id}</span>
-      </div>
       <p>{post.description}</p>
 
       {post.playback_url ? (
@@ -176,7 +307,74 @@ function App() {
       <div className="video-meta">
         <span>{post.duration_seconds ? `${post.duration_seconds}s` : 'Duration unavailable'}</span>
         <span>{post.views} views</span>
+        <span>{post.likes_count || 0} likes</span>
+        <span>{post.comments_count || 0} comments</span>
       </div>
+
+      <div className="post-actions">
+        <button
+          type="button"
+          className={post.liked ? 'ghost-btn active' : 'ghost-btn'}
+          onClick={() => toggleLike(post.id)}
+          disabled={likeLoadingByPostId[post.id]}
+        >
+          {post.liked ? 'Unlike' : 'Like'}
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          onClick={() => toggleComments(post.id)}
+        >
+          {commentsVisibleByPostId[post.id]
+            ? 'Hide comments'
+            : `Comments (${post.comments_count || 0})`}
+        </button>
+      </div>
+
+      {commentsVisibleByPostId[post.id] ? (
+        <div className="comments-panel">
+          {loadingCommentsByPostId[post.id] ? (
+            <p className="comments-empty">Loading comments...</p>
+          ) : null}
+
+          {!loadingCommentsByPostId[post.id] && (commentsByPostId[post.id] || []).length === 0 ? (
+            <p className="comments-empty">No comments yet. Be the first to reply.</p>
+          ) : null}
+
+          <div className="comments-list">
+            {(commentsByPostId[post.id] || []).map((comment) => (
+              <article key={comment.id} className="comment-card">
+                <div className="comment-head">
+                  <div className="comment-author-block">
+                    <span className="comment-author-name">{comment.display_name || comment.username}</span>
+                    <span className="comment-author-handle">@{comment.username || comment.user_clerk_user_id}</span>
+                  </div>
+                  <span className="comment-timestamp">{comment.created_at}</span>
+                </div>
+                <p>{comment.text}</p>
+              </article>
+            ))}
+          </div>
+
+          <form className="comment-form" onSubmit={(event) => handleCommentSubmit(post.id, event)}>
+            <textarea
+              className="comment-input"
+              value={commentDraftsByPostId[post.id] || ''}
+              onChange={(event) =>
+                setCommentDraftsByPostId((current) => ({
+                  ...current,
+                  [post.id]: event.target.value,
+                }))
+              }
+              rows="3"
+              placeholder="Add a comment..."
+            />
+            <button type="submit" className="primary-btn" disabled={commentLoadingByPostId[post.id]}>
+              {commentLoadingByPostId[post.id] ? 'Posting...' : 'Post comment'}
+            </button>
+          </form>
+        </div>
+      ) : null}
     </article>
   )
 

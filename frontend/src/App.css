@@ -259,19 +259,24 @@
 .feed-card-head {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 10px;
 }
 
 .author-block {
   display: grid;
   gap: 2px;
-  margin-top: 6px;
+}
+
+.author-name {
+  font-weight: 700;
+  color: var(--text-h);
 }
 
 .author-handle {
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.015em;
   color: var(--muted);
 }
 
@@ -296,6 +301,7 @@
 
 .video-meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 14px;
 }
@@ -327,6 +333,109 @@
   border: 1px solid rgba(15, 23, 42, 0.16);
   color: var(--text-h);
   background: rgba(255, 255, 255, 0.72);
+}
+
+.post-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ghost-btn {
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--text-h);
+  padding: 8px 14px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  transition: background 0.2s ease, transform 0.12s ease, border-color 0.2s ease;
+}
+
+.ghost-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.ghost-btn.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #0f172a, #1d4ed8);
+  border-color: transparent;
+}
+
+.ghost-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  transform: none;
+}
+
+.comments-panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  display: grid;
+  gap: 12px;
+}
+
+.comments-list {
+  display: grid;
+  gap: 10px;
+}
+
+.comment-card {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.03);
+  border: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.comment-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.comment-author-block {
+  display: grid;
+  gap: 2px;
+}
+
+.comment-author-name {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.comment-author-handle,
+.comment-timestamp,
+.comments-empty {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.comment-card p {
+  margin-top: 8px;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.comment-form {
+  display: grid;
+  gap: 10px;
+}
+
+.comment-input {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-h);
+  padding: 12px 14px;
+  font: inherit;
+  resize: vertical;
 }
 
 .hero-card {
