@@ -6,6 +6,18 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from django.db.models import Count, F, Prefetch
 from django.utils import timezone
+from django.conf import settings
+from django.db.models import TextField, Q
+from django.db.models.functions import Cast
+
+# Optional Postgres full-text search imports. We import inside a try/except
+# so this file continues to work under sqlite (tests/local dev) without
+# requiring Postgres-specific dependencies at import time.
+try:
+    from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
+    HAS_PG_SEARCH = True
+except Exception:
+    HAS_PG_SEARCH = False
 
 from apps.accounts.models import Profile
 from apps.accounts.auth import admin_required
@@ -269,6 +281,62 @@ def video_status_view(request, video_id):
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
     return JsonResponse(response_envelope('video-status', {'video': {'id': str(video.id), 'status': video.status}}), status=200)
+
+
+def search_videos(request):
+    # GET /api/videos/search/?q=...&page=1&limit=20
+    if request.method != 'GET':
+        return _method_not_allowed('GET')
+
+    q = str(request.GET.get('q') or '').strip()
+    try:
+        page = max(1, int(request.GET.get('page', 1)))
+    except Exception:
+        page = 1
+    try:
+        limit = max(1, min(100, int(request.GET.get('limit', 20))))
+    except Exception:
+        limit = 20
+
+    offset = (page - 1) * limit
+
+    base_qs = Video.objects.filter(deleted_at__isnull=True, status='ready', visibility='public')
+
+    if not q:
+        return JsonResponse(response_envelope('video-search', {'query': q, 'count': 0, 'items': []}), status=200)
+
+    items = []
+    count = 0
+
+    # Prefer Postgres full-text search when available and configured.
+    if HAS_PG_SEARCH and 'postgres' in settings.DATABASES['default']['ENGINE']:
+        vector = (
+            SearchVector('title', weight='A') +
+            SearchVector('description', weight='B') +
+            SearchVector(Cast('tags', TextField()), weight='C')
+        )
+        query = SearchQuery(q)
+        annotated = (
+            base_qs
+            .annotate(search=vector)
+            .filter(search=query)
+            .annotate(rank=SearchRank(vector, query))
+            .order_by('-rank', '-created_at')
+        )
+        count = annotated.count()
+        results = annotated[offset: offset + limit]
+        items = [v.to_dict() for v in results]
+    else:
+        # SQLite or other DB fallback: use simple ILIKE/contains queries across
+        # title, description and the JSON tags text.
+        filtered = base_qs.filter(
+            Q(title__icontains=q) | Q(description__icontains=q) | Q(tags__icontains=q)
+        ).order_by('-created_at')
+        count = filtered.count()
+        results = filtered[offset: offset + limit]
+        items = [v.to_dict() for v in results]
+
+    return JsonResponse(response_envelope('video-search', {'query': q, 'count': count, 'items': items}), status=200)
 
 
 @csrf_exempt

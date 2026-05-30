@@ -14,12 +14,15 @@ from .views import (
     admin_video_delete_view,
     admin_comment_delete_view,
     admin_video_tags_view,
+    search_videos,
 )
 
 urlpatterns = [
     # POST /api/videos/upload-url/ - create a presigned upload target for a new video.
     path('upload-url/', upload_url_view, name='video-upload-url'),
     path('upload/', upload_file_view, name='video-upload'),
+    # GET /api/videos/search/?q=... - search videos (Postgres FT when available)
+    path('search/', search_videos, name='video-search'),
     # POST /api/videos/complete/ - mark an upload complete and enqueue processing.
     path('complete/', complete_upload_view, name='video-complete-upload'),
     # POST /api/videos/<video_id>/view/ - increment the view count once per play.
