@@ -1,10 +1,11 @@
 # CaughtOnDash Frontend
 
-CaughtOnDash is a dashcam-focused community app built with React, Vite, and Clerk. This frontend powers the feed, video upload flow, video detail page, threaded comments, likes, replies, and the admin moderation view.
+CaughtOnDash is a dashcam-focused community app built with React, Vite, and Clerk. This frontend powers the feed, search, video upload flow, video detail page, threaded comments, likes, replies, and the admin moderation view.
 
 ## What It Does
 
 - Browse a feed of community uploads with inline video playback.
+- Search videos by title, description, and tags.
 - Open a dedicated detail page for each video.
 - Like videos, like comments, reply to comments, and post new comments.
 - Upload new dashcam clips with title, description, and custom tags.
@@ -58,7 +59,7 @@ VITE_API_BASE=http://localhost:8000
 ## Notes
 
 - The app expects Clerk user identity to be available in the browser.
-- The backend currently provides the video, comment, like, tag, and admin moderation APIs used here.
+- The backend currently provides the video, comment, like, tag, search, and admin moderation APIs used here.
 - Tags are source-aware: user tags are blue, admin tags are red, and the schema is ready for future AI tags.
 
 ## AI Roadmap

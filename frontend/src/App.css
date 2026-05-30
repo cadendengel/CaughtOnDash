@@ -168,6 +168,73 @@
   color: var(--muted);
 }
 
+.search-page {
+  gap: 18px;
+}
+
+.search-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: var(--shadow);
+}
+
+.search-input-group {
+  display: grid;
+  gap: 8px;
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.search-input-group span {
+  font-size: 0.94rem;
+}
+
+.search-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.search-input-row input {
+  flex: 1 1 280px;
+  min-width: 0;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text-h);
+  padding: 12px 14px;
+  font: inherit;
+}
+
+.search-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.search-panel .primary-btn,
+.search-panel .secondary-btn,
+.search-panel .ghost-btn {
+  margin-top: 0;
+}
+
+.search-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.94rem;
+}
+
+.search-empty-card {
+  margin-top: 2px;
+}
+
 .empty-feed-card,
 .feed-card,
 .post-video-card {

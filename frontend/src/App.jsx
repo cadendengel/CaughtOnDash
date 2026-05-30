@@ -14,6 +14,11 @@ function App() {
   const [adminTagEditsByPostId, setAdminTagEditsByPostId] = useState({})
   const [adminTagDraftsByPostId, setAdminTagDraftsByPostId] = useState({})
   const [adminTagSavingByPostId, setAdminTagSavingByPostId] = useState({})
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [searchHasSearched, setSearchHasSearched] = useState(false)
   const [commentsByPostId, setCommentsByPostId] = useState({})
   const [commentsVisibleByPostId, setCommentsVisibleByPostId] = useState({})
   const [commentDraftsByPostId, setCommentDraftsByPostId] = useState({})
@@ -33,6 +38,7 @@ function App() {
   const viewedVideoIdsRef = useRef(new Set())
   const [currentVideo, setCurrentVideo] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailReturnPage, setDetailReturnPage] = useState('feed')
   const [shareStatusByPostId, setShareStatusByPostId] = useState({})
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
@@ -197,6 +203,43 @@ function App() {
     return []
   }
 
+  const loadSearchResults = async (query) => {
+    const normalizedQuery = String(query || '').trim()
+
+    setSearchError('')
+    setSearchHasSearched(true)
+
+    if (!normalizedQuery) {
+      setSearchResults([])
+      return []
+    }
+
+    setSearchLoading(true)
+    try {
+      const headers = user?.id ? { 'X-Clerk-User-Id': user.id } : {}
+      const response = await fetch(
+        `${API_BASE}/api/videos/search/?q=${encodeURIComponent(normalizedQuery)}&limit=20`,
+        { headers },
+      )
+
+      if (!response.ok) {
+        throw new Error('Could not search videos.')
+      }
+
+      const data = await response.json()
+      const payload = data.payload || {}
+      const items = payload.items || data.items || []
+      setSearchResults(items)
+      return items
+    } catch (err) {
+      setSearchResults([])
+      setSearchError(err.message || 'Search failed.')
+      return []
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
   const loadComments = async (videoId) => {
     if (!videoId) {
       return
@@ -302,7 +345,9 @@ function App() {
 
   const openDetail = async (videoId, options = {}) => {
     const { updateHistory = true } = options
+    const returnPage = activePage === 'detail' ? detailReturnPage : activePage
 
+    setDetailReturnPage(returnPage || 'feed')
     setActivePage('detail')
     setCommentsVisibleByPostId((current) => ({ ...current, [videoId]: true }))
     if (updateHistory && typeof window !== 'undefined') {
@@ -321,7 +366,7 @@ function App() {
   }
 
   const closeDetail = () => {
-    setActivePage('feed')
+    setActivePage(detailReturnPage || 'feed')
     setCurrentVideo(null)
     if (typeof window !== 'undefined') {
       window.history.pushState({}, '', window.location.pathname)
@@ -1090,6 +1135,86 @@ function App() {
     </section>
   )
 
+  const handleSearchSubmit = async (event) => {
+    event.preventDefault()
+    await loadSearchResults(searchQuery)
+  }
+
+  const renderSearchPage = () => (
+    <section className="page-content search-page">
+      <div className="page-heading">
+        <h2>Search</h2>
+        <p>Find clips by title, description, or tags.</p>
+      </div>
+
+      <form className="search-panel" onSubmit={handleSearchSubmit}>
+        <label className="search-input-group">
+          <span>Search videos</span>
+          <div className="search-input-row">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="freeway merge, near miss, brake check..."
+            />
+            <button type="submit" className="primary-btn" disabled={searchLoading}>
+              {searchLoading ? 'Searching...' : 'Search'}
+            </button>
+          </div>
+        </label>
+
+        <div className="search-panel-actions">
+          <button type="button" className="secondary-btn" onClick={() => loadSearchResults(searchQuery)} disabled={searchLoading}>
+            Refresh results
+          </button>
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => {
+              setSearchQuery('')
+              setSearchResults([])
+              setSearchError('')
+              setSearchHasSearched(false)
+            }}
+          >
+            Clear
+          </button>
+        </div>
+      </form>
+
+      {searchError ? <p className="form-message error">{searchError}</p> : null}
+
+      {searchHasSearched && !searchLoading && !searchError ? (
+        <div className="search-summary">
+          <span>{searchResults.length} result{searchResults.length === 1 ? '' : 's'}</span>
+          {searchQuery.trim() ? <span>for “{searchQuery.trim()}”</span> : null}
+        </div>
+      ) : null}
+
+      {!searchHasSearched && !searchLoading ? (
+        <div className="empty-feed-card search-empty-card">
+          <p className="eyebrow">Start here</p>
+          <h3>Search the video catalog</h3>
+          <p>
+            Try a title, a common driving phrase, or a tag to find matching clips.
+          </p>
+        </div>
+      ) : null}
+
+      {searchLoading ? <p className="comments-empty">Searching…</p> : null}
+
+      {searchHasSearched && !searchLoading && searchResults.length === 0 && !searchError ? (
+        <div className="empty-feed-card search-empty-card">
+          <p className="eyebrow">No matches</p>
+          <h3>Nothing matched your search</h3>
+          <p>Try fewer words or search by a tag name instead.</p>
+        </div>
+      ) : null}
+
+      {searchResults.length > 0 ? <div className="feed-list">{searchResults.map(renderPostCard)}</div> : null}
+    </section>
+  )
+
   const handleUploadSubmit = async (event) => {
     event.preventDefault()
     setUploadError('')
@@ -1395,6 +1520,13 @@ function App() {
           </button>
           <button
             type="button"
+            className={activePage === 'search' ? 'nav-btn active' : 'nav-btn'}
+            onClick={() => setActivePage('search')}
+          >
+            Search
+          </button>
+          <button
+            type="button"
             className={activePage === 'post-video' ? 'nav-btn active' : 'nav-btn'}
             onClick={() => setActivePage('post-video')}
           >
@@ -1419,6 +1551,8 @@ function App() {
 
       {activePage === 'feed'
         ? renderFeedPage()
+        : activePage === 'search'
+          ? renderSearchPage()
         : activePage === 'post-video'
           ? renderPostVideoPage()
           : activePage === 'admin'
