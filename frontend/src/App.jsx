@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { SignIn, UserButton, useUser } from '@clerk/react'
 import './App.css'
 import './VideoDetail.css'

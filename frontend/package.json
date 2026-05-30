@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "vitest",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -15,6 +16,10 @@
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.0.0",
+    "@testing-library/react": "^14.0.0",
+    "jsdom": "^22.1.0",
+    "vitest": "^0.34.3",
     "@babel/core": "^7.29.0",
     "@eslint/js": "^10.0.1",
     "@rolldown/plugin-babel": "^0.2.3",
