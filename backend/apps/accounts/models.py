@@ -58,3 +58,28 @@ class Profile(models.Model):
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
+
+
+class AdminUser(models.Model):
+    """Records users who are allowed to perform admin actions.
+
+    We store Clerk identifiers here for a simple, auditable mapping.
+    """
+
+    clerk_user_id = models.CharField(max_length=255, unique=True, db_index=True)
+    email = models.EmailField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Admin user'
+        verbose_name_plural = 'Admin users'
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return f"Admin<{self.clerk_user_id}>"
+
+    @classmethod
+    def is_admin_for(cls, clerk_user_id: str) -> bool:
+        if not clerk_user_id:
+            return False
+        return cls.objects.filter(clerk_user_id=clerk_user_id, is_active=True).exists()
