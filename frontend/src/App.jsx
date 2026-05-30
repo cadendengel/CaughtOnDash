@@ -606,15 +606,6 @@ function App() {
         </div>
 
         <div className="post-actions detail-actions-row">
-          <button
-            type="button"
-            className={video.liked ? 'ghost-btn active' : 'ghost-btn'}
-            onClick={() => toggleLike(video.id)}
-            disabled={likeLoadingByPostId[video.id]}
-            aria-pressed={Boolean(video.liked)}
-          >
-            {video.liked ? 'Unlike' : 'Like'} · {video.likes_count || 0}
-          </button>
           <button type="button" className="secondary-btn" onClick={closeDetail}>
             Back to Feed
           </button>
