@@ -458,23 +458,27 @@ function App() {
 
   const renderTagPills = (videoId, tags, options = {}) => {
     const tagList = normalizeTagObjects(tags || [])
-    if (tagList.length === 0) {
+    const editable = Boolean(options.editable)
+    if (tagList.length === 0 && !editable) {
       return null
     }
 
     const isExpanded = Boolean(tagsExpandedByPostId[videoId])
     const visibleTags = isExpanded || tagList.length <= 3 ? tagList : tagList.slice(0, 3)
     const hiddenCount = tagList.length - visibleTags.length
-    const editable = Boolean(options.editable)
     const showToggle = editable || tagList.length > 3
 
     return (
       <div className={editable ? 'tag-strip tag-strip--editable' : 'tag-strip'}>
-        {visibleTags.map((tag, index) => (
-          <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
-            {tag.text}
-          </span>
-        ))}
+        {visibleTags.length > 0 ? (
+          visibleTags.map((tag, index) => (
+            <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+              {tag.text}
+            </span>
+          ))
+        ) : editable ? (
+          <span className="tag-pill tag-pill--toggle">No tags yet</span>
+        ) : null}
 
         {showToggle ? (
           <button
@@ -483,7 +487,7 @@ function App() {
             onClick={() => toggleTagExpansion(videoId)}
             aria-expanded={isExpanded}
           >
-            {isExpanded ? 'Hide tags' : hiddenCount > 0 ? `+${hiddenCount} more` : 'Manage tags'}
+            {isExpanded ? 'Hide tags' : hiddenCount > 0 ? `+${hiddenCount} more` : editable ? 'Add tags' : 'Manage tags'}
           </button>
         ) : null}
       </div>
