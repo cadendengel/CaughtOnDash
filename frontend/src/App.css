@@ -299,6 +299,123 @@
   font-weight: 800;
 }
 
+.detail-author-block {
+  margin-bottom: 6px;
+}
+
+.tag-strip,
+.tag-editor-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.tag-strip {
+  align-items: center;
+}
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+
+.tag-pill--user {
+  color: #1d4ed8;
+  border-color: rgba(29, 78, 216, 0.22);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.tag-pill--admin {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.22);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.tag-pill--ai {
+  color: #166534;
+  border-color: rgba(22, 101, 52, 0.22);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.tag-pill--toggle {
+  cursor: pointer;
+  color: var(--text-h);
+  border-color: rgba(15, 23, 42, 0.12);
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.tag-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.03);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.tag-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tag-editor-label,
+.tag-input-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.tag-editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.tag-input {
+  flex: 1 1 240px;
+  min-width: 0;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-h);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.tag-chip-remove {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tag-editor-actions {
+  margin-top: 0;
+}
+
+.tag-input-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
 .feed-caption {
   margin-top: 8px;
   color: var(--muted);
@@ -624,6 +741,14 @@
   .video-meta,
   .post-actions {
     gap: 8px;
+  }
+
+  .tag-editor-row {
+    align-items: stretch;
+  }
+
+  .tag-input {
+    flex-basis: 100%;
   }
 
   .comments-panel {

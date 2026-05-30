@@ -8,6 +8,12 @@ function App() {
   const [activePage, setActivePage] = useState('feed')
   const [isAdmin, setIsAdmin] = useState(false)
   const [posts, setPosts] = useState([])
+  const [tagsExpandedByPostId, setTagsExpandedByPostId] = useState({})
+  const [uploadTags, setUploadTags] = useState([])
+  const [uploadTagDraft, setUploadTagDraft] = useState('')
+  const [adminTagEditsByPostId, setAdminTagEditsByPostId] = useState({})
+  const [adminTagDraftsByPostId, setAdminTagDraftsByPostId] = useState({})
+  const [adminTagSavingByPostId, setAdminTagSavingByPostId] = useState({})
   const [commentsByPostId, setCommentsByPostId] = useState({})
   const [commentsVisibleByPostId, setCommentsVisibleByPostId] = useState({})
   const [commentDraftsByPostId, setCommentDraftsByPostId] = useState({})
@@ -60,6 +66,63 @@ function App() {
     const valueInUnit = Math.round(absoluteSeconds / unit.seconds)
     const suffix = valueInUnit === 1 ? '' : 's'
     return diffSeconds < 0 ? `${valueInUnit} ${unit.label}${suffix} ago` : `in ${valueInUnit} ${unit.label}${suffix}`
+  }
+
+  const normalizeTagText = (value) => {
+    return String(value || '').trim()
+  }
+
+  const normalizeTagSource = (value, fallback = 'user') => {
+    const source = String(value || fallback).trim().toLowerCase()
+    return ['user', 'admin', 'ai'].includes(source) ? source : fallback
+  }
+
+  const normalizeTagObjects = (tags, fallbackSource = 'user') => {
+    const seen = new Set()
+    const normalized = []
+
+    if (!Array.isArray(tags)) {
+      return normalized
+    }
+
+    tags.forEach((tag) => {
+      const rawTag = typeof tag === 'string' ? { text: tag, source: fallbackSource } : (tag || {})
+      const text = normalizeTagText(rawTag.text || rawTag.name || rawTag.label)
+      if (!text) {
+        return
+      }
+
+      const source = normalizeTagSource(rawTag.source, fallbackSource)
+      const dedupeKey = text.toLowerCase()
+      if (seen.has(dedupeKey)) {
+        return
+      }
+
+      seen.add(dedupeKey)
+      normalized.push({ text, source })
+    })
+
+    return normalized
+  }
+
+  const addTagToList = (tags, value, source = 'user') => {
+    return normalizeTagObjects([...(tags || []), { text: value, source }], source)
+  }
+
+  const removeTagAtIndex = (tags, index) => {
+    return (tags || []).filter((_, tagIndex) => tagIndex !== index)
+  }
+
+  const getTagColorClass = (source) => {
+    if (source === 'admin') {
+      return 'tag-pill--admin'
+    }
+
+    if (source === 'ai') {
+      return 'tag-pill--ai'
+    }
+
+    return 'tag-pill--user'
   }
 
   const clerkEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || ''
@@ -158,6 +221,18 @@ function App() {
 
   const loadAdminOverview = async () => {
     const items = await loadFeed()
+    setAdminTagEditsByPostId(
+      items.reduce((accumulator, post) => {
+        accumulator[post.id] = normalizeTagObjects(post.tags || [])
+        return accumulator
+      }, {}),
+    )
+    setAdminTagDraftsByPostId(
+      items.reduce((accumulator, post) => {
+        accumulator[post.id] = ''
+        return accumulator
+      }, {}),
+    )
     await Promise.all(items.map((post) => loadComments(post.id)))
   }
 
@@ -253,6 +328,107 @@ function App() {
     }
   }
 
+  const toggleTagExpansion = (postId) => {
+    if (!postId) {
+      return
+    }
+
+    setTagsExpandedByPostId((current) => ({
+      ...current,
+      [postId]: !current[postId],
+    }))
+  }
+
+  const updateUploadTagDraft = (value) => {
+    setUploadTagDraft(value)
+  }
+
+  const addUploadTag = () => {
+    const nextTag = normalizeTagText(uploadTagDraft)
+    if (!nextTag) {
+      return
+    }
+
+    setUploadTags((current) => addTagToList(current, nextTag, 'user'))
+    setUploadTagDraft('')
+  }
+
+  const removeUploadTag = (index) => {
+    setUploadTags((current) => removeTagAtIndex(current, index))
+  }
+
+  const updateAdminTagDraft = (videoId, value) => {
+    setAdminTagDraftsByPostId((current) => ({
+      ...current,
+      [videoId]: value,
+    }))
+  }
+
+  const addAdminTag = (videoId) => {
+    const draft = normalizeTagText(adminTagDraftsByPostId[videoId])
+    if (!draft) {
+      return
+    }
+
+    setAdminTagEditsByPostId((current) => ({
+      ...current,
+      [videoId]: addTagToList(current[videoId] || [], draft, 'admin'),
+    }))
+    setAdminTagDraftsByPostId((current) => ({
+      ...current,
+      [videoId]: '',
+    }))
+  }
+
+  const removeAdminTag = (videoId, index) => {
+    setAdminTagEditsByPostId((current) => ({
+      ...current,
+      [videoId]: removeTagAtIndex(current[videoId] || [], index),
+    }))
+  }
+
+  const saveAdminTags = async (videoId) => {
+    if (!isAdmin || !videoId || adminTagSavingByPostId[videoId]) {
+      return
+    }
+
+    const tags = normalizeTagObjects(adminTagEditsByPostId[videoId] || [])
+    setAdminTagSavingByPostId((current) => ({ ...current, [videoId]: true }))
+
+    try {
+      const response = await fetch(`${API_BASE}/api/videos/admin/videos/${videoId}/tags/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Clerk-User-Id': user?.id || '',
+        },
+        body: JSON.stringify({ tags }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Could not update tags.')
+      }
+
+      const data = await response.json()
+      const updatedVideo = data.video || data.payload?.video || {}
+
+      setPosts((current) =>
+        current.map((post) => (post.id === videoId ? { ...post, ...updatedVideo, tags: updatedVideo.tags || tags } : post)),
+      )
+      setCurrentVideo((current) =>
+        current && current.id === videoId ? { ...current, ...updatedVideo, tags: updatedVideo.tags || tags } : current,
+      )
+      setAdminTagEditsByPostId((current) => ({
+        ...current,
+        [videoId]: normalizeTagObjects(updatedVideo.tags || tags),
+      }))
+    } catch (err) {
+      // ignore for now
+    } finally {
+      setAdminTagSavingByPostId((current) => ({ ...current, [videoId]: false }))
+    }
+  }
+
   const shareVideo = async (post) => {
     if (!post?.id) {
       return
@@ -278,6 +454,92 @@ function App() {
         setShareStatusByPostId((current) => ({ ...current, [post.id]: '' }))
       }, 1400)
     }
+  }
+
+  const renderTagPills = (videoId, tags, options = {}) => {
+    const tagList = normalizeTagObjects(tags || [])
+    if (tagList.length === 0) {
+      return null
+    }
+
+    const isExpanded = Boolean(tagsExpandedByPostId[videoId])
+    const visibleTags = isExpanded || tagList.length <= 3 ? tagList : tagList.slice(0, 3)
+    const hiddenCount = tagList.length - visibleTags.length
+    const editable = Boolean(options.editable)
+    const showToggle = editable || tagList.length > 3
+
+    return (
+      <div className={editable ? 'tag-strip tag-strip--editable' : 'tag-strip'}>
+        {visibleTags.map((tag, index) => (
+          <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+            {tag.text}
+          </span>
+        ))}
+
+        {showToggle ? (
+          <button
+            type="button"
+            className="tag-pill tag-pill--toggle"
+            onClick={() => toggleTagExpansion(videoId)}
+            aria-expanded={isExpanded}
+          >
+            {isExpanded ? 'Hide tags' : hiddenCount > 0 ? `+${hiddenCount} more` : 'Manage tags'}
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+
+  const renderTagEditor = (videoId, tags) => {
+    const currentTags = normalizeTagObjects(adminTagEditsByPostId[videoId] || tags || [])
+    const draftValue = adminTagDraftsByPostId[videoId] || ''
+
+    return (
+      <div className="tag-editor">
+        <div className="tag-editor-head">
+          <span className="tag-editor-label">Edit tags</span>
+          <button type="button" className="ghost-btn" onClick={() => toggleTagExpansion(videoId)}>
+            Collapse
+          </button>
+        </div>
+
+        <div className="tag-editor-chip-list">
+          {currentTags.map((tag, index) => (
+            <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+              {tag.text}
+              <button type="button" className="tag-chip-remove" onClick={() => removeAdminTag(videoId, index)}>
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+
+        <div className="tag-editor-row">
+          <input
+            type="text"
+            className="tag-input"
+            value={draftValue}
+            onChange={(event) => updateAdminTagDraft(videoId, event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                addAdminTag(videoId)
+              }
+            }}
+            placeholder="Add an admin tag"
+          />
+          <button type="button" className="secondary-btn" onClick={() => addAdminTag(videoId)}>
+            Add
+          </button>
+        </div>
+
+        <div className="form-actions tag-editor-actions">
+          <button type="button" className="primary-btn" onClick={() => saveAdminTags(videoId)} disabled={adminTagSavingByPostId[videoId]}>
+            {adminTagSavingByPostId[videoId] ? 'Saving...' : 'Save tags'}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   const toggleComments = async (videoId) => {
@@ -639,6 +901,8 @@ function App() {
 
       <h2>{post.title}</h2>
 
+      {renderTagPills(post.id, post.tags || [])}
+
       {post.playback_url ? (
         <video
           className="feed-video"
@@ -785,6 +1049,10 @@ function App() {
 
               <h2>{post.title}</h2>
 
+              {renderTagPills(post.id, adminTagEditsByPostId[post.id] || post.tags || [], { editable: true })}
+
+              {Boolean(tagsExpandedByPostId[post.id]) ? renderTagEditor(post.id, post.tags || []) : null}
+
               <div className="video-meta">
                 <span>{post.duration_seconds ? `${post.duration_seconds}s` : 'Duration unavailable'}</span>
                 <span>{post.views || 0} views</span>
@@ -848,6 +1116,7 @@ function App() {
           description: uploadDescription,
           original_filename: uploadFile.name,
           duration_seconds: durationSeconds,
+          tags: uploadTags,
         }),
       })
 
@@ -876,6 +1145,8 @@ function App() {
       setUploadTitle('')
       setUploadDescription('')
       setUploadFile(null)
+      setUploadTags([])
+      setUploadTagDraft('')
       await loadFeed()
       setActivePage('feed')
     } catch (err) {
@@ -946,8 +1217,14 @@ function App() {
     return (
       <section className="page-content video-detail-page">
         <div className="page-heading">
+          <div className="author-block detail-author-block">
+            <span className="author-name">{video.display_name || video.username || video.owner_clerk_user_id}</span>
+            <span className="author-handle">@{video.username || video.owner_clerk_user_id}</span>
+          </div>
           <h2>{video.title}</h2>
         </div>
+
+        {renderTagPills(video.id, video.tags || [])}
 
         {video.playback_url ? (
           <video className="detail-video" controls preload="metadata">
@@ -1036,6 +1313,41 @@ function App() {
             rows="4"
           />
         </label>
+
+          <div className="tag-input-section">
+            <span className="tag-input-label">Tags</span>
+            <div className="tag-editor-row">
+              <input
+                type="text"
+                className="tag-input"
+                value={uploadTagDraft}
+                onChange={(event) => updateUploadTagDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    addUploadTag()
+                  }
+                }}
+                placeholder="Add a tag and press Enter"
+              />
+              <button type="button" className="secondary-btn" onClick={addUploadTag}>
+                Add
+              </button>
+            </div>
+
+            {uploadTags.length > 0 ? (
+              <div className="tag-editor-chip-list">
+                {uploadTags.map((tag, index) => (
+                  <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+                    {tag.text}
+                    <button type="button" className="tag-chip-remove" onClick={() => removeUploadTag(index)}>
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
 
         <label>
           <span>Video file</span>

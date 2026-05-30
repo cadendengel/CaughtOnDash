@@ -22,6 +22,7 @@ class VideoUploadFlowTests(TestCase):
                     'description': 'demo',
                     'original_filename': 'dashcam.mp4',
                     'duration_seconds': 42,
+                    'tags': ['Road rage', 'near miss', 'Road rage'],
                 }
             ),
             content_type='application/json',
@@ -36,7 +37,52 @@ class VideoUploadFlowTests(TestCase):
         self.assertEqual(payload['video']['title'], 'Test clip')
         self.assertEqual(payload['video']['status'], 'pending')
         self.assertEqual(payload['video']['duration_seconds'], 42)
+        self.assertEqual(payload['video']['tags'][0]['text'], 'Road rage')
+        self.assertEqual(payload['video']['tags'][0]['source'], 'user')
+        self.assertEqual(payload['video']['tags'][1]['text'], 'near miss')
         self.assertEqual(Video.objects.count(), 1)
+
+    def test_admin_can_update_existing_video_tags(self):
+        self._create_admin('admin-user')
+        create_response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Test clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 42,
+                    'tags': ['user tag'],
+                }
+            ),
+            content_type='application/json',
+        )
+        video_id = create_response.json()['video']['id']
+
+        response = self.client.patch(
+            f'/api/videos/admin/videos/{video_id}/tags/',
+            data=json.dumps(
+                {
+                    'tags': [
+                        {'text': 'user tag', 'source': 'user'},
+                        {'text': 'scene analysis', 'source': 'admin'},
+                        {'text': 'scene analysis', 'source': 'admin'},
+                    ]
+                }
+            ),
+            content_type='application/json',
+            HTTP_X_CLERK_USER_ID='admin-user',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([tag['source'] for tag in payload['video']['tags']], ['user', 'admin'])
+        self.assertEqual(payload['video']['tags'][1]['text'], 'scene analysis')
+
+        video = Video.objects.get(id=video_id)
+        self.assertEqual(video.tags[0]['source'], 'user')
+        self.assertEqual(video.tags[1]['source'], 'admin')
 
     @patch('apps.videos.views.upload_bytes_to_supabase')
     def test_upload_file_stores_video_to_supabase_and_marks_ready(self, mock_upload_bytes):

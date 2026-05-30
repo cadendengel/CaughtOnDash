@@ -4,6 +4,8 @@ import uuid
 
 from django.db import models
 
+from apps.videos.tagging import normalize_video_tags, serialize_video_tags
+
 
 class Video(models.Model):
     """Dashcam video asset."""
@@ -116,11 +118,14 @@ class Video(models.Model):
             "thumbnail_url": self.thumbnail_url,
             "duration_seconds": self.duration_seconds,
             "views": self.views,
-            "tags": self.tags,
+            "tags": serialize_video_tags(self.tags),
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
         }
+
+    def set_tags(self, tags, default_source='user'):
+        self.tags = normalize_video_tags(tags, default_source=default_source)
 
 
 class VideoLike(models.Model):

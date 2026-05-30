@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.accounts.models import Profile
 from apps.accounts.auth import admin_required
 from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
+from apps.videos.tagging import normalize_video_tags
 from apps.store import get_identity, parse_json_request, response_envelope
 from apps.storage import upload_bytes_to_supabase
 
@@ -67,6 +68,19 @@ def _serialize_comment_row(row: dict) -> dict:
     }
 
 
+def _video_author_payload(video: Video) -> dict:
+    profile = _profile_for_clerk_user_id(video.owner_clerk_user_id)
+    return {
+        'username': profile.username if profile else video.owner_clerk_user_id,
+        'display_name': profile.display_name if profile else video.owner_clerk_user_id,
+        'avatar_url': profile.avatar_url if profile else '',
+    }
+
+
+def _normalize_video_payload_tags(payload: dict, default_source: str = 'user') -> list[dict[str, str]]:
+    return normalize_video_tags(payload.get('tags', []), default_source=default_source)
+
+
 @csrf_exempt
 def upload_url_view(request):
     # POST /api/videos/upload-url/ - create a presigned upload target for a new video.
@@ -96,7 +110,7 @@ def upload_url_view(request):
         status='pending',
         original_filename=str(payload.get('original_filename') or payload.get('filename') or ''),
         duration_seconds=max(0, int(float(payload.get('duration_seconds') or 0))),
-        tags=[str(tag).strip() for tag in payload.get('tags', []) if str(tag).strip()] if isinstance(payload.get('tags', []), list) else [],
+        tags=_normalize_video_payload_tags(payload, default_source='user'),
     )
 
     # For simplicity we accept uploads via the backend at /api/videos/upload/.
@@ -225,6 +239,7 @@ def video_detail_view(request, video_id):
 
     current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
     video_data = video.to_dict()
+    video_data.update(_video_author_payload(video))
     video_data['likes_count'] = VideoLike.objects.filter(video=video).count()
     video_data['comments_count'] = VideoComment.objects.filter(video=video).count()
     video_data['liked'] = bool(
@@ -543,6 +558,33 @@ def admin_comment_delete_view(request, comment_id):
     )
 
 
+@csrf_exempt
+@admin_required
+def admin_video_tags_view(request, video_id):
+    # PATCH /api/videos/admin/videos/<video_id>/tags/ - update a video's tags.
+    if request.method != 'PATCH':
+        return _method_not_allowed('PATCH')
+
+    try:
+        video_uuid = UUID(str(video_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
+
+    try:
+        video = Video.objects.get(id=video_uuid)
+    except Video.DoesNotExist:
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    payload = parse_json_request(request)
+    if 'tags' not in payload or not isinstance(payload.get('tags'), list):
+        return JsonResponse({'detail': 'tags must be provided as a list.'}, status=400)
+
+    video.tags = _normalize_video_payload_tags(payload, default_source='admin')
+    video.save(update_fields=['tags', 'updated_at'])
+
+    return JsonResponse(response_envelope('video-tags', {'video': video.to_dict()}), status=200)
+
+
 def video_update_delete_view(request, video_id):
     # PATCH / DELETE for video metadata or soft-delete
     if request.method not in ('PATCH', 'DELETE'):
@@ -575,7 +617,7 @@ def video_update_delete_view(request, video_id):
             video.visibility = str(payload.get('visibility', video.visibility)).strip() or video.visibility
             updated_fields.append('visibility')
         if 'tags' in payload and isinstance(payload.get('tags'), list):
-            video.tags = [str(tag).strip() for tag in payload.get('tags', []) if str(tag).strip()]
+            video.tags = _normalize_video_payload_tags(payload, default_source='admin')
             updated_fields.append('tags')
 
         if updated_fields:
