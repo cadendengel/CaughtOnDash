@@ -47,6 +47,25 @@ def _serialize_comment(comment: VideoComment, liked_comment_ids: set[UUID] | Non
     }
 
 
+def _serialize_comment_row(row: dict) -> dict:
+    profile = _profile_for_clerk_user_id(row['user_clerk_user_id'])
+    return {
+        'id': str(row['id']),
+        'video_id': str(row['video_id']),
+        'parent_comment_id': None,
+        'user_clerk_user_id': row['user_clerk_user_id'],
+        'username': profile.username if profile else row['user_clerk_user_id'],
+        'display_name': profile.display_name if profile else row['user_clerk_user_id'],
+        'avatar_url': profile.avatar_url if profile else '',
+        'text': row['text'],
+        'likes_count': 0,
+        'liked': False,
+        'replies': [],
+        'created_at': row['created_at'].isoformat() if hasattr(row['created_at'], 'isoformat') else row['created_at'],
+        'updated_at': row['updated_at'].isoformat() if hasattr(row['updated_at'], 'isoformat') else row['updated_at'],
+    }
+
+
 @csrf_exempt
 def upload_url_view(request):
     # POST /api/videos/upload-url/ - create a presigned upload target for a new video.
@@ -330,38 +349,50 @@ def video_comments_view(request, video_id):
     current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
 
     if request.method == 'GET':
-        top_level_comments = list(
-            VideoComment.objects.filter(video=video, parent_comment__isnull=True)
-            .annotate(likes_count=Count('likes', distinct=True))
-            .prefetch_related(
-                Prefetch(
-                    'replies',
-                    queryset=VideoComment.objects.annotate(likes_count=Count('likes', distinct=True)).order_by('created_at'),
+        try:
+            top_level_comments = list(
+                VideoComment.objects.filter(video=video, parent_comment__isnull=True)
+                .annotate(likes_count=Count('likes', distinct=True))
+                .prefetch_related(
+                    Prefetch(
+                        'replies',
+                        queryset=VideoComment.objects.annotate(likes_count=Count('likes', distinct=True)).order_by('created_at'),
+                    )
                 )
-            )
-            .order_by('created_at')
-        )
-
-        comment_ids = {comment.id for comment in top_level_comments}
-        for comment in top_level_comments:
-            comment_ids.update(reply.id for reply in comment.replies.all())
-
-        liked_comment_ids = set()
-        if current_clerk_user_id and comment_ids:
-            liked_comment_ids = set(
-                VideoCommentLike.objects.filter(
-                    comment_id__in=comment_ids,
-                    user_clerk_user_id=current_clerk_user_id,
-                ).values_list('comment_id', flat=True)
+                .order_by('created_at')
             )
 
-        comments = [_serialize_comment(comment, liked_comment_ids) for comment in top_level_comments]
+            comment_ids = {comment.id for comment in top_level_comments}
+            for comment in top_level_comments:
+                comment_ids.update(reply.id for reply in comment.replies.all())
+
+            liked_comment_ids = set()
+            if current_clerk_user_id and comment_ids:
+                liked_comment_ids = set(
+                    VideoCommentLike.objects.filter(
+                        comment_id__in=comment_ids,
+                        user_clerk_user_id=current_clerk_user_id,
+                    ).values_list('comment_id', flat=True)
+                )
+
+            comments = [_serialize_comment(comment, liked_comment_ids) for comment in top_level_comments]
+            count = len(comment_ids)
+        except Exception:
+            # Production fallback for deployments that have the older comment schema.
+            rows = list(
+                VideoComment.objects.filter(video=video)
+                .order_by('created_at')
+                .values('id', 'video_id', 'user_clerk_user_id', 'text', 'created_at', 'updated_at')
+            )
+            comments = [_serialize_comment_row(row) for row in rows]
+            count = len(comments)
+
         return JsonResponse(
             response_envelope(
                 'video-comments',
                 {
                     'video_id': str(video.id),
-                    'count': len(comment_ids),
+                    'count': count,
                     'items': comments,
                 },
             ),
