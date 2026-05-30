@@ -8,6 +8,7 @@ from django.db.models import Count, F, Prefetch
 from django.utils import timezone
 
 from apps.accounts.models import Profile
+from apps.accounts.auth import admin_required
 from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
 from apps.store import get_identity, parse_json_request, response_envelope
 from apps.storage import upload_bytes_to_supabase
@@ -491,6 +492,55 @@ def video_comment_like_view(request, comment_id):
     )
 
     return _method_not_allowed('GET', 'POST')
+
+
+@csrf_exempt
+@admin_required
+def admin_video_delete_view(request, video_id):
+    # DELETE /api/admin/videos/<video_id>/ - permanently remove a video and cascaded comments/likes.
+    if request.method != 'DELETE':
+        return _method_not_allowed('DELETE')
+
+    try:
+        video_uuid = UUID(str(video_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
+
+    try:
+        video = Video.objects.get(id=video_uuid)
+    except Video.DoesNotExist:
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    video.delete()
+    return JsonResponse({'detail': 'Video deleted.', 'video_id': str(video_uuid)}, status=200)
+
+
+@csrf_exempt
+@admin_required
+def admin_comment_delete_view(request, comment_id):
+    # DELETE /api/admin/comments/<comment_id>/ - permanently remove a comment or reply.
+    if request.method != 'DELETE':
+        return _method_not_allowed('DELETE')
+
+    try:
+        comment_uuid = UUID(str(comment_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid comment_id format.'}, status=400)
+
+    try:
+        comment = VideoComment.objects.select_related('video').get(id=comment_uuid)
+    except VideoComment.DoesNotExist:
+        return JsonResponse({'detail': 'Comment not found.'}, status=404)
+
+    comment.delete()
+    return JsonResponse(
+        {
+            'detail': 'Comment deleted.',
+            'comment_id': str(comment_uuid),
+            'video_id': str(comment.video.id),
+        },
+        status=200,
+    )
 
 
 def video_update_delete_view(request, video_id):

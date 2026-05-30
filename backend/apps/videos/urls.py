@@ -11,6 +11,8 @@ from .views import (
     video_detail_view,
     video_status_view,
     video_update_delete_view,
+    admin_video_delete_view,
+    admin_comment_delete_view,
 )
 
 urlpatterns = [
@@ -25,6 +27,10 @@ urlpatterns = [
     path('<uuid:video_id>/comments/', video_comments_view, name='video-comments'),
     # POST /api/videos/comments/<comment_id>/like/ - toggle comment likes.
     path('comments/<uuid:comment_id>/like/', video_comment_like_view, name='video-comment-like'),
+    # DELETE /api/admin/videos/<video_id>/ - permanently delete a video.
+    path('admin/videos/<uuid:video_id>/', admin_video_delete_view, name='admin-video-delete'),
+    # DELETE /api/admin/comments/<comment_id>/ - permanently delete a comment or reply.
+    path('admin/comments/<uuid:comment_id>/', admin_comment_delete_view, name='admin-comment-delete'),
     # POST /api/videos/<video_id>/like/ - toggle a like for the current user.
     path('<uuid:video_id>/like/', video_like_view, name='video-like'),
     # GET /api/videos/<video_id>/ - return the full video object and metadata.

@@ -4,11 +4,14 @@ from unittest.mock import patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
-from apps.accounts.models import Profile
+from apps.accounts.models import AdminUser, Profile
 from apps.videos.models import Video
 
 
 class VideoUploadFlowTests(TestCase):
+    def _create_admin(self, clerk_user_id='admin-user', email='admin@example.com'):
+        return AdminUser.objects.create(clerk_user_id=clerk_user_id, email=email)
+
     def test_upload_url_creates_video_and_returns_upload_endpoint(self):
         response = self.client.post(
             '/api/videos/upload-url/',
@@ -260,3 +263,114 @@ class VideoUploadFlowTests(TestCase):
         unlike_payload = unlike_response.json()
         self.assertFalse(unlike_payload['video']['liked'])
         self.assertEqual(unlike_payload['video']['likes_count'], 0)
+
+    def test_admin_can_delete_comment_and_reply(self):
+        self._create_admin('admin-user')
+        Profile.objects.create(
+            clerk_user_id='comment-user',
+            email='comment@example.com',
+            username='commenter',
+            display_name='Comment User',
+        )
+        create_response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Test clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 15,
+                }
+            ),
+            content_type='application/json',
+        )
+        video_id = create_response.json()['video']['id']
+
+        comment_response = self.client.post(
+            f'/api/videos/{video_id}/comments/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'comment-user',
+                    'text': 'Nice catch.',
+                }
+            ),
+            content_type='application/json',
+        )
+        comment_id = comment_response.json()['comment']['id']
+
+        reply_response = self.client.post(
+            f'/api/videos/{video_id}/comments/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'reply-user',
+                    'parent_comment_id': comment_id,
+                    'text': 'Reply text',
+                }
+            ),
+            content_type='application/json',
+        )
+        reply_id = reply_response.json()['comment']['id']
+
+        delete_reply_response = self.client.delete(
+            f'/api/videos/admin/comments/{reply_id}/',
+            HTTP_X_CLERK_USER_ID='admin-user',
+        )
+        self.assertEqual(delete_reply_response.status_code, 200)
+        self.assertEqual(Video.objects.get(id=video_id).comments.count(), 1)
+
+        delete_comment_response = self.client.delete(
+            f'/api/videos/admin/comments/{comment_id}/',
+            HTTP_X_CLERK_USER_ID='admin-user',
+        )
+        self.assertEqual(delete_comment_response.status_code, 200)
+        self.assertEqual(Video.objects.get(id=video_id).comments.count(), 0)
+
+    def test_admin_can_delete_video(self):
+        self._create_admin('admin-user')
+        create_response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Test clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 15,
+                }
+            ),
+            content_type='application/json',
+        )
+        video_id = create_response.json()['video']['id']
+
+        delete_response = self.client.delete(
+            f'/api/videos/admin/videos/{video_id}/',
+            HTTP_X_CLERK_USER_ID='admin-user',
+        )
+
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertFalse(Video.objects.filter(id=video_id).exists())
+
+    def test_non_admin_cannot_delete_video(self):
+        create_response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Test clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 15,
+                }
+            ),
+            content_type='application/json',
+        )
+        video_id = create_response.json()['video']['id']
+
+        delete_response = self.client.delete(
+            f'/api/videos/admin/videos/{video_id}/',
+            HTTP_X_CLERK_USER_ID='not-admin',
+        )
+
+        self.assertEqual(delete_response.status_code, 403)
+        self.assertTrue(Video.objects.filter(id=video_id).exists())
