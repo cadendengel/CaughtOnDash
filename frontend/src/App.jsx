@@ -253,7 +253,7 @@ function App() {
       }
 
       const data = await response.json()
-      const result = data.video || {}
+      const result = data.video || (data.payload && data.payload.video) || {}
       setPosts((current) =>
         current.map((post) =>
           post.id === videoId
