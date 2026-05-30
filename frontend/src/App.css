@@ -134,6 +134,11 @@
   border-color: transparent;
 }
 
+.nav-btn:hover,
+.danger-btn:hover {
+  transform: translateY(-1px);
+}
+
 .user-chip {
   display: flex;
   align-items: center;
@@ -403,6 +408,46 @@
   opacity: 0.6;
   cursor: wait;
   transform: none;
+}
+
+.danger-btn {
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+  padding: 8px 14px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  transition: background 0.2s ease, transform 0.12s ease, border-color 0.2s ease;
+}
+
+.danger-btn:hover {
+  background: rgba(220, 38, 38, 0.14);
+}
+
+.danger-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  transform: none;
+}
+
+.admin-list {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-card {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-actions-row {
+  margin-top: 0;
+}
+
+.admin-comments-panel {
+  margin-top: 0;
 }
 
 .comments-panel {

@@ -6,6 +6,7 @@ import './VideoDetail.css'
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const [activePage, setActivePage] = useState('feed')
+  const [isAdmin, setIsAdmin] = useState(false)
   const [posts, setPosts] = useState([])
   const [commentsByPostId, setCommentsByPostId] = useState({})
   const [commentsVisibleByPostId, setCommentsVisibleByPostId] = useState({})
@@ -124,10 +125,13 @@ function App() {
       const res = await fetch(`${API_BASE}/api/feed/`, { headers })
       if (!res.ok) return
       const data = await res.json()
-      setPosts(data.items || [])
+      const items = data.items || []
+      setPosts(items)
+      return items
     } catch (err) {
       // ignore for now
     }
+    return []
   }
 
   const loadComments = async (videoId) => {
@@ -141,11 +145,44 @@ function App() {
       const res = await fetch(`${API_BASE}/api/videos/${videoId}/comments/`, { headers })
       if (!res.ok) return
       const data = await res.json()
-      setCommentsByPostId((current) => ({ ...current, [videoId]: data.items || [] }))
+      const items = data.items || []
+      setCommentsByPostId((current) => ({ ...current, [videoId]: items }))
+      return items
     } catch (err) {
       // ignore for now
     } finally {
       setLoadingCommentsByPostId((current) => ({ ...current, [videoId]: false }))
+    }
+    return []
+  }
+
+  const loadAdminOverview = async () => {
+    const items = await loadFeed()
+    await Promise.all(items.map((post) => loadComments(post.id)))
+  }
+
+  const loadCurrentUserSummary = async () => {
+    if (!user?.id) {
+      setIsAdmin(false)
+      return
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/me/`, {
+        headers: {
+          'X-Clerk-User-Id': user.id,
+        },
+      })
+
+      if (!res.ok) {
+        setIsAdmin(false)
+        return
+      }
+
+      const data = await res.json()
+      setIsAdmin(Boolean(data.is_admin))
+    } catch (err) {
+      setIsAdmin(false)
     }
   }
 
@@ -197,6 +234,15 @@ function App() {
       window.history.pushState({}, '', getDetailUrl(videoId))
     }
     await loadVideoDetail(videoId)
+  }
+
+  const openAdminPanel = async () => {
+    if (!isAdmin) {
+      return
+    }
+
+    setActivePage('admin')
+    await loadAdminOverview()
   }
 
   const closeDetail = () => {
@@ -409,6 +455,65 @@ function App() {
     }
   }
 
+  const deleteAdminVideo = async (videoId) => {
+    if (!isAdmin || !videoId) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/videos/admin/videos/${videoId}/`, {
+        method: 'DELETE',
+        headers: {
+          'X-Clerk-User-Id': user?.id || '',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Could not delete video.')
+      }
+
+      setPosts((current) => current.filter((post) => post.id !== videoId))
+      setCommentsByPostId((current) => {
+        const next = { ...current }
+        delete next[videoId]
+        return next
+      })
+      if (currentVideo?.id === videoId) {
+        closeDetail()
+      }
+      await loadFeed()
+    } catch (err) {
+      // ignore for now
+    }
+  }
+
+  const deleteAdminComment = async (videoId, commentId) => {
+    if (!isAdmin || !videoId || !commentId) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/videos/admin/comments/${commentId}/`, {
+        method: 'DELETE',
+        headers: {
+          'X-Clerk-User-Id': user?.id || '',
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error('Could not delete comment.')
+      }
+
+      await loadComments(videoId)
+      await loadFeed()
+      if (currentVideo?.id === videoId) {
+        await loadVideoDetail(videoId, { skipViewCount: true })
+      }
+    } catch (err) {
+      // ignore for now
+    }
+  }
+
   const handleCommentSubmit = async (videoId, event) => {
     event.preventDefault()
     if (!videoId || commentLoadingByPostId[videoId]) {
@@ -472,6 +577,7 @@ function App() {
 
     const syncAndLoad = async () => {
       await syncProfile()
+      await loadCurrentUserSummary()
       await loadFeed()
 
       const videoIdFromUrl = typeof window === 'undefined'
@@ -485,6 +591,12 @@ function App() {
 
     syncAndLoad()
   }, [isSignedIn, user?.id])
+
+  useEffect(() => {
+    if (activePage === 'admin' && !isAdmin) {
+      setActivePage('feed')
+    }
+  }, [activePage, isAdmin])
 
   if (!isLoaded) {
     return (
@@ -568,7 +680,7 @@ function App() {
     </article>
   )
 
-  const renderCommentNode = (comment, videoId, depth = 0) => {
+  const renderCommentNode = (comment, videoId, depth = 0, showAdminActions = false) => {
     const handle = comment.username || comment.user_clerk_user_id
     const isReply = depth > 0
 
@@ -604,6 +716,12 @@ function App() {
               Reply
             </button>
           ) : null}
+
+          {showAdminActions && isAdmin ? (
+            <button type="button" className="danger-btn" onClick={() => deleteAdminComment(videoId, comment.id)}>
+              Delete
+            </button>
+          ) : null}
         </div>
 
         {!isReply && replyComposerOpenByCommentId[comment.id] ? (
@@ -633,12 +751,72 @@ function App() {
 
         {!isReply && Array.isArray(comment.replies) && comment.replies.length > 0 ? (
           <div className="comment-replies">
-            {comment.replies.map((reply) => renderCommentNode(reply, videoId, depth + 1))}
+            {comment.replies.map((reply) => renderCommentNode(reply, videoId, depth + 1, showAdminActions))}
           </div>
         ) : null}
       </article>
     )
   }
+
+  const renderAdminPage = () => (
+    <section className="page-content admin-page">
+      <div className="page-heading">
+        <h2>Admin</h2>
+        <p>Admin-only moderation tools for posts, comments, and replies.</p>
+      </div>
+
+      {posts.length === 0 ? (
+        <div className="empty-feed-card">
+          <p className="eyebrow">Nothing to moderate</p>
+          <h3>No posts available</h3>
+          <p>When content appears, it will show here with delete controls.</p>
+        </div>
+      ) : (
+        <div className="admin-list">
+          {posts.map((post) => (
+            <article key={post.id} className="feed-card admin-card">
+              <div className="feed-card-head">
+                <div className="author-block">
+                  <span className="author-name">{post.display_name || post.username || post.owner_clerk_user_id}</span>
+                  <span className="author-handle">@{post.username || post.owner_clerk_user_id}</span>
+                </div>
+                <span className="timestamp">{formatTimestamp(post.created_at)}</span>
+              </div>
+
+              <h2>{post.title}</h2>
+
+              <div className="video-meta">
+                <span>{post.duration_seconds ? `${post.duration_seconds}s` : 'Duration unavailable'}</span>
+                <span>{post.views || 0} views</span>
+                <span>{post.likes_count || 0} likes</span>
+                <span>{post.comments_count || 0} comments</span>
+              </div>
+
+              <div className="post-actions admin-actions-row">
+                <button type="button" className="danger-btn" onClick={() => deleteAdminVideo(post.id)}>
+                  Delete post
+                </button>
+              </div>
+
+              <div className="comments-panel admin-comments-panel">
+                {loadingCommentsByPostId[post.id] ? (
+                  <p className="comments-empty">Loading comments...</p>
+                ) : null}
+
+                {!loadingCommentsByPostId[post.id] && (commentsByPostId[post.id] || []).length === 0 ? (
+                  <p className="comments-empty">No comments yet.</p>
+                ) : null}
+
+                <div className="comments-list">
+                  {(commentsByPostId[post.id] || []).map((comment) => renderCommentNode(comment, post.id, 0, true))}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  )
 
   const handleUploadSubmit = async (event) => {
     event.preventDefault()
@@ -906,6 +1084,15 @@ function App() {
           >
             Post Video
           </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              className={activePage === 'admin' ? 'nav-btn active' : 'nav-btn'}
+              onClick={openAdminPanel}
+            >
+              Admin
+            </button>
+          ) : null}
         </nav>
 
         <div className="user-chip">
@@ -914,7 +1101,13 @@ function App() {
         </div>
       </header>
 
-      {activePage === 'feed' ? renderFeedPage() : activePage === 'post-video' ? renderPostVideoPage() : renderDetailPage()}
+      {activePage === 'feed'
+        ? renderFeedPage()
+        : activePage === 'post-video'
+          ? renderPostVideoPage()
+          : activePage === 'admin'
+            ? renderAdminPage()
+            : renderDetailPage()}
     </main>
   )
 }

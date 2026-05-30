@@ -1,7 +1,7 @@
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 
-from apps.accounts.models import Profile
+from apps.accounts.models import AdminUser, Profile
 from apps.store import get_identity, parse_json_request, response_envelope
 
 
@@ -54,7 +54,16 @@ def me_view(request):
 
     identity = get_identity(request)
     profile = upsert_profile(identity)
-    return JsonResponse(response_envelope('me', {'profile': profile.to_dict()}), status=200)
+    return JsonResponse(
+        response_envelope(
+            'me',
+            {
+                'profile': profile.to_dict(),
+                'is_admin': AdminUser.is_admin_for(identity['clerk_user_id']),
+            },
+        ),
+        status=200,
+    )
 
 
 def profile_me_view(request):

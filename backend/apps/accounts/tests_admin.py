@@ -33,3 +33,14 @@ class AdminUserTests(TestCase):
         req = self.factory.get('/admin-test', HTTP_X_CLERK_USER_ID='super-1')
         resp = protected(req)
         self.assertEqual(resp.status_code, 200)
+
+    def test_me_view_includes_admin_flag(self):
+        from apps.accounts.views import me_view
+        import json
+
+        AdminUser.objects.create(clerk_user_id='admin-1')
+        req = self.factory.get('/api/auth/me/', HTTP_X_CLERK_USER_ID='admin-1')
+        resp = me_view(req)
+        self.assertEqual(resp.status_code, 200)
+        payload = json.loads(resp.content)
+        self.assertTrue(payload['is_admin'])
