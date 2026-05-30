@@ -7,6 +7,7 @@ from .views import (
     video_view_count_view,
     video_like_view,
     video_comments_view,
+    video_comment_like_view,
     video_detail_view,
     video_status_view,
     video_update_delete_view,
@@ -22,6 +23,8 @@ urlpatterns = [
     path('<uuid:video_id>/view/', video_view_count_view, name='video-view-count'),
     # GET/POST /api/videos/<video_id>/comments/ - list or add comments.
     path('<uuid:video_id>/comments/', video_comments_view, name='video-comments'),
+    # POST /api/videos/comments/<comment_id>/like/ - toggle comment likes.
+    path('comments/<uuid:comment_id>/like/', video_comment_like_view, name='video-comment-like'),
     # POST /api/videos/<video_id>/like/ - toggle a like for the current user.
     path('<uuid:video_id>/like/', video_like_view, name='video-like'),
     # GET /api/videos/<video_id>/ - return the full video object and metadata.

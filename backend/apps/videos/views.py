@@ -1,15 +1,14 @@
-from django.views.decorators.csrf import csrf_exempt
-from uuid import UUID
 import os
+from uuid import UUID
 
 from django.views.decorators.csrf import csrf_exempt
 
 from django.http import JsonResponse
-from django.db.models import F
+from django.db.models import Count, F, Prefetch
 from django.utils import timezone
 
 from apps.accounts.models import Profile
-from apps.videos.models import Video, VideoComment, VideoLike
+from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
 from apps.store import get_identity, parse_json_request, response_envelope
 from apps.storage import upload_bytes_to_supabase
 
@@ -25,16 +24,24 @@ def _profile_for_clerk_user_id(clerk_user_id: str) -> Profile | None:
         return None
 
 
-def _serialize_comment(comment: VideoComment) -> dict:
+def _serialize_comment(comment: VideoComment, liked_comment_ids: set[UUID] | None = None) -> dict:
     profile = _profile_for_clerk_user_id(comment.user_clerk_user_id)
+    replies = []
+    if comment.parent_comment_id is None:
+        replies = [_serialize_comment(reply, liked_comment_ids) for reply in comment.replies.all()]
+
     return {
         'id': str(comment.id),
         'video_id': str(comment.video.id),
+        'parent_comment_id': str(comment.parent_comment_id) if comment.parent_comment_id else None,
         'user_clerk_user_id': comment.user_clerk_user_id,
         'username': profile.username if profile else comment.user_clerk_user_id,
         'display_name': profile.display_name if profile else comment.user_clerk_user_id,
         'avatar_url': profile.avatar_url if profile else '',
         'text': comment.text,
+        'likes_count': getattr(comment, 'likes_count', comment.likes.count()),
+        'liked': bool(liked_comment_ids and comment.id in liked_comment_ids),
+        'replies': replies,
         'created_at': comment.created_at.isoformat(),
         'updated_at': comment.updated_at.isoformat(),
     }
@@ -191,11 +198,22 @@ def video_detail_view(request, video_id):
     if video.deleted_at is not None:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
-    # Increment view count
-    video.views += 1
-    video.save(update_fields=['views', 'updated_at'])
+    if request.headers.get('X-Skip-View-Count') not in ('1', 'true', 'True'):
+        # Increment view count on user-initiated opens only.
+        video.views += 1
+        video.save(update_fields=['views', 'updated_at'])
 
-    return JsonResponse(response_envelope('video', {'video': video.to_dict()}), status=200)
+    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+    video_data = video.to_dict()
+    video_data['likes_count'] = VideoLike.objects.filter(video=video).count()
+    video_data['comments_count'] = VideoComment.objects.filter(video=video).count()
+    video_data['liked'] = bool(
+        current_clerk_user_id
+        and VideoLike.objects.filter(video=video, user_clerk_user_id=current_clerk_user_id).exists()
+    )
+    video_data['shares_count'] = 0
+
+    return JsonResponse(response_envelope('video', {'video': video_data}), status=200)
 
 
 def video_status_view(request, video_id):
@@ -309,17 +327,41 @@ def video_comments_view(request, video_id):
     except Video.DoesNotExist:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
+    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+
     if request.method == 'GET':
-        comments = [
-            _serialize_comment(comment)
-            for comment in VideoComment.objects.filter(video=video).order_by('created_at')
-        ]
+        top_level_comments = list(
+            VideoComment.objects.filter(video=video, parent_comment__isnull=True)
+            .annotate(likes_count=Count('likes', distinct=True))
+            .prefetch_related(
+                Prefetch(
+                    'replies',
+                    queryset=VideoComment.objects.annotate(likes_count=Count('likes', distinct=True)).order_by('created_at'),
+                )
+            )
+            .order_by('created_at')
+        )
+
+        comment_ids = {comment.id for comment in top_level_comments}
+        for comment in top_level_comments:
+            comment_ids.update(reply.id for reply in comment.replies.all())
+
+        liked_comment_ids = set()
+        if current_clerk_user_id and comment_ids:
+            liked_comment_ids = set(
+                VideoCommentLike.objects.filter(
+                    comment_id__in=comment_ids,
+                    user_clerk_user_id=current_clerk_user_id,
+                ).values_list('comment_id', flat=True)
+            )
+
+        comments = [_serialize_comment(comment, liked_comment_ids) for comment in top_level_comments]
         return JsonResponse(
             response_envelope(
                 'video-comments',
                 {
                     'video_id': str(video.id),
-                    'count': len(comments),
+                    'count': len(comment_ids),
                     'items': comments,
                 },
             ),
@@ -332,9 +374,27 @@ def video_comments_view(request, video_id):
         if not text:
             return JsonResponse({'detail': 'text is required.'}, status=400)
 
+        parent_comment = None
+        parent_comment_id_raw = payload.get('parent_comment_id')
+        if parent_comment_id_raw:
+            try:
+                parent_comment_uuid = UUID(str(parent_comment_id_raw))
+            except ValueError:
+                return JsonResponse({'detail': 'parent_comment_id must be a valid UUID.'}, status=400)
+
+            try:
+                parent_comment = VideoComment.objects.get(
+                    id=parent_comment_uuid,
+                    video=video,
+                    parent_comment__isnull=True,
+                )
+            except VideoComment.DoesNotExist:
+                return JsonResponse({'detail': 'Parent comment not found.'}, status=404)
+
         identity = get_identity(request, payload)
         comment = VideoComment.objects.create(
             video=video,
+            parent_comment=parent_comment,
             user_clerk_user_id=identity['clerk_user_id'],
             text=text,
         )
@@ -343,11 +403,61 @@ def video_comments_view(request, video_id):
             response_envelope(
                 'video-comment',
                 {
-                    'comment': _serialize_comment(comment),
+                    'comment': _serialize_comment(comment, set()),
                 },
             ),
             status=201,
         )
+
+
+@csrf_exempt
+def video_comment_like_view(request, comment_id):
+    # POST /api/videos/comments/<comment_id>/like/ - toggle a like for a comment or reply.
+    if request.method != 'POST':
+        return _method_not_allowed('POST')
+
+    try:
+        comment_uuid = UUID(str(comment_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid comment_id format.'}, status=400)
+
+    try:
+        comment = VideoComment.objects.select_related('video').get(
+            id=comment_uuid,
+            video__deleted_at__isnull=True,
+        )
+    except VideoComment.DoesNotExist:
+        return JsonResponse({'detail': 'Comment not found.'}, status=404)
+
+    payload = parse_json_request(request)
+    identity = get_identity(request, payload)
+
+    like = VideoCommentLike.objects.filter(comment=comment, user_clerk_user_id=identity['clerk_user_id']).first()
+    liked = False
+
+    if like is None:
+        VideoCommentLike.objects.create(comment=comment, user_clerk_user_id=identity['clerk_user_id'])
+        liked = True
+    else:
+        like.delete()
+
+    likes_count = VideoCommentLike.objects.filter(comment=comment).count()
+
+    return JsonResponse(
+        response_envelope(
+            'video-comment-like',
+            {
+                'comment': {
+                    'id': str(comment.id),
+                    'video_id': str(comment.video.id),
+                    'parent_comment_id': str(comment.parent_comment_id) if comment.parent_comment_id else None,
+                    'likes_count': likes_count,
+                    'liked': liked,
+                }
+            },
+        ),
+        status=200,
+    )
 
     return _method_not_allowed('GET', 'POST')
 

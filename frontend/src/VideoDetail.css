@@ -46,6 +46,12 @@
   padding: 8px 0;
 }
 
+.video-detail-page .comment-reply-card {
+  margin-left: 18px;
+  padding-left: 14px;
+  border-left: 2px solid rgba(15, 23, 42, 0.08);
+}
+
 .video-detail-page .comment-head {
   display: flex;
   justify-content: space-between;
@@ -67,6 +73,30 @@
   font-size: 0.9rem;
 }
 
+.video-detail-page .comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.video-detail-page .comment-replies {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.video-detail-page .reply-form {
+  margin-top: 10px;
+}
+
+.video-detail-page .reply-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 0;
+}
+
 .video-detail-page .comments-empty {
   color: #777;
   padding: 12px 0;
@@ -85,5 +115,10 @@
     max-height: 52vh;
     padding: 12px;
     border-radius: 20px;
+  }
+
+  .video-detail-page .comment-reply-card {
+    margin-left: 12px;
+    padding-left: 10px;
   }
 }

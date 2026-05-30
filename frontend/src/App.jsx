@@ -10,9 +10,13 @@ function App() {
   const [commentsByPostId, setCommentsByPostId] = useState({})
   const [commentsVisibleByPostId, setCommentsVisibleByPostId] = useState({})
   const [commentDraftsByPostId, setCommentDraftsByPostId] = useState({})
+  const [replyDraftsByCommentId, setReplyDraftsByCommentId] = useState({})
+  const [replyComposerOpenByCommentId, setReplyComposerOpenByCommentId] = useState({})
   const [loadingCommentsByPostId, setLoadingCommentsByPostId] = useState({})
   const [likeLoadingByPostId, setLikeLoadingByPostId] = useState({})
   const [commentLoadingByPostId, setCommentLoadingByPostId] = useState({})
+  const [commentLikeLoadingByCommentId, setCommentLikeLoadingByCommentId] = useState({})
+  const [replyLoadingByCommentId, setReplyLoadingByCommentId] = useState({})
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadDescription, setUploadDescription] = useState('')
   const [uploadFile, setUploadFile] = useState(null)
@@ -133,7 +137,8 @@ function App() {
 
     setLoadingCommentsByPostId((current) => ({ ...current, [videoId]: true }))
     try {
-      const res = await fetch(`${API_BASE}/api/videos/${videoId}/comments/`)
+      const headers = user?.id ? { 'X-Clerk-User-Id': user.id } : {}
+      const res = await fetch(`${API_BASE}/api/videos/${videoId}/comments/`, { headers })
       if (!res.ok) return
       const data = await res.json()
       setCommentsByPostId((current) => ({ ...current, [videoId]: data.items || [] }))
@@ -154,12 +159,19 @@ function App() {
     return `${url.pathname}?${url.searchParams.toString()}`
   }
 
-  const loadVideoDetail = async (videoId) => {
+  const loadVideoDetail = async (videoId, options = {}) => {
+    const { skipViewCount = false } = options
     if (!videoId) return
-    setDetailLoading(true)
-    setCurrentVideo(null)
+    if (!skipViewCount) {
+      setDetailLoading(true)
+      setCurrentVideo(null)
+    }
     try {
-      const res = await fetch(`${API_BASE}/api/videos/${videoId}/`)
+      const headers = user?.id ? { 'X-Clerk-User-Id': user.id } : {}
+      if (skipViewCount) {
+        headers['X-Skip-View-Count'] = '1'
+      }
+      const res = await fetch(`${API_BASE}/api/videos/${videoId}/`, { headers })
       if (!res.ok) return
       const data = await res.json()
       // Response envelope: payload.video
@@ -170,7 +182,9 @@ function App() {
     } catch (err) {
       // ignore
     } finally {
-      setDetailLoading(false)
+      if (!skipViewCount) {
+        setDetailLoading(false)
+      }
     }
   }
 
@@ -230,6 +244,120 @@ function App() {
 
     if (nextVisible && !commentsByPostId[videoId]) {
       await loadComments(videoId)
+    }
+  }
+
+  const updateCommentTree = (comments, commentId, updater) => {
+    return (comments || []).map((comment) => {
+      if (comment.id === commentId) {
+        return updater(comment)
+      }
+
+      if (Array.isArray(comment.replies) && comment.replies.length > 0) {
+        return {
+          ...comment,
+          replies: updateCommentTree(comment.replies, commentId, updater),
+        }
+      }
+
+      return comment
+    })
+  }
+
+  const openReplyComposer = (commentId, username) => {
+    const replyHandle = username ? `@${username}` : ''
+    setReplyComposerOpenByCommentId((current) => ({ ...current, [commentId]: true }))
+    setReplyDraftsByCommentId((current) => {
+      const existingDraft = current[commentId] || ''
+      if (existingDraft.trim().length > 0) {
+        return current
+      }
+
+      return {
+        ...current,
+        [commentId]: replyHandle ? `${replyHandle} ` : '',
+      }
+    })
+  }
+
+  const closeReplyComposer = (commentId) => {
+    setReplyComposerOpenByCommentId((current) => ({ ...current, [commentId]: false }))
+  }
+
+  const toggleCommentLike = async (videoId, commentId) => {
+    if (!videoId || !commentId || commentLikeLoadingByCommentId[commentId]) {
+      return
+    }
+
+    setCommentLikeLoadingByCommentId((current) => ({ ...current, [commentId]: true }))
+    try {
+      const response = await fetch(`${API_BASE}/api/videos/comments/${commentId}/like/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(identityPayload),
+      })
+
+      if (!response.ok) {
+        throw new Error('Could not update comment like.')
+      }
+
+      const data = await response.json()
+      const result = data.comment || {}
+
+      setCommentsByPostId((current) => ({
+        ...current,
+        [videoId]: updateCommentTree(current[videoId] || [], commentId, (comment) => ({
+          ...comment,
+          likes_count: result.likes_count ?? comment.likes_count,
+          liked: result.liked ?? comment.liked,
+        })),
+      }))
+    } catch (err) {
+      // ignore for now
+    } finally {
+      setCommentLikeLoadingByCommentId((current) => ({ ...current, [commentId]: false }))
+    }
+  }
+
+  const handleReplySubmit = async (videoId, parentComment, event) => {
+    event.preventDefault()
+    if (!videoId || !parentComment?.id || replyLoadingByCommentId[parentComment.id]) {
+      return
+    }
+
+    const text = (replyDraftsByCommentId[parentComment.id] || '').trim()
+    if (!text) {
+      return
+    }
+
+    setReplyLoadingByCommentId((current) => ({ ...current, [parentComment.id]: true }))
+    try {
+      const response = await fetch(`${API_BASE}/api/videos/${videoId}/comments/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...identityPayload,
+          text,
+          parent_comment_id: parentComment.id,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Could not post reply.')
+      }
+
+      setReplyDraftsByCommentId((current) => ({ ...current, [parentComment.id]: '' }))
+      closeReplyComposer(parentComment.id)
+      await loadVideoDetail(videoId, { skipViewCount: true })
+      await loadFeed()
+    } catch (err) {
+      // ignore for now
+    } finally {
+      setReplyLoadingByCommentId((current) => ({ ...current, [parentComment.id]: false }))
     }
   }
 
@@ -309,24 +437,9 @@ function App() {
         throw new Error('Could not post comment.')
       }
 
-      const data = await response.json()
-      const comment = data.comment
-      setCommentsByPostId((current) => ({
-        ...current,
-        [videoId]: [...(current[videoId] || []), comment],
-      }))
-      setPosts((current) =>
-        current.map((post) =>
-          post.id === videoId
-            ? {
-                ...post,
-                comments_count: (post.comments_count || 0) + 1,
-              }
-            : post,
-        ),
-      )
       setCommentDraftsByPostId((current) => ({ ...current, [videoId]: '' }))
-      setCommentsVisibleByPostId((current) => ({ ...current, [videoId]: true }))
+      await loadVideoDetail(videoId, { skipViewCount: true })
+      await loadFeed()
     } catch (err) {
       // ignore for now
     } finally {
@@ -454,6 +567,78 @@ function App() {
       </div>
     </article>
   )
+
+  const renderCommentNode = (comment, videoId, depth = 0) => {
+    const handle = comment.username || comment.user_clerk_user_id
+    const isReply = depth > 0
+
+    return (
+      <article key={comment.id} className={isReply ? 'comment-card comment-reply-card' : 'comment-card'}>
+        <div className="comment-head">
+          <div className="comment-author-block">
+            <span className="comment-author-name">{comment.display_name || comment.username}</span>
+            <span className="comment-author-handle">@{handle}</span>
+          </div>
+          <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
+        </div>
+
+        <p>{comment.text}</p>
+
+        <div className="comment-actions">
+          <button
+            type="button"
+            className={comment.liked ? 'ghost-btn active' : 'ghost-btn'}
+            onClick={() => toggleCommentLike(videoId, comment.id)}
+            disabled={commentLikeLoadingByCommentId[comment.id]}
+            aria-pressed={Boolean(comment.liked)}
+          >
+            {comment.liked ? 'Unlike' : 'Like'} · {comment.likes_count || 0}
+          </button>
+
+          {!isReply ? (
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => openReplyComposer(comment.id, handle)}
+            >
+              Reply
+            </button>
+          ) : null}
+        </div>
+
+        {!isReply && replyComposerOpenByCommentId[comment.id] ? (
+          <form className="comment-form reply-form" onSubmit={(event) => handleReplySubmit(videoId, comment, event)}>
+            <textarea
+              className="comment-input"
+              value={replyDraftsByCommentId[comment.id] || ''}
+              onChange={(event) =>
+                setReplyDraftsByCommentId((current) => ({
+                  ...current,
+                  [comment.id]: event.target.value,
+                }))
+              }
+              rows="2"
+              placeholder={`Reply to @${handle}`}
+            />
+            <div className="form-actions reply-actions-row">
+              <button type="submit" className="primary-btn" disabled={replyLoadingByCommentId[comment.id]}>
+                {replyLoadingByCommentId[comment.id] ? 'Posting...' : 'Reply'}
+              </button>
+              <button type="button" className="secondary-btn" onClick={() => closeReplyComposer(comment.id)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {!isReply && Array.isArray(comment.replies) && comment.replies.length > 0 ? (
+          <div className="comment-replies">
+            {comment.replies.map((reply) => renderCommentNode(reply, videoId, depth + 1))}
+          </div>
+        ) : null}
+      </article>
+    )
+  }
 
   const handleUploadSubmit = async (event) => {
     event.preventDefault()
@@ -621,18 +806,7 @@ function App() {
           ) : null}
 
           <div className="comments-list">
-            {(commentsByPostId[video.id] || []).map((comment) => (
-              <article key={comment.id} className="comment-card">
-                <div className="comment-head">
-                  <div className="comment-author-block">
-                    <span className="comment-author-name">{comment.display_name || comment.username}</span>
-                    <span className="comment-author-handle">@{comment.username || comment.user_clerk_user_id}</span>
-                  </div>
-                  <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
-                </div>
-                <p>{comment.text}</p>
-              </article>
-            ))}
+            {(commentsByPostId[video.id] || []).map((comment) => renderCommentNode(comment, video.id))}
           </div>
 
           <form className="comment-form" onSubmit={(event) => handleCommentSubmit(video.id, event)}>

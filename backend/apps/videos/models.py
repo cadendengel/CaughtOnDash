@@ -158,6 +158,14 @@ class VideoComment(models.Model):
         related_name="comments",
         help_text="The video being commented on",
     )
+    parent_comment = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        related_name='replies',
+        on_delete=models.CASCADE,
+        help_text='Top-level comment this reply belongs to',
+    )
     user_clerk_user_id = models.CharField(
         max_length=255,
         db_index=True,
@@ -171,6 +179,7 @@ class VideoComment(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["video", "-created_at"]),
+            models.Index(fields=["parent_comment", "-created_at"]),
         ]
 
     def __str__(self):
@@ -181,8 +190,34 @@ class VideoComment(models.Model):
         return {
             "id": str(self.id),
             "video_id": str(self.video.id),
+            "parent_comment_id": str(self.parent_comment_id) if self.parent_comment_id else None,
             "user_clerk_user_id": self.user_clerk_user_id,
             "text": self.text,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
+
+
+class VideoCommentLike(models.Model):
+    """Like interaction on a comment."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    comment = models.ForeignKey(
+        VideoComment,
+        on_delete=models.CASCADE,
+        related_name="likes",
+        help_text="The comment being liked",
+    )
+    user_clerk_user_id = models.CharField(
+        max_length=255,
+        db_index=True,
+        help_text="Clerk user ID of the liker",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [["comment", "user_clerk_user_id"]]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user_clerk_user_id} liked comment {self.comment.id}"
