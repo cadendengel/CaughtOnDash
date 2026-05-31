@@ -21,6 +21,9 @@ function App() {
   const [searchHasSearched, setSearchHasSearched] = useState(false)
   const [commentsByPostId, setCommentsByPostId] = useState({})
   const [videoAnalysisByPostId, setVideoAnalysisByPostId] = useState({})
+  const videoRef = useRef(null)
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0)
+  const [videoDuration, setVideoDuration] = useState(0)
   const [commentsVisibleByPostId, setCommentsVisibleByPostId] = useState({})
   const [commentDraftsByPostId, setCommentDraftsByPostId] = useState({})
   const [replyDraftsByCommentId, setReplyDraftsByCommentId] = useState({})
@@ -361,6 +364,52 @@ function App() {
       // ignore
     }
     return []
+  }
+
+  const getLatestAnalysis = (videoId) => {
+    const list = videoAnalysisByPostId[videoId] || []
+    return list.length > 0 ? list[0] : null
+  }
+
+  const renderAnalysisTimeline = (video) => {
+    if (!video || !video.playback_url) return null
+    const analysis = getLatestAnalysis(video.id)
+    const detections = (analysis && analysis.analysis && analysis.analysis.metadata && Array.isArray(analysis.analysis.metadata.detections)) ? analysis.analysis.metadata.detections : []
+    const duration = (videoRef.current && videoRef.current.duration) ? videoRef.current.duration : (video.duration_seconds || 0)
+    if (!detections || detections.length === 0 || !duration) return null
+
+    return (
+      <div className="analysis-timeline">
+        <div className="timeline-track" role="presentation">
+          {detections.map((d, idx) => {
+            const start = Number(d.start_time_seconds || 0)
+            const end = Number(d.end_time_seconds || start)
+            const left = Math.max(0, Math.min(100, (start / duration) * 100))
+            const width = Math.max(1, Math.min(100 - left, ((end - start || 1) / duration) * 100))
+            return (
+              <button
+                key={`${d.label}-${idx}`}
+                className="timeline-segment"
+                title={`${d.label} @ ${Math.round((d.confidence||0)*100)}%`}
+                style={{ left: `${left}%`, width: `${width}%` }}
+                onClick={() => {
+                  try {
+                    if (videoRef.current) {
+                      videoRef.current.currentTime = start
+                      videoRef.current.play()
+                    }
+                  } catch (err) {
+                    // ignore
+                  }
+                }}
+              >
+                <span className="timeline-segment-label">{d.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
   }
 
   const requestReanalyze = async (videoId) => {
@@ -1391,10 +1440,20 @@ function App() {
         {renderTagPills(video.id, video.tags || [])}
 
         {video.playback_url ? (
-          <video className="detail-video" controls preload="metadata">
-            <source src={video.playback_url} type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
+          <div className="detail-video-wrapper">
+            <video
+              ref={videoRef}
+              className="detail-video"
+              controls
+              preload="metadata"
+              onLoadedMetadata={() => setVideoDuration(videoRef.current ? videoRef.current.duration : (video.duration_seconds || 0))}
+              onTimeUpdate={() => setVideoCurrentTime(videoRef.current ? videoRef.current.currentTime : 0)}
+            >
+              <source src={video.playback_url} type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+            {renderAnalysisTimeline(video)}
+          </div>
         ) : (
           <div className="feed-video-placeholder">Video not available yet.</div>
         )}
