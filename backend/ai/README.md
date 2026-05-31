@@ -14,7 +14,7 @@ What was added
 Next steps to integrate real models
 - Replace the heuristic tagger in `run_ai_worker._suggest_tags_from_text` with real analysis:
   - Extract audio with `ffmpeg`
-  - Run whisper.cpp (or HF) for ASR
+  - Run whisper.cpp (or HF) for ASR. The worker now supports optional Hugging Face Inference transcription when `HF_API_TOKEN` is set. It will extract audio via `ffmpeg` and POST the WAV bytes to the HF Inference API. Set `HF_ASR_MODEL` to choose a model (default `openai/whisper-large-v2`).
   - Sample frames and run object detection (YOLOv8/Ultralytics)
   - Call a local LLM or HF endpoint to assemble JSON analysis, validate, then persist
 

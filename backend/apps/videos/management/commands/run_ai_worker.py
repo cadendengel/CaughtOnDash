@@ -1,17 +1,18 @@
+
 from __future__ import annotations
 
+import os
+import subprocess
+import tempfile
 import time
-from typing import Iterable
-from datetime import datetime
+from typing import Iterable, Optional
 
+import requests
 from django.core.management.base import BaseCommand
 
-from apps.videos.models import Video
-from apps.videos.tagging import normalize_video_tags
 from apps.videos.analysis_validator import validate_analysis
-from apps.videos.models import AIAnalysis
-
-
+from apps.videos.models import AIAnalysis, Video
+from apps.videos.tagging import normalize_video_tags
 class Command(BaseCommand):
     help = "Run a simple AI worker that simulates analysis and appends AI tags to videos."
 
