@@ -44,6 +44,7 @@ function App() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailReturnPage, setDetailReturnPage] = useState('feed')
   const [shareStatusByPostId, setShareStatusByPostId] = useState({})
+  const MAX_VIDEO_SECONDS = 60
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
@@ -174,6 +175,15 @@ function App() {
       }
       videoElement.src = objectUrl
     })
+  }
+
+  const getAnalysisStatusLabel = (status) => {
+    const normalizedStatus = String(status || 'idle').toLowerCase()
+    if (normalizedStatus === 'queued') return 'Queued'
+    if (normalizedStatus === 'processing') return 'Running'
+    if (normalizedStatus === 'ready') return 'Done'
+    if (normalizedStatus === 'failed') return 'Failed'
+    return 'Idle'
   }
 
   const markVideoViewed = async (videoId) => {
@@ -340,6 +350,7 @@ function App() {
       await loadComments(videoId)
       // preload AI analysis for the video
       await loadVideoAnalysis(videoId)
+      return video
     } catch (err) {
       // ignore
     } finally {
@@ -420,8 +431,29 @@ function App() {
       if (!res.ok) {
         throw new Error('Could not request re-analysis.')
       }
-      // refresh analysis after a short delay to allow worker to pick it up
-      setTimeout(() => loadVideoAnalysis(videoId), 2000)
+      const refreshAnalysisSnapshot = async (remainingAttempts = 5) => {
+        if (remainingAttempts <= 0) {
+          return
+        }
+
+        const latestVideo = await loadVideoDetail(videoId, { skipViewCount: true })
+        if (!latestVideo) {
+          return
+        }
+
+        if (latestVideo.analysis_status === 'ready') {
+          await loadVideoAnalysis(videoId)
+          return
+        }
+
+        if (latestVideo.analysis_status === 'queued' || latestVideo.analysis_status === 'processing') {
+          window.setTimeout(() => {
+            refreshAnalysisSnapshot(remainingAttempts - 1)
+          }, 2000)
+        }
+      }
+
+      await refreshAnalysisSnapshot()
     } catch (err) {
       // ignore for now
     }
@@ -1317,6 +1349,9 @@ function App() {
     setUploading(true)
     try {
       const durationSeconds = await getVideoDurationSeconds(uploadFile)
+      if (durationSeconds > MAX_VIDEO_SECONDS) {
+        throw new Error(`Videos must be ${MAX_VIDEO_SECONDS} seconds or shorter.`)
+      }
 
       const bootstrapResponse = await fetch(`${API_BASE}/api/videos/upload-url/`, {
         method: 'POST',
@@ -1439,6 +1474,13 @@ function App() {
 
         {renderTagPills(video.id, video.tags || [])}
 
+        <div className="analysis-state-row">
+          <span className={`analysis-state-pill analysis-state-pill--${String(video.analysis_status || 'idle').toLowerCase()}`}>
+            AI analysis: {getAnalysisStatusLabel(video.analysis_status)}
+          </span>
+          <span className="analysis-state-note">Analysis stays on the original upload and may briefly slow the site while it runs.</span>
+        </div>
+
         {video.playback_url ? (
           <div className="detail-video-wrapper">
             <video
@@ -1484,6 +1526,11 @@ function App() {
                 ) : null}
               </div>
             ))}
+          </section>
+        ) : video.analysis_status === 'queued' || video.analysis_status === 'processing' || video.analysis_status === 'failed' || video.analysis_status === 'idle' ? (
+          <section className="ai-analysis">
+            <h3>AI Analysis</h3>
+            <p className="ai-analysis-empty">{video.analysis_error ? video.analysis_error : 'No analysis has been run yet.'}</p>
           </section>
         ) : null}
 
@@ -1614,6 +1661,8 @@ function App() {
             onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
           />
         </label>
+
+        <p className="form-hint">Uploads must be {MAX_VIDEO_SECONDS} seconds or shorter so AI can run on demand from the same backend.</p>
 
         {uploadError ? <p className="form-message error">{uploadError}</p> : null}
         {uploadSuccess ? <p className="form-message success">{uploadSuccess}</p> : null}

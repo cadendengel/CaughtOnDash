@@ -1,30 +1,27 @@
-AI Worker (starter)
-====================
+AI on the free web service
+==========================
 
-This folder contains a minimal AI worker skeleton and Dockerfiles to run an AI analysis worker.
+This folder documents the Option 1 setup: keep AI on the same free Render web service, run it on demand, and keep the original upload as the analysis source.
 
 What was added
+- Shared AI service: `apps.videos.analysis_service`
+  - Runs analysis in the same backend process
+  - Stores `AIAnalysis` records and merges AI-sourced tags back into the video
+  - Tracks a separate `analysis_status` so the UI can show queued, running, done, and failed states
+
 - Django management command: `run_ai_worker` (apps.videos.management.commands.run_ai_worker)
-  - Polls for `Video` objects with `status='ready'` and no `ai`-sourced tags
-  - Appends simple heuristic AI tags to `video.tags` to bootstrap the pipeline
-  - Can run once or as a continuous loop via `--loop`
+  - Runs the shared analysis pipeline from Render Shell or locally
+  - Can still loop for development, but it is no longer a separate deployment target
 
-- Docker resources: `docker/ai_worker/Dockerfile` and `docker/ai_worker/worker-entrypoint.sh`
-
-Next steps to integrate real models
-- Replace the heuristic tagger in `run_ai_worker._suggest_tags_from_text` with real analysis:
-  - Extract audio with `ffmpeg`
-  - Run whisper.cpp (or HF) for ASR. The worker now supports optional Hugging Face Inference transcription when `HF_API_TOKEN` is set. It will extract audio via `ffmpeg` and POST the WAV bytes to the HF Inference API. Set `HF_ASR_MODEL` to choose a model (default `openai/whisper-large-v2`).
-  - Sample frames and run object detection (YOLOv8/Ultralytics)
-  - Call a local LLM or HF endpoint to assemble JSON analysis, validate, then persist
-
-- Consider adding an `AIAnalysis` model to store full analysis JSON and provenance, and to track `analysis_status` separately from `status`.
+Next steps for this mode
+- Keep uploads at 60 seconds or less.
+- Keep the original upload as the AI source.
+- Use a small preview copy only for browser playback if you decide to add one later.
+- Trigger analysis from the admin re-analysis endpoint or from Render Shell.
+- Monitor queued, running, and done states in the UI.
 
 Running locally (one-shot)
 - From repo root: `python manage.py run_ai_worker`
 
 Running in loop for development
 - `python manage.py run_ai_worker --loop --sleep 10`
-
-Building the Docker image
-- From repo root: `docker build -f docker/ai_worker/Dockerfile -t caughtondash-ai-worker .`

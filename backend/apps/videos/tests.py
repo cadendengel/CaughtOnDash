@@ -36,11 +36,31 @@ class VideoUploadFlowTests(TestCase):
         self.assertEqual(payload['upload']['url'], '/api/videos/upload/')
         self.assertEqual(payload['video']['title'], 'Test clip')
         self.assertEqual(payload['video']['status'], 'pending')
+        self.assertEqual(payload['video']['analysis_status'], 'idle')
         self.assertEqual(payload['video']['duration_seconds'], 42)
         self.assertEqual(payload['video']['tags'][0]['text'], 'Road rage')
         self.assertEqual(payload['video']['tags'][0]['source'], 'user')
         self.assertEqual(payload['video']['tags'][1]['text'], 'near miss')
         self.assertEqual(Video.objects.count(), 1)
+
+    def test_upload_url_rejects_videos_longer_than_sixty_seconds(self):
+        response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Too long clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 61,
+                }
+            ),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('60 seconds or shorter', response.json()['detail'])
+        self.assertEqual(Video.objects.count(), 0)
 
     def test_admin_can_update_existing_video_tags(self):
         self._create_admin('admin-user')
@@ -96,7 +116,7 @@ class VideoUploadFlowTests(TestCase):
                     'title': 'Test clip',
                     'description': 'demo',
                     'original_filename': 'dashcam.mp4',
-                    'duration_seconds': 99,
+                    'duration_seconds': 60,
                 }
             ),
             content_type='application/json',
@@ -115,13 +135,80 @@ class VideoUploadFlowTests(TestCase):
         self.assertEqual(payload['kind'], 'video-uploaded')
         self.assertEqual(payload['video']['id'], video_id)
         self.assertEqual(payload['video']['status'], 'ready')
+        self.assertEqual(payload['video']['analysis_status'], 'idle')
         self.assertEqual(payload['video']['playback_url'], mock_upload_bytes.return_value)
         self.assertTrue(mock_upload_bytes.called)
 
         video = Video.objects.get(id=video_id)
         self.assertEqual(video.status, 'ready')
         self.assertEqual(video.playback_url, mock_upload_bytes.return_value)
-        self.assertEqual(video.duration_seconds, 99)
+        self.assertEqual(video.duration_seconds, 60)
+
+    @patch('apps.videos.views.probe_uploaded_video_duration')
+    @patch('apps.videos.views.upload_bytes_to_supabase')
+    def test_upload_file_rejects_videos_over_sixty_seconds(self, mock_upload_bytes, mock_probe_duration):
+        mock_probe_duration.return_value = 61
+
+        create_response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Too long clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 60,
+                }
+            ),
+            content_type='application/json',
+        )
+        video_id = create_response.json()['video']['id']
+
+        upload_file = SimpleUploadedFile('dashcam.mp4', b'fake-video-bytes', content_type='video/mp4')
+        response = self.client.post(
+            '/api/videos/upload/',
+            data={'video_id': video_id, 'file': upload_file},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('60 seconds or shorter', response.json()['detail'])
+        mock_upload_bytes.assert_not_called()
+
+        video = Video.objects.get(id=video_id)
+        self.assertEqual(video.status, 'failed')
+        self.assertEqual(video.analysis_status, 'failed')
+
+    @patch('apps.videos.views.schedule_video_analysis')
+    def test_reanalyze_endpoint_queues_analysis_for_admin(self, mock_schedule_analysis):
+        self._create_admin('admin-user')
+        create_response = self.client.post(
+            '/api/videos/upload-url/',
+            data=json.dumps(
+                {
+                    'clerk_user_id': 'test-user',
+                    'title': 'Test clip',
+                    'description': 'demo',
+                    'original_filename': 'dashcam.mp4',
+                    'duration_seconds': 42,
+                }
+            ),
+            content_type='application/json',
+        )
+        video_id = create_response.json()['video']['id']
+
+        response = self.client.post(
+            f'/api/videos/{video_id}/analysis/reanalyze/',
+            HTTP_X_CLERK_USER_ID='admin-user',
+        )
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.json()
+        self.assertEqual(payload['kind'], 'video-reanalyze')
+        self.assertEqual(payload['analysis_status'], 'queued')
+        mock_schedule_analysis.assert_called_once()
+
+        video = Video.objects.get(id=video_id)
+        self.assertEqual(video.analysis_status, 'queued')
 
     def test_view_endpoint_increments_views(self):
         create_response = self.client.post(

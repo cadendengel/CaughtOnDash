@@ -75,6 +75,16 @@ class Video(models.Model):
         default="pending",
         help_text="Processing status (pending, processing, ready, failed)",
     )
+    analysis_status = models.CharField(
+        max_length=20,
+        default="idle",
+        help_text="AI analysis status (idle, queued, processing, ready, failed)",
+    )
+    analysis_error = models.TextField(
+        blank=True,
+        default="",
+        help_text="Most recent AI analysis error message",
+    )
     original_filename = models.CharField(
         max_length=255,
         blank=True,
@@ -137,6 +147,8 @@ class Video(models.Model):
             "description": self.description,
             "visibility": self.visibility,
             "status": self.status,
+            "analysis_status": self.analysis_status,
+            "analysis_error": self.analysis_error,
             "original_filename": self.original_filename,
             "upload_url": self.upload_url,
             "playback_url": self.playback_url,

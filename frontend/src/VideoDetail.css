@@ -21,6 +21,52 @@
   padding: 6px 8px;
 }
 
+.video-detail-page .analysis-state-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.video-detail-page .analysis-state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-h);
+}
+
+.video-detail-page .analysis-state-pill--queued {
+  background: rgba(245, 158, 11, 0.12);
+  color: #92400e;
+}
+
+.video-detail-page .analysis-state-pill--processing {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+}
+
+.video-detail-page .analysis-state-pill--ready {
+  background: rgba(22, 163, 74, 0.12);
+  color: #166534;
+}
+
+.video-detail-page .analysis-state-pill--failed {
+  background: rgba(220, 38, 38, 0.12);
+  color: #991b1b;
+}
+
+.video-detail-page .analysis-state-note {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .video-detail-page .timeline-track {
   position: relative;
   height: 12px;
@@ -55,6 +101,11 @@
   color: var(--text);
   line-height: 1.65;
   font-size: 1.02rem;
+}
+
+.video-detail-page .ai-analysis-empty {
+  margin-top: 8px;
+  color: var(--muted);
 }
 
 .video-detail-page .detail-meta-row {

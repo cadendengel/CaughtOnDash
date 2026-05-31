@@ -8,6 +8,30 @@
     "generated_by": {"type": "string"},
     "generated_at": {"type": "string", "format": "date-time"},
     "summary": {"type": "string"},
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "transcript": {"type": ["string", "null"]},
+        "detections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {"type": "string"},
+              "confidence": {"type": "number"},
+              "bbox": {
+                "type": "array",
+                "items": {"type": "number"}
+              },
+              "frame": {"type": "string"}
+            },
+            "required": ["label", "confidence"],
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
     "events": {
       "type": "array",
       "items": {

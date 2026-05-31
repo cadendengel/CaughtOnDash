@@ -22,6 +22,11 @@ except Exception:
 from apps.accounts.models import Profile
 from apps.accounts.models import AdminUser
 from apps.accounts.auth import admin_required
+from apps.videos.analysis_service import (
+    MAX_VIDEO_DURATION_SECONDS,
+    probe_uploaded_video_duration,
+    schedule_video_analysis,
+)
 from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
 from apps.videos.models import AIAnalysis
 from apps.videos.tagging import normalize_video_tags
@@ -122,10 +127,18 @@ def upload_url_view(request):
         description=str(payload.get('description') or '').strip(),
         visibility=str(payload.get('visibility') or 'public').strip() or 'public',
         status='pending',
+        analysis_status='idle',
         original_filename=str(payload.get('original_filename') or payload.get('filename') or ''),
         duration_seconds=max(0, int(float(payload.get('duration_seconds') or 0))),
         tags=_normalize_video_payload_tags(payload, default_source='user'),
     )
+
+    if video.duration_seconds > MAX_VIDEO_DURATION_SECONDS:
+        video.delete()
+        return JsonResponse(
+            {'detail': f'Videos must be {MAX_VIDEO_DURATION_SECONDS} seconds or shorter for on-demand AI analysis.'},
+            status=400,
+        )
 
     # For simplicity we accept uploads via the backend at /api/videos/upload/.
     # Client should POST multipart/form-data with 'file' and 'video_id'.
@@ -173,18 +186,33 @@ def upload_file_view(request):
     if upload_file is None:
         return JsonResponse({'detail': 'file field is required.'}, status=400)
 
+    file_bytes = upload_file.read()
+    detected_duration = probe_uploaded_video_duration(file_bytes, upload_file.name)
+    effective_duration = detected_duration if detected_duration is not None else video.duration_seconds
+    if effective_duration > MAX_VIDEO_DURATION_SECONDS:
+        video.status = 'failed'
+        video.analysis_status = 'failed'
+        video.analysis_error = f'Videos must be {MAX_VIDEO_DURATION_SECONDS} seconds or shorter.'
+        video.save(update_fields=['status', 'analysis_status', 'analysis_error', 'updated_at'])
+        return JsonResponse(
+            {'detail': f'Videos must be {MAX_VIDEO_DURATION_SECONDS} seconds or shorter.'},
+            status=400,
+        )
+
     object_path = f"{video.id}/{upload_file.name}"
     content_type = upload_file.content_type if hasattr(upload_file, 'content_type') else None
 
     try:
-        public_url = upload_bytes_to_supabase(object_path, upload_file.read(), content_type)
+        public_url = upload_bytes_to_supabase(object_path, file_bytes, content_type)
     except Exception as exc:
         return JsonResponse({'detail': f'Upload failed: {exc}'}, status=500)
 
     # Update video record with playback_url and mark ready
     video.playback_url = public_url
     video.status = 'ready'
-    video.save(update_fields=['playback_url', 'status', 'updated_at'])
+    video.analysis_status = 'idle'
+    video.analysis_error = ''
+    video.save(update_fields=['playback_url', 'status', 'analysis_status', 'analysis_error', 'updated_at'])
 
     return JsonResponse(response_envelope('video-uploaded', {'video': video.to_dict()}), status=200)
     
@@ -214,14 +242,16 @@ def complete_upload_view(request):
     except Video.DoesNotExist:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
-    video.status = 'processing'
-    video.save(update_fields=['status', 'updated_at'])
+    video.status = 'ready'
+    video.analysis_status = 'idle'
+    video.analysis_error = ''
+    video.save(update_fields=['status', 'analysis_status', 'analysis_error', 'updated_at'])
     return JsonResponse(
         response_envelope(
             'video-complete',
             {
                 'video': video.to_dict(),
-                'message': 'Upload marked complete. Processing would be queued here.',
+                'message': 'Upload marked complete. AI analysis is available on demand.',
             },
         ),
         status=200,
@@ -282,7 +312,20 @@ def video_status_view(request, video_id):
     if video.deleted_at is not None:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
-    return JsonResponse(response_envelope('video-status', {'video': {'id': str(video.id), 'status': video.status}}), status=200)
+    return JsonResponse(
+        response_envelope(
+            'video-status',
+            {
+                'video': {
+                    'id': str(video.id),
+                    'status': video.status,
+                    'analysis_status': video.analysis_status,
+                    'analysis_error': video.analysis_error,
+                }
+            },
+        ),
+        status=200,
+    )
 
 
 def search_videos(request):
@@ -747,12 +790,25 @@ def video_reanalyze_view(request, video_id):
     if not (is_admin or is_owner):
         return JsonResponse({'detail': 'Forbidden.'}, status=403)
 
-    # Remove all AI-sourced tags so the worker will pick it up again
+    # Remove all AI-sourced tags so the next run starts from the user-owned set.
     tags = normalize_video_tags(video.tags or [], default_source='user')
     tags_without_ai = [t for t in tags if t.get('source') != 'ai']
     video.tags = tags_without_ai
-    # Mark as ready for reprocessing
     video.status = 'ready'
-    video.save(update_fields=['tags', 'status', 'updated_at'])
+    video.analysis_status = 'queued'
+    video.analysis_error = ''
+    video.save(update_fields=['tags', 'status', 'analysis_status', 'analysis_error', 'updated_at'])
 
-    return JsonResponse(response_envelope('video-reanalyze', {'video_id': str(video.id), 'message': 'Re-analysis requested.'}), status=200)
+    schedule_video_analysis(video.id, generated_by='admin-request', force=True)
+
+    return JsonResponse(
+        response_envelope(
+            'video-reanalyze',
+            {
+                'video_id': str(video.id),
+                'analysis_status': 'queued',
+                'message': 'Re-analysis queued.',
+            },
+        ),
+        status=202,
+    )
