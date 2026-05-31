@@ -22,6 +22,7 @@ except Exception:
 from apps.accounts.models import Profile
 from apps.accounts.auth import admin_required
 from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
+from apps.videos.models import AIAnalysis
 from apps.videos.tagging import normalize_video_tags
 from apps.store import get_identity, parse_json_request, response_envelope
 from apps.storage import upload_bytes_to_supabase
@@ -699,3 +700,23 @@ def video_update_delete_view(request, video_id):
     video.status = 'deleted'
     video.save(update_fields=['deleted_at', 'status', 'updated_at'])
     return JsonResponse({'detail': 'Video deleted.', 'video_id': str(video.id)}, status=200)
+
+
+def video_analysis_view(request, video_id):
+    # GET /api/videos/<video_id>/analysis/ - return AIAnalysis objects for a video (latest first)
+    if request.method != 'GET':
+        return _method_not_allowed('GET')
+
+    try:
+        video_uuid = UUID(str(video_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
+
+    try:
+        video = Video.objects.get(id=video_uuid, deleted_at__isnull=True)
+    except Video.DoesNotExist:
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    analyses = list(AIAnalysis.objects.filter(video=video).order_by('-created_at').values('id', 'schema_version', 'generated_by', 'analysis', 'created_at'))
+
+    return JsonResponse(response_envelope('video-analysis', {'video_id': str(video.id), 'analyses': analyses}), status=200)
