@@ -20,6 +20,7 @@ except Exception:
     HAS_PG_SEARCH = False
 
 from apps.accounts.models import Profile
+from apps.accounts.models import AdminUser
 from apps.accounts.auth import admin_required
 from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
 from apps.videos.models import AIAnalysis
@@ -720,3 +721,38 @@ def video_analysis_view(request, video_id):
     analyses = list(AIAnalysis.objects.filter(video=video).order_by('-created_at').values('id', 'schema_version', 'generated_by', 'analysis', 'created_at'))
 
     return JsonResponse(response_envelope('video-analysis', {'video_id': str(video.id), 'analyses': analyses}), status=200)
+
+
+@csrf_exempt
+def video_reanalyze_view(request, video_id):
+    # POST /api/videos/<video_id>/analysis/reanalyze/ - request re-analysis (owner or admin)
+    if request.method != 'POST':
+        return _method_not_allowed('POST')
+
+    clerk_user_id = request.headers.get('X-Clerk-User-Id') or ''
+
+    try:
+        video_uuid = UUID(str(video_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
+
+    try:
+        video = Video.objects.get(id=video_uuid, deleted_at__isnull=True)
+    except Video.DoesNotExist:
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    # Only the owner or an admin may request re-analysis
+    is_admin = AdminUser.is_admin_for(clerk_user_id)
+    is_owner = clerk_user_id and clerk_user_id == (video.owner_clerk_user_id or '')
+    if not (is_admin or is_owner):
+        return JsonResponse({'detail': 'Forbidden.'}, status=403)
+
+    # Remove all AI-sourced tags so the worker will pick it up again
+    tags = normalize_video_tags(video.tags or [], default_source='user')
+    tags_without_ai = [t for t in tags if t.get('source') != 'ai']
+    video.tags = tags_without_ai
+    # Mark as ready for reprocessing
+    video.status = 'ready'
+    video.save(update_fields=['tags', 'status', 'updated_at'])
+
+    return JsonResponse(response_envelope('video-reanalyze', {'video_id': str(video.id), 'message': 'Re-analysis requested.'}), status=200)

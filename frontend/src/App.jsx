@@ -363,6 +363,21 @@ function App() {
     return []
   }
 
+  const requestReanalyze = async (videoId) => {
+    if (!videoId) return
+    try {
+      const headers = user?.id ? { 'X-Clerk-User-Id': user.id } : {}
+      const res = await fetch(`${API_BASE}/api/videos/${videoId}/analysis/reanalyze/`, { method: 'POST', headers })
+      if (!res.ok) {
+        throw new Error('Could not request re-analysis.')
+      }
+      // refresh analysis after a short delay to allow worker to pick it up
+      setTimeout(() => loadVideoAnalysis(videoId), 2000)
+    } catch (err) {
+      // ignore for now
+    }
+  }
+
   const openDetail = async (videoId, options = {}) => {
     const { updateHistory = true } = options
     const returnPage = activePage === 'detail' ? detailReturnPage : activePage
@@ -1427,6 +1442,11 @@ function App() {
           <button type="button" className="secondary-btn" onClick={closeDetail}>
             Back to Feed
           </button>
+          {(isAdmin || (user?.id && user.id === video.owner_clerk_user_id)) ? (
+            <button type="button" className="secondary-btn" onClick={() => requestReanalyze(video.id)}>
+              Request AI Re-analysis
+            </button>
+          ) : null}
         </div>
 
         <div className="comments-panel detail-comments detail-comments-sheet">

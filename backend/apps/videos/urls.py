@@ -10,6 +10,7 @@ from .views import (
     video_comment_like_view,
     video_detail_view,
     video_analysis_view,
+    video_reanalyze_view,
     video_status_view,
     video_update_delete_view,
     admin_video_delete_view,
@@ -43,6 +44,7 @@ urlpatterns = [
     # GET /api/videos/<video_id>/ - return the full video object and metadata.
     path('<uuid:video_id>/', video_detail_view, name='video-detail'),
     path('<uuid:video_id>/analysis/', video_analysis_view, name='video-analysis'),
+    path('<uuid:video_id>/analysis/reanalyze/', video_reanalyze_view, name='video-reanalyze'),
     # GET /api/videos/<video_id>/status/ - return processing/upload status.
     path('<uuid:video_id>/status/', video_status_view, name='video-status'),
     # PATCH/DELETE /api/videos/<video_id>/ - update or remove a video.
