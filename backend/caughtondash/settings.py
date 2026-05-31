@@ -118,11 +118,13 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+_default_cors_origins = 'http://localhost:5173,https://caught-on-dash.vercel.app'
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173').split(',')
+    for origin in os.getenv('CORS_ALLOWED_ORIGINS', _default_cors_origins).split(',')
     if origin.strip()
 ]
 
