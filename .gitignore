@@ -26,5 +26,8 @@ dist-ssr
 # Environment variables
 .env
 
+# Django collectstatic output
+backend/staticfiles/
+
 # Pycache
 __pycache__/
