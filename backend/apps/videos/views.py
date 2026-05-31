@@ -4,6 +4,7 @@ from uuid import UUID
 from django.views.decorators.csrf import csrf_exempt
 
 from django.http import JsonResponse
+from django.db import transaction
 from django.db.models import Count, F, Prefetch
 from django.utils import timezone
 from django.conf import settings
@@ -429,22 +430,23 @@ def video_like_view(request, video_id):
     except ValueError:
         return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
 
-    try:
-        video = Video.objects.get(id=video_uuid, deleted_at__isnull=True)
-    except Video.DoesNotExist:
-        return JsonResponse({'detail': 'Video not found.'}, status=404)
-
     payload = parse_json_request(request)
     identity = get_identity(request, payload)
 
-    like = VideoLike.objects.filter(video=video, user_clerk_user_id=identity['clerk_user_id']).first()
-    liked = False
+    with transaction.atomic():
+        try:
+            video = Video.objects.select_for_update().get(id=video_uuid, deleted_at__isnull=True)
+        except Video.DoesNotExist:
+            return JsonResponse({'detail': 'Video not found.'}, status=404)
 
-    if like is None:
-        VideoLike.objects.create(video=video, user_clerk_user_id=identity['clerk_user_id'])
-        liked = True
-    else:
-        like.delete()
+        like = VideoLike.objects.filter(video=video, user_clerk_user_id=identity['clerk_user_id']).first()
+        liked = False
+
+        if like is None:
+            VideoLike.objects.create(video=video, user_clerk_user_id=identity['clerk_user_id'])
+            liked = True
+        else:
+            like.delete()
 
     return JsonResponse(
         response_envelope(
@@ -581,25 +583,26 @@ def video_comment_like_view(request, comment_id):
     except ValueError:
         return JsonResponse({'detail': 'Invalid comment_id format.'}, status=400)
 
-    try:
-        comment = VideoComment.objects.select_related('video').get(
-            id=comment_uuid,
-            video__deleted_at__isnull=True,
-        )
-    except VideoComment.DoesNotExist:
-        return JsonResponse({'detail': 'Comment not found.'}, status=404)
-
     payload = parse_json_request(request)
     identity = get_identity(request, payload)
 
-    like = VideoCommentLike.objects.filter(comment=comment, user_clerk_user_id=identity['clerk_user_id']).first()
-    liked = False
+    with transaction.atomic():
+        try:
+            comment = VideoComment.objects.select_for_update().select_related('video').get(
+                id=comment_uuid,
+                video__deleted_at__isnull=True,
+            )
+        except VideoComment.DoesNotExist:
+            return JsonResponse({'detail': 'Comment not found.'}, status=404)
 
-    if like is None:
-        VideoCommentLike.objects.create(comment=comment, user_clerk_user_id=identity['clerk_user_id'])
-        liked = True
-    else:
-        like.delete()
+        like = VideoCommentLike.objects.filter(comment=comment, user_clerk_user_id=identity['clerk_user_id']).first()
+        liked = False
+
+        if like is None:
+            VideoCommentLike.objects.create(comment=comment, user_clerk_user_id=identity['clerk_user_id'])
+            liked = True
+        else:
+            like.delete()
 
     likes_count = VideoCommentLike.objects.filter(comment=comment).count()
 
