@@ -15,7 +15,7 @@ COPY . /app
 
 # Install Python deps (adjust as needed)
 RUN pip install --upgrade pip
-RUN pip install django requests
+RUN pip install django requests jsonschema
 
 # (Optional) Build whisper.cpp here if you plan to use it inside the image.
 # We'll leave the build step commented as a reminder.

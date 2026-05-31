@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import time
 from typing import Iterable
+from datetime import datetime
 
 from django.core.management.base import BaseCommand
 
 from apps.videos.models import Video
 from apps.videos.tagging import normalize_video_tags
+from apps.videos.analysis_validator import validate_analysis
+from apps.videos.models import AIAnalysis
 
 
 class Command(BaseCommand):
@@ -45,9 +48,37 @@ class Command(BaseCommand):
                     # Simple heuristic: suggest AI tags based on title/description keywords
                     suggestions = self._suggest_tags_from_text(v.title + " " + v.description)
 
-                    # Merge with existing tags, preserving sources
+                    # Build a minimal analysis JSON payload
+                    analysis_payload = {
+                        "schema_version": "1.0",
+                        "generated_by": "run_ai_worker",
+                        "generated_at": datetime.utcnow().isoformat() + "Z",
+                        "summary": ", ".join([s["text"] for s in suggestions]) if suggestions else "",
+                        "events": [
+                            {
+                                "label": s["text"],
+                                "start_time_seconds": 0,
+                                "confidence": 0.5,
+                                "source": "ai",
+                            }
+                            for s in suggestions
+                        ],
+                    }
+
+                    # Validate payload before saving
+                    try:
+                        validate_analysis(analysis_payload)
+                    except Exception as exc:  # pragma: no cover - validation/runtime
+                        self.stderr.write(f"Analysis payload validation failed for {v.id}: {exc}")
+                        v.status = "failed"
+                        v.save(update_fields=["status"])
+                        continue
+
+                    # Persist AIAnalysis record
+                    AIAnalysis.objects.create(video=v, schema_version="1.0", generated_by="run_ai_worker", analysis=analysis_payload)
+
+                    # Merge with existing tags, preserving sources and adding AI tags
                     existing = normalize_video_tags(v.tags or [], default_source="user")
-                    # Append AI suggestions if they don't already exist
                     existing_texts = {t["text"].lower() for t in existing}
                     for s in suggestions:
                         if s["text"].lower() not in existing_texts:

@@ -5,6 +5,31 @@ import uuid
 from django.db import models
 
 from apps.videos.tagging import normalize_video_tags, serialize_video_tags
+from django.contrib.postgres.indexes import GinIndex
+
+
+class AIAnalysis(models.Model):
+    """Stores full AI analysis JSON for a video."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    video = models.ForeignKey(
+        'Video',
+        on_delete=models.CASCADE,
+        related_name="analyses",
+        help_text="Video this analysis belongs to",
+    )
+    schema_version = models.CharField(max_length=16, default="1.0")
+    generated_by = models.CharField(max_length=255, blank=True, default="")
+    analysis = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["video"])]
+
+    def __str__(self):
+        return f"AIAnalysis {self.id} for {self.video_id}"
 
 
 class Video(models.Model):

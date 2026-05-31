@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Video AI Analysis",
+  "type": "object",
+  "required": ["schema_version", "events"],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+$"},
+    "generated_by": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "summary": {"type": "string"},
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "start_time_seconds"],
+        "properties": {
+          "label": {"type": "string"},
+          "start_time_seconds": {"type": "number", "minimum": 0},
+          "end_time_seconds": {"type": "number", "minimum": 0},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "source": {"type": "string"},
+          "metadata": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
