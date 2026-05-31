@@ -16,6 +16,8 @@ COPY . /app
 # Install Python deps (adjust as needed)
 RUN pip install --upgrade pip
 RUN pip install django requests jsonschema
+# Optional CV deps for object detection (install when building worker image)
+RUN pip install ultralytics opencv-python-headless
 
 # (Optional) Build whisper.cpp here if you plan to use it inside the image.
 # We'll leave the build step commented as a reminder.
