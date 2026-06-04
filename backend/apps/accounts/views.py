@@ -34,6 +34,23 @@ def get_profile_by_username(username: str) -> Profile | None:
         return None
 
 
+def _profile_summary_from_identity(identity: dict) -> dict:
+    profile = Profile.objects.filter(clerk_user_id=identity['clerk_user_id']).first()
+    if profile is not None:
+        return profile.to_dict()
+
+    return {
+        'clerk_user_id': identity['clerk_user_id'],
+        'email': identity.get('email', ''),
+        'username': identity.get('username', ''),
+        'display_name': identity.get('display_name', ''),
+        'avatar_url': identity.get('avatar_url', ''),
+        'bio': '',
+        'created_at': '',
+        'updated_at': '',
+    }
+
+
 @csrf_exempt
 def bootstrap_view(request):
     # POST /api/auth/bootstrap/ - create or sync the local user after Clerk login.
@@ -53,12 +70,11 @@ def me_view(request):
         return _method_not_allowed('GET')
 
     identity = get_identity(request)
-    profile = upsert_profile(identity)
     return JsonResponse(
         response_envelope(
             'me',
             {
-                'profile': profile.to_dict(),
+                'profile': _profile_summary_from_identity(identity),
                 'is_admin': AdminUser.is_admin_for(identity['clerk_user_id']),
             },
         ),
@@ -70,8 +86,7 @@ def profile_me_view(request):
     # GET /api/auth/profile/me/ or PATCH /api/auth/profile/me/ - read/update my profile.
     if request.method == 'GET':
         identity = get_identity(request)
-        profile = upsert_profile(identity)
-        return JsonResponse(response_envelope('profile', {'profile': profile.to_dict()}), status=200)
+        return JsonResponse(response_envelope('profile', {'profile': _profile_summary_from_identity(identity)}), status=200)
 
     if request.method == 'PATCH':
         payload = parse_json_request(request)
