@@ -6,6 +6,10 @@ from apps.videos.models import Video, VideoLike
 from apps.store import response_envelope
 
 
+def _fallback_identity_display(clerk_user_id: str) -> tuple[str, str]:
+    return ('dash_user', 'Dash User')
+
+
 def feed_view(request):
     # GET /api/feed/ - return the paginated community feed.
     if request.method != 'GET':
@@ -54,6 +58,7 @@ def feed_view(request):
     items = []
     for video in videos:
         profile = profiles_by_clerk_id.get(video['owner_clerk_user_id'])
+        fallback_username, fallback_display_name = _fallback_identity_display(video['owner_clerk_user_id'])
         item = {
             'id': str(video['id']),
             'owner_clerk_user_id': video['owner_clerk_user_id'],
@@ -70,8 +75,8 @@ def feed_view(request):
             'created_at': video['created_at'].isoformat() if hasattr(video['created_at'], 'isoformat') else video['created_at'],
             'updated_at': video['updated_at'].isoformat() if hasattr(video['updated_at'], 'isoformat') else video['updated_at'],
             'deleted_at': video['deleted_at'].isoformat() if hasattr(video['deleted_at'], 'isoformat') else video['deleted_at'],
-            'username': profile.username if profile else video['owner_clerk_user_id'],
-            'display_name': profile.display_name if profile else video['owner_clerk_user_id'],
+            'username': profile.username if profile else fallback_username,
+            'display_name': profile.display_name if profile else fallback_display_name,
             'likes_count': video.get('likes_count', 0),
             'comments_count': video.get('comments_count', 0),
             'liked': video['id'] in liked_video_ids,

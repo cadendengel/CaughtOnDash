@@ -38,8 +38,14 @@ def _profile_for_clerk_user_id(clerk_user_id: str) -> Profile | None:
         return None
 
 
+def _fallback_identity_display(clerk_user_id: str) -> tuple[str, str]:
+    # Avoid leaking raw Clerk IDs into public UI when profile records are missing.
+    return ('dash_user', 'Dash User')
+
+
 def _serialize_comment(comment: VideoComment, liked_comment_ids: set[UUID] | None = None) -> dict:
     profile = _profile_for_clerk_user_id(comment.user_clerk_user_id)
+    fallback_username, fallback_display_name = _fallback_identity_display(comment.user_clerk_user_id)
     replies = []
     if comment.parent_comment_id is None:
         replies = [_serialize_comment(reply, liked_comment_ids) for reply in comment.replies.all()]
@@ -49,8 +55,8 @@ def _serialize_comment(comment: VideoComment, liked_comment_ids: set[UUID] | Non
         'video_id': str(comment.video.id),
         'parent_comment_id': str(comment.parent_comment_id) if comment.parent_comment_id else None,
         'user_clerk_user_id': comment.user_clerk_user_id,
-        'username': profile.username if profile else comment.user_clerk_user_id,
-        'display_name': profile.display_name if profile else comment.user_clerk_user_id,
+        'username': profile.username if profile else fallback_username,
+        'display_name': profile.display_name if profile else fallback_display_name,
         'avatar_url': profile.avatar_url if profile else '',
         'text': comment.text,
         'likes_count': getattr(comment, 'likes_count', comment.likes.count()),
@@ -63,13 +69,14 @@ def _serialize_comment(comment: VideoComment, liked_comment_ids: set[UUID] | Non
 
 def _serialize_comment_row(row: dict) -> dict:
     profile = _profile_for_clerk_user_id(row['user_clerk_user_id'])
+    fallback_username, fallback_display_name = _fallback_identity_display(row['user_clerk_user_id'])
     return {
         'id': str(row['id']),
         'video_id': str(row['video_id']),
         'parent_comment_id': None,
         'user_clerk_user_id': row['user_clerk_user_id'],
-        'username': profile.username if profile else row['user_clerk_user_id'],
-        'display_name': profile.display_name if profile else row['user_clerk_user_id'],
+        'username': profile.username if profile else fallback_username,
+        'display_name': profile.display_name if profile else fallback_display_name,
         'avatar_url': profile.avatar_url if profile else '',
         'text': row['text'],
         'likes_count': 0,
@@ -82,18 +89,20 @@ def _serialize_comment_row(row: dict) -> dict:
 
 def _video_author_payload(video: Video) -> dict:
     profile = _profile_for_clerk_user_id(video.owner_clerk_user_id)
+    fallback_username, fallback_display_name = _fallback_identity_display(video.owner_clerk_user_id)
     return {
-        'username': profile.username if profile else video.owner_clerk_user_id,
-        'display_name': profile.display_name if profile else video.owner_clerk_user_id,
+        'username': profile.username if profile else fallback_username,
+        'display_name': profile.display_name if profile else fallback_display_name,
         'avatar_url': profile.avatar_url if profile else '',
     }
 
 
 def _video_author_payload_from_owner(owner_clerk_user_id: str) -> dict:
     profile = _profile_for_clerk_user_id(owner_clerk_user_id)
+    fallback_username, fallback_display_name = _fallback_identity_display(owner_clerk_user_id)
     return {
-        'username': profile.username if profile else owner_clerk_user_id,
-        'display_name': profile.display_name if profile else owner_clerk_user_id,
+        'username': profile.username if profile else fallback_username,
+        'display_name': profile.display_name if profile else fallback_display_name,
         'avatar_url': profile.avatar_url if profile else '',
     }
 
@@ -544,7 +553,7 @@ def video_comments_view(request, video_id):
             response_envelope(
                 'video-comments',
                 {
-                    'video_id': str(video.id),
+                    'video_id': str(video['id']),
                     'count': count,
                     'items': comments,
                 },
@@ -569,7 +578,7 @@ def video_comments_view(request, video_id):
             try:
                 parent_comment = VideoComment.objects.get(
                     id=parent_comment_uuid,
-                    video=video,
+                    video_id=video_uuid,
                     parent_comment__isnull=True,
                 )
             except VideoComment.DoesNotExist:
@@ -577,7 +586,7 @@ def video_comments_view(request, video_id):
 
         identity = get_identity(request, payload)
         comment = VideoComment.objects.create(
-            video=video,
+            video_id=video_uuid,
             parent_comment=parent_comment,
             user_clerk_user_id=identity['clerk_user_id'],
             text=text,
