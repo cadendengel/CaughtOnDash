@@ -205,10 +205,15 @@ function App() {
 
 
   const clerkEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || ''
-  const clerkUsername = user?.username || clerkEmail.split('@')[0] || ''
+  const clerkFullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || user?.fullName || ''
+  const clerkUsername =
+    clerkFullName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '') ||
+    clerkEmail.split('@')[0] ||
+    ''
   const clerkDisplayName =
-    [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() ||
-    user?.fullName ||
+    clerkFullName ||
     clerkUsername ||
     'Dash User'
 
