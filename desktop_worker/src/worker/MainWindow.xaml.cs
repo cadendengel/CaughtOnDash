@@ -15,26 +15,23 @@ namespace CaughtOnDash.Worker
             InitializeComponent();
             _viewModel = new MainViewModel(this);
             this.DataContext = _viewModel;
+            Loaded += MainWindow_Loaded;
         }
 
-        private void ConnectButton_Click(object sender, RoutedEventArgs e)
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            var backendUrl = BackendUrlTextBox.Text;
-            var apiToken = ApiTokenPasswordBox.Password;
-
-            if (string.IsNullOrWhiteSpace(backendUrl) || string.IsNullOrWhiteSpace(apiToken))
+            if (_viewModel != null)
             {
-                ConnectionStatusText.Text = "Please enter both backend URL and API token";
-                ConnectionStatusText.Foreground = System.Windows.Media.Brushes.Red;
-                return;
+                await _viewModel.StartAutomaticallyAsync();
             }
-
-            _viewModel?.ConnectToBackend(backendUrl, apiToken);
         }
 
-        private void StartButton_Click(object sender, RoutedEventArgs e)
+        private async void StartButton_Click(object sender, RoutedEventArgs e)
         {
-            _viewModel?.StartWorker();
+            if (_viewModel != null)
+            {
+                await _viewModel.StartWorker();
+            }
         }
 
         private void StopButton_Click(object sender, RoutedEventArgs e)

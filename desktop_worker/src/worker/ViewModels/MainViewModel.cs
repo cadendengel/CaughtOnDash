@@ -1,5 +1,4 @@
 using System;
-using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Media;
 using CaughtOnDash.Worker.Models;
@@ -9,8 +8,6 @@ namespace CaughtOnDash.Worker.ViewModels
 {
     public class MainViewModel
     {
-        private const string TokenMask = "••••••••";
-
         private readonly MainWindow _mainWindow;
         private readonly AppConfigService _configService;
         private readonly WorkerApiClient _apiClient;
@@ -33,66 +30,54 @@ namespace CaughtOnDash.Worker.ViewModels
 
         private void InitializeUI()
         {
-            // Load saved config into UI
-            _mainWindow.BackendUrlTextBox.Text = _config.BackendUrl;
-            if (!string.IsNullOrEmpty(_config.ApiToken))
-            {
-                _mainWindow.ApiTokenPasswordBox.Password = TokenMask;  // Don't show actual token
-            }
-
             if (_config.IsConfigured)
             {
                 _apiClient.Initialize(_config.BackendUrl, _config.ApiToken);
                 _mainWindow.BackendUrlDisplay.Text = _config.BackendUrl;
+                AddLog($"Loaded backend config: {_config.BackendUrl}");
+                _mainWindow.StatusText.Text = "Stopped";
+                _mainWindow.StatusText.Foreground = Brushes.Gray;
                 _mainWindow.StartButton.IsEnabled = true;
-                AddLog($"Loaded saved backend config: {_config.BackendUrl}");
+                _mainWindow.StopButton.IsEnabled = false;
+            }
+            else
+            {
+                _mainWindow.BackendUrlDisplay.Text = "Missing config";
+                _mainWindow.StatusText.Text = "Missing config";
+                _mainWindow.StatusText.Foreground = Brushes.Red;
+                _mainWindow.StartButton.IsEnabled = false;
+                _mainWindow.StopButton.IsEnabled = false;
+                AddLog("Worker config is missing backend URL or API token.", Logger.LogLevel.Error);
             }
 
-            UpdateConnectionStatus();
             AddLog("Application started");
         }
 
-        public void ConnectToBackend(string backendUrl, string apiToken)
-        {
-            try
-            {
-                var resolvedToken = apiToken == TokenMask ? _config.ApiToken : apiToken;
-
-                if (string.IsNullOrWhiteSpace(resolvedToken))
-                {
-                    throw new InvalidOperationException("Worker API token is required.");
-                }
-
-                _config.BackendUrl = backendUrl.Trim();
-                _config.ApiToken = resolvedToken.Trim();
-                _configService.SaveConfig(_config);
-
-                _apiClient.Initialize(_config.BackendUrl, _config.ApiToken);
-
-                _mainWindow.ConnectionStatusText.Text = "Connecting...";
-                _mainWindow.ConnectionStatusText.Foreground = Brushes.Blue;
-
-                // TODO: Test connection asynchronously
-                _mainWindow.ConnectionStatusText.Text = "Connected";
-                _mainWindow.ConnectionStatusText.Foreground = Brushes.Green;
-                _mainWindow.BackendUrlDisplay.Text = _config.BackendUrl;
-
-                AddLog($"Connected to backend: {_config.BackendUrl}");
-                _mainWindow.StartButton.IsEnabled = true;
-            }
-            catch (Exception ex)
-            {
-                _mainWindow.ConnectionStatusText.Text = $"Connection failed: {ex.Message}";
-                _mainWindow.ConnectionStatusText.Foreground = Brushes.Red;
-                AddLog($"Connection error: {ex.Message}", Logger.LogLevel.Error);
-            }
-        }
-
-        public async void StartWorker()
+        public async System.Threading.Tasks.Task StartAutomaticallyAsync()
         {
             if (!_config.IsConfigured)
             {
-                AddLog("Worker not configured. Please enter backend URL and API token.", Logger.LogLevel.Error);
+                AddLog("Cannot auto-connect worker because config is incomplete.", Logger.LogLevel.Error);
+                _mainWindow.StatusText.Text = "Missing config";
+                _mainWindow.StatusText.Foreground = Brushes.Red;
+                return;
+            }
+
+            _apiClient.Initialize(_config.BackendUrl, _config.ApiToken);
+            _mainWindow.BackendUrlDisplay.Text = _config.BackendUrl;
+
+            AddLog($"Auto-connected to backend: {_config.BackendUrl}");
+            _mainWindow.StatusText.Text = "Stopped";
+            _mainWindow.StatusText.Foreground = Brushes.Gray;
+            _mainWindow.StartButton.IsEnabled = true;
+            _mainWindow.StopButton.IsEnabled = false;
+        }
+
+        public async System.Threading.Tasks.Task StartWorker()
+        {
+            if (!_config.IsConfigured)
+            {
+                AddLog("Worker not configured. Check appsettings.json.", Logger.LogLevel.Error);
                 return;
             }
 
@@ -103,9 +88,6 @@ namespace CaughtOnDash.Worker.ViewModels
 
                 _mainWindow.StartButton.IsEnabled = false;
                 _mainWindow.StopButton.IsEnabled = true;
-                _mainWindow.ConnectButton.IsEnabled = false;
-                _mainWindow.BackendUrlTextBox.IsEnabled = false;
-                _mainWindow.ApiTokenPasswordBox.IsEnabled = false;
 
                 AddLog("Starting worker...");
                 await _workerLoopService.StartAsync();
@@ -130,9 +112,6 @@ namespace CaughtOnDash.Worker.ViewModels
 
                 _mainWindow.StartButton.IsEnabled = true;
                 _mainWindow.StopButton.IsEnabled = false;
-                _mainWindow.ConnectButton.IsEnabled = true;
-                _mainWindow.BackendUrlTextBox.IsEnabled = true;
-                _mainWindow.ApiTokenPasswordBox.IsEnabled = true;
                 _mainWindow.StatusText.Text = "Stopped";
                 _mainWindow.StatusText.Foreground = Brushes.Red;
                 _mainWindow.CancelJobButton.IsEnabled = false;
@@ -207,20 +186,6 @@ namespace CaughtOnDash.Worker.ViewModels
                 _mainWindow.LastHeartbeatText.Text = DateTime.Now.ToString("HH:mm:ss");
                 AddLog(evt.Message);
             });
-        }
-
-        private void UpdateConnectionStatus()
-        {
-            if (_config.IsConfigured)
-            {
-                _mainWindow.ConnectionStatusText.Text = "Configured";
-                _mainWindow.ConnectionStatusText.Foreground = Brushes.Green;
-            }
-            else
-            {
-                _mainWindow.ConnectionStatusText.Text = "Not configured";
-                _mainWindow.ConnectionStatusText.Foreground = Brushes.Red;
-            }
         }
 
         private void AddLog(string message, Logger.LogLevel level = Logger.LogLevel.Info)

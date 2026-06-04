@@ -7,6 +7,7 @@ namespace CaughtOnDash.Worker.Services
 {
     public class AppConfigService
     {
+        private const string TokenMask = "••••••••";
         private readonly string _configPath;
         private WorkerConfig? _config;
 
@@ -28,6 +29,12 @@ namespace CaughtOnDash.Worker.Services
                 {
                     var json = File.ReadAllText(_configPath);
                     _config = JsonConvert.DeserializeObject<WorkerConfig>(json) ?? new WorkerConfig();
+                    if (string.Equals(_config.ApiToken, TokenMask, StringComparison.Ordinal))
+                    {
+                        _config.ApiToken = string.Empty;
+                        SaveConfig(_config);
+                        Logger.Log("Cleared masked API token from saved config", Logger.LogLevel.Warning);
+                    }
                     Logger.Log($"Loaded config from {_configPath}");
                     return _config;
                 }
