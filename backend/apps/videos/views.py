@@ -22,7 +22,7 @@ except Exception:
 from apps.accounts.models import Profile
 from apps.accounts.auth import admin_required
 from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
-from apps.videos.tagging import normalize_video_tags
+from apps.videos.tagging import normalize_video_tags, serialize_video_tags
 from apps.store import get_identity, parse_json_request, response_envelope
 from apps.storage import upload_bytes_to_supabase
 
@@ -87,6 +87,63 @@ def _video_author_payload(video: Video) -> dict:
         'display_name': profile.display_name if profile else video.owner_clerk_user_id,
         'avatar_url': profile.avatar_url if profile else '',
     }
+
+
+def _video_author_payload_from_owner(owner_clerk_user_id: str) -> dict:
+    profile = _profile_for_clerk_user_id(owner_clerk_user_id)
+    return {
+        'username': profile.username if profile else owner_clerk_user_id,
+        'display_name': profile.display_name if profile else owner_clerk_user_id,
+        'avatar_url': profile.avatar_url if profile else '',
+    }
+
+
+def _serialize_video_row(row: dict, *, include_defaults: bool = True) -> dict:
+    video_data = {
+        'id': str(row['id']),
+        'owner_clerk_user_id': row['owner_clerk_user_id'],
+        'title': row['title'],
+        'description': row['description'],
+        'visibility': row['visibility'],
+        'status': row['status'],
+        'original_filename': row.get('original_filename', ''),
+        'upload_url': row.get('upload_url', ''),
+        'playback_url': row.get('playback_url', ''),
+        'thumbnail_url': row.get('thumbnail_url', ''),
+        'duration_seconds': row.get('duration_seconds', 0),
+        'views': row.get('views', 0),
+        'tags': serialize_video_tags(row.get('tags', [])),
+        'created_at': row['created_at'].isoformat() if hasattr(row['created_at'], 'isoformat') else row['created_at'],
+        'updated_at': row['updated_at'].isoformat() if hasattr(row['updated_at'], 'isoformat') else row['updated_at'],
+        'deleted_at': row['deleted_at'].isoformat() if hasattr(row['deleted_at'], 'isoformat') else row['deleted_at'],
+        'username': _profile_for_clerk_user_id(row['owner_clerk_user_id']).username if _profile_for_clerk_user_id(row['owner_clerk_user_id']) else row['owner_clerk_user_id'],
+        'display_name': _profile_for_clerk_user_id(row['owner_clerk_user_id']).display_name if _profile_for_clerk_user_id(row['owner_clerk_user_id']) else row['owner_clerk_user_id'],
+        'avatar_url': _profile_for_clerk_user_id(row['owner_clerk_user_id']).avatar_url if _profile_for_clerk_user_id(row['owner_clerk_user_id']) else '',
+    }
+
+    if include_defaults:
+        video_data.update(
+            {
+                'analysis_status': row.get('analysis_status', 'pending') or 'pending',
+                'analysis_stage': row.get('analysis_stage', 'queued') or 'queued',
+                'analysis_progress': row.get('analysis_progress', 0) or 0,
+                'analysis_requested_at': row.get('analysis_requested_at').isoformat() if row.get('analysis_requested_at') and hasattr(row.get('analysis_requested_at'), 'isoformat') else None,
+                'analysis_started_at': row.get('analysis_started_at').isoformat() if row.get('analysis_started_at') and hasattr(row.get('analysis_started_at'), 'isoformat') else None,
+                'analysis_completed_at': row.get('analysis_completed_at').isoformat() if row.get('analysis_completed_at') and hasattr(row.get('analysis_completed_at'), 'isoformat') else None,
+                'analysis_failed_at': row.get('analysis_failed_at').isoformat() if row.get('analysis_failed_at') and hasattr(row.get('analysis_failed_at'), 'isoformat') else None,
+                'analysis_error': row.get('analysis_error', '') or '',
+                'worker_id': row.get('worker_id'),
+                'worker_name': row.get('worker_name', '') or '',
+                'worker_claimed_at': row.get('worker_claimed_at').isoformat() if row.get('worker_claimed_at') and hasattr(row.get('worker_claimed_at'), 'isoformat') else None,
+                'worker_last_seen_at': row.get('worker_last_seen_at').isoformat() if row.get('worker_last_seen_at') and hasattr(row.get('worker_last_seen_at'), 'isoformat') else None,
+                'ai_summary': row.get('ai_summary', '') or '',
+                'ai_tags': row.get('ai_tags', []) or [],
+                'ai_events': row.get('ai_events', []) or [],
+                'ai_metadata': row.get('ai_metadata', {}) or {},
+            }
+        )
+
+    return video_data
 
 
 def _normalize_video_payload_tags(payload: dict, default_source: str = 'user') -> list[dict[str, str]]:
@@ -236,27 +293,40 @@ def video_detail_view(request, video_id):
     except ValueError:
         return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
 
-    try:
-        video = Video.objects.get(id=video_uuid)
-    except Video.DoesNotExist:
-        return JsonResponse({'detail': 'Video not found.'}, status=404)
-
-    if video.deleted_at is not None:
+    video = Video.objects.filter(id=video_uuid).values(
+        'id',
+        'owner_clerk_user_id',
+        'title',
+        'description',
+        'visibility',
+        'status',
+        'original_filename',
+        'upload_url',
+        'playback_url',
+        'thumbnail_url',
+        'duration_seconds',
+        'views',
+        'tags',
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ).first()
+    if video is None or video['deleted_at'] is not None:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
     if request.headers.get('X-Skip-View-Count') not in ('1', 'true', 'True'):
         # Increment view count on user-initiated opens only.
-        video.views += 1
-        video.save(update_fields=['views', 'updated_at'])
+        Video.objects.filter(id=video_uuid).update(views=F('views') + 1)
+        video['views'] = (video.get('views') or 0) + 1
 
     current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
-    video_data = video.to_dict()
-    video_data.update(_video_author_payload(video))
-    video_data['likes_count'] = VideoLike.objects.filter(video=video).count()
-    video_data['comments_count'] = VideoComment.objects.filter(video=video).count()
+    video_data = _serialize_video_row(video)
+    video_data.update(_video_author_payload_from_owner(video['owner_clerk_user_id']))
+    video_data['likes_count'] = VideoLike.objects.filter(video_id=video_uuid).count()
+    video_data['comments_count'] = VideoComment.objects.filter(video_id=video_uuid).count()
     video_data['liked'] = bool(
         current_clerk_user_id
-        and VideoLike.objects.filter(video=video, user_clerk_user_id=current_clerk_user_id).exists()
+        and VideoLike.objects.filter(video_id=video_uuid, user_clerk_user_id=current_clerk_user_id).exists()
     )
     video_data['shares_count'] = 0
 
@@ -425,9 +495,8 @@ def video_comments_view(request, video_id):
     except ValueError:
         return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
 
-    try:
-        video = Video.objects.get(id=video_uuid, deleted_at__isnull=True)
-    except Video.DoesNotExist:
+    video = Video.objects.filter(id=video_uuid, deleted_at__isnull=True).values('id').first()
+    if video is None:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
     current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
@@ -435,7 +504,7 @@ def video_comments_view(request, video_id):
     if request.method == 'GET':
         try:
             top_level_comments = list(
-                VideoComment.objects.filter(video=video, parent_comment__isnull=True)
+                VideoComment.objects.filter(video_id=video_uuid, parent_comment__isnull=True)
                 .annotate(likes_count=Count('likes', distinct=True))
                 .prefetch_related(
                     Prefetch(
@@ -464,7 +533,7 @@ def video_comments_view(request, video_id):
         except Exception:
             # Production fallback for deployments that have the older comment schema.
             rows = list(
-                VideoComment.objects.filter(video=video)
+                VideoComment.objects.filter(video_id=video_uuid)
                 .order_by('created_at')
                 .values('id', 'video_id', 'user_clerk_user_id', 'text', 'created_at', 'updated_at')
             )
