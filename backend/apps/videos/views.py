@@ -51,14 +51,38 @@ def _public_profile_fields(clerk_user_id: str, profile: Profile | None) -> tuple
     if not profile:
         return fallback_username, fallback_display_name, ''
 
-    username = profile.username if profile.username and not _looks_like_clerk_identifier(profile.username) else fallback_username
-    display_name = profile.display_name if profile.display_name and not _looks_like_clerk_identifier(profile.display_name) else fallback_display_name
+    username_candidate = (profile.username or '').strip()
+    display_name_candidate = (profile.display_name or '').strip()
+    email_local_part = ((profile.email or '').split('@', 1)[0] if profile.email else '').strip().lower().replace(' ', '_')
+
+    # Treat a value as unusable only when it is effectively the Clerk identifier.
+    username_is_identifier = (
+        not username_candidate
+        or username_candidate.lower() == clerk_user_id.lower()
+        or (email_local_part and username_candidate.lower() == email_local_part and _looks_like_clerk_identifier(email_local_part))
+    )
+    display_name_is_identifier = (
+        not display_name_candidate
+        or display_name_candidate.lower() == clerk_user_id.lower()
+        or (email_local_part and display_name_candidate.lower() == email_local_part and _looks_like_clerk_identifier(email_local_part))
+    )
+
+    username = username_candidate if not username_is_identifier else fallback_username
+    display_name = display_name_candidate if not display_name_is_identifier else fallback_display_name
     return username, display_name, profile.avatar_url or ''
 
 
 def _fallback_identity_display(clerk_user_id: str) -> tuple[str, str]:
     # Avoid leaking raw Clerk IDs into public UI when profile records are missing.
-    return ('dash_user', 'Dash User')
+    normalized = str(clerk_user_id or '').strip()
+    if not normalized:
+        return ('dash_user', 'Dash User')
+
+    safe_tail = normalized.split('_')[-1][-6:].lower()
+    if not safe_tail:
+        return ('dash_user', 'Dash User')
+
+    return (f'dash_{safe_tail}', f'Dash User {safe_tail.upper()}')
 
 
 def _serialize_comment(comment: VideoComment, liked_comment_ids: set[UUID] | None = None) -> dict:
@@ -404,6 +428,7 @@ def search_videos(request):
 
     items = []
     count = 0
+    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
     select_fields = [
         'id',
         'owner_clerk_user_id',
@@ -450,6 +475,40 @@ def search_videos(request):
         count = filtered.count()
         results = filtered.values(*select_fields)[offset: offset + limit]
         items = [_serialize_video_row(row) for row in results]
+
+    video_ids = [item.get('id') for item in items if item.get('id')]
+    like_counts = {}
+    comment_counts = {}
+    liked_video_ids = set()
+
+    if video_ids:
+        like_counts = {
+            str(row['video_id']): row['count']
+            for row in VideoLike.objects.filter(video_id__in=video_ids)
+            .values('video_id')
+            .annotate(count=Count('id'))
+        }
+        comment_counts = {
+            str(row['video_id']): row['count']
+            for row in VideoComment.objects.filter(video_id__in=video_ids)
+            .values('video_id')
+            .annotate(count=Count('id'))
+        }
+
+        if current_clerk_user_id:
+            liked_video_ids = {
+                str(video_id)
+                for video_id in VideoLike.objects.filter(
+                    user_clerk_user_id=current_clerk_user_id,
+                    video_id__in=video_ids,
+                ).values_list('video_id', flat=True)
+            }
+
+    for item in items:
+        item_id = item.get('id')
+        item['likes_count'] = like_counts.get(item_id, 0)
+        item['comments_count'] = comment_counts.get(item_id, 0)
+        item['liked'] = item_id in liked_video_ids
 
     return JsonResponse(response_envelope('video-search', {'query': q, 'count': count, 'items': items}), status=200)
 

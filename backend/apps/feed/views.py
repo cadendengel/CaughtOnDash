@@ -7,7 +7,15 @@ from apps.store import response_envelope
 
 
 def _fallback_identity_display(clerk_user_id: str) -> tuple[str, str]:
-    return ('dash_user', 'Dash User')
+    normalized = str(clerk_user_id or '').strip()
+    if not normalized:
+        return ('dash_user', 'Dash User')
+
+    safe_tail = normalized.split('_')[-1][-6:].lower()
+    if not safe_tail:
+        return ('dash_user', 'Dash User')
+
+    return (f'dash_{safe_tail}', f'Dash User {safe_tail.upper()}')
 
 
 def feed_view(request):

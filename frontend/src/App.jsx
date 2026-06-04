@@ -832,6 +832,17 @@ function App() {
             }
           : current,
       )
+      setSearchResults((current) =>
+        current.map((post) =>
+          post.id === videoId
+            ? {
+                ...post,
+                likes_count: result.likes_count ?? post.likes_count,
+                liked: result.liked ?? post.liked,
+              }
+            : post,
+        ),
+      )
     } catch (err) {
       // ignore for now
     } finally {

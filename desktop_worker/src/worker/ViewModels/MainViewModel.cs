@@ -9,6 +9,8 @@ namespace CaughtOnDash.Worker.ViewModels
 {
     public class MainViewModel
     {
+        private const string TokenMask = "••••••••";
+
         private readonly MainWindow _mainWindow;
         private readonly AppConfigService _configService;
         private readonly WorkerApiClient _apiClient;
@@ -35,7 +37,15 @@ namespace CaughtOnDash.Worker.ViewModels
             _mainWindow.BackendUrlTextBox.Text = _config.BackendUrl;
             if (!string.IsNullOrEmpty(_config.ApiToken))
             {
-                _mainWindow.ApiTokenPasswordBox.Password = "••••••••";  // Don't show actual token
+                _mainWindow.ApiTokenPasswordBox.Password = TokenMask;  // Don't show actual token
+            }
+
+            if (_config.IsConfigured)
+            {
+                _apiClient.Initialize(_config.BackendUrl, _config.ApiToken);
+                _mainWindow.BackendUrlDisplay.Text = _config.BackendUrl;
+                _mainWindow.StartButton.IsEnabled = true;
+                AddLog($"Loaded saved backend config: {_config.BackendUrl}");
             }
 
             UpdateConnectionStatus();
@@ -46,11 +56,18 @@ namespace CaughtOnDash.Worker.ViewModels
         {
             try
             {
-                _config.BackendUrl = backendUrl;
-                _config.ApiToken = apiToken;
+                var resolvedToken = apiToken == TokenMask ? _config.ApiToken : apiToken;
+
+                if (string.IsNullOrWhiteSpace(resolvedToken))
+                {
+                    throw new InvalidOperationException("Worker API token is required.");
+                }
+
+                _config.BackendUrl = backendUrl.Trim();
+                _config.ApiToken = resolvedToken.Trim();
                 _configService.SaveConfig(_config);
 
-                _apiClient.Initialize(backendUrl, apiToken);
+                _apiClient.Initialize(_config.BackendUrl, _config.ApiToken);
 
                 _mainWindow.ConnectionStatusText.Text = "Connecting...";
                 _mainWindow.ConnectionStatusText.Foreground = Brushes.Blue;
@@ -58,9 +75,9 @@ namespace CaughtOnDash.Worker.ViewModels
                 // TODO: Test connection asynchronously
                 _mainWindow.ConnectionStatusText.Text = "Connected";
                 _mainWindow.ConnectionStatusText.Foreground = Brushes.Green;
-                _mainWindow.BackendUrlDisplay.Text = backendUrl;
+                _mainWindow.BackendUrlDisplay.Text = _config.BackendUrl;
 
-                AddLog($"Connected to backend: {backendUrl}");
+                AddLog($"Connected to backend: {_config.BackendUrl}");
                 _mainWindow.StartButton.IsEnabled = true;
             }
             catch (Exception ex)
