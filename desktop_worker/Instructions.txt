@@ -1,0 +1,572 @@
+You are helping me extend an existing project called CaughtOnDash.
+
+Project context:
+CaughtOnDash is a dashcam video community web app. The social MVP already exists: users can upload videos, view a feed, search videos, use tags, like/comment, and admins can moderate posts. The backend is hosted on Render and the frontend is hosted on Vercel. The backend should remain the source of truth for all video processing state.
+
+Goal:
+Build the non-AI portion of a Windows desktop worker system. Do NOT implement the AI analyzer yet. For now, the desktop app should communicate with the backend, claim pending video jobs, download video files, simulate/placeholder-process them, report heartbeat/progress, allow cancellation/interruption, and submit placeholder analysis results back to the server.
+
+The final system should work like this:
+
+1. A user uploads a video through the existing web app.
+2. The backend marks the video as pending analysis.
+3. The backend exposes API routes for a desktop worker to:
+   - authenticate
+   - check for pending jobs
+   - claim a job
+   - send heartbeat/status updates
+   - download/access the video file
+   - mark the job complete
+   - mark the job failed
+   - release/cancel a job
+4. A Windows desktop app runs on my personal computer.
+5. When started, the app connects to the backend and identifies itself as an active worker.
+6. The app periodically sends heartbeat requests.
+7. The app fetches pending jobs from the backend.
+8. The app claims one job at a time.
+9. The app downloads or accesses the video file.
+10. The app simulates processing with progress updates.
+11. The app submits placeholder analysis data.
+12. The backend marks the job complete.
+13. The frontend/admin UI should be able to show whether a video is:
+    - pending
+    - processing
+    - complete
+    - failed
+    - cancelled
+14. The desktop worker should be interruptible without corrupting job state.
+
+Important:
+Do not focus on computer vision, video analysis, Python ML models, OpenAI calls, YOLO, OCR, object detection, or any AI logic yet. The analyzer should be represented by a placeholder method/function that returns fake structured analysis data. The goal right now is the communication and job-processing infrastructure.
+
+Tech stack assumptions:
+- Backend: Django / Django REST Framework if currently used
+- Database: existing project database
+- Frontend: existing Vite/React frontend
+- Desktop app: C#/.NET Windows desktop app
+- The worker should be able to run on Windows locally
+- Communication should be over HTTP REST
+- WebSockets are not required for the desktop worker heartbeat
+- The backend can later use WebSockets or polling for frontend status updates, but for now regular API polling is acceptable
+
+Backend requirements:
+
+Add or update the video/post model to support analysis state.
+
+Suggested fields:
+- analysis_status:
+  - "pending"
+  - "processing"
+  - "complete"
+  - "failed"
+  - "cancelled"
+- analysis_requested_at
+- analysis_started_at
+- analysis_completed_at
+- analysis_failed_at
+- analysis_error
+- analysis_progress integer, 0-100
+- analysis_stage string, examples:
+  - "queued"
+  - "claimed"
+  - "downloading"
+  - "analyzing"
+  - "uploading_results"
+  - "complete"
+  - "failed"
+  - "cancelled"
+- worker_id string nullable
+- worker_name string nullable
+- worker_last_seen_at datetime nullable
+- worker_claimed_at datetime nullable
+- ai_summary text nullable
+- ai_tags JSON/list nullable
+- ai_events JSON/list nullable
+- ai_metadata JSON nullable
+
+Add a worker identity model if appropriate.
+
+Suggested Worker model:
+- id/uuid
+- name
+- token_hash or API key reference
+- is_active
+- last_seen_at
+- current_job nullable
+- status:
+  - "offline"
+  - "idle"
+  - "processing"
+  - "error"
+- created_at
+- updated_at
+
+Security:
+The worker API must not be public without authentication.
+Use a simple worker API token for now.
+The desktop app should send:
+
+Authorization: Bearer <WORKER_API_TOKEN>
+
+The token should be stored in an environment variable, config file, or app settings file. Do not hardcode secrets into the repository.
+
+Backend API routes to implement:
+
+1. Worker registration/status route
+
+GET /api/worker/status/
+
+Purpose:
+Return current authenticated worker status.
+
+Response example:
+{
+  "worker_id": "caden-desktop-1",
+  "status": "idle",
+  "last_seen_at": "...",
+  "current_job_id": null
+}
+
+2. Heartbeat route
+
+POST /api/worker/heartbeat/
+
+Request example:
+{
+  "worker_id": "caden-desktop-1",
+  "worker_name": "Caden Desktop",
+  "status": "idle",
+  "current_job_id": null,
+  "stage": "idle",
+  "progress": 0
+}
+
+When processing:
+{
+  "worker_id": "caden-desktop-1",
+  "worker_name": "Caden Desktop",
+  "status": "processing",
+  "current_job_id": 123,
+  "stage": "analyzing",
+  "progress": 42
+}
+
+Backend behavior:
+- Update worker last_seen_at.
+- If current_job_id is provided, update that video's worker_last_seen_at, analysis_stage, and analysis_progress.
+- Do not mark a job complete from heartbeat alone.
+- If heartbeat stops for more than a configurable timeout, the backend should be able to treat the worker as offline/stale.
+
+3. Get next pending job
+
+GET /api/worker/jobs/next/
+
+Purpose:
+Return the next available pending analysis job.
+
+Important:
+This route should not permanently assign the job unless the design intentionally combines fetch+claim. Prefer separate fetch and claim.
+
+Response if available:
+{
+  "job_id": 123,
+  "video_id": 123,
+  "title": "Sample Clip",
+  "description": "...",
+  "video_url": "https://...",
+  "created_at": "...",
+  "analysis_status": "pending"
+}
+
+Response if none:
+{
+  "job": null,
+  "message": "No pending jobs"
+}
+
+4. Claim job
+
+POST /api/worker/jobs/{job_id}/claim/
+
+Request:
+{
+  "worker_id": "caden-desktop-1",
+  "worker_name": "Caden Desktop"
+}
+
+Backend behavior:
+- Atomically claim the job only if its current status is "pending", "failed retryable", or stale "processing".
+- Set analysis_status = "processing".
+- Set analysis_stage = "claimed".
+- Set analysis_progress = 0.
+- Set worker_id.
+- Set worker_name.
+- Set worker_claimed_at.
+- Set worker_last_seen_at.
+- Set analysis_started_at.
+- Return success if claimed.
+- Return conflict if already claimed by another active worker.
+
+Response success:
+{
+  "success": true,
+  "job_id": 123,
+  "analysis_status": "processing"
+}
+
+Response conflict:
+{
+  "success": false,
+  "error": "Job already claimed"
+}
+
+5. Update job progress
+
+POST /api/worker/jobs/{job_id}/progress/
+
+Request:
+{
+  "worker_id": "caden-desktop-1",
+  "stage": "downloading",
+  "progress": 15
+}
+
+Backend behavior:
+- Only allow the worker that claimed the job to update it.
+- Update stage, progress, worker_last_seen_at.
+- Reject if job is not assigned to this worker.
+- Reject if job is complete/cancelled.
+
+6. Complete job
+
+POST /api/worker/jobs/{job_id}/complete/
+
+Request example with placeholder analysis:
+{
+  "worker_id": "caden-desktop-1",
+  "summary": "Placeholder analysis summary for this dashcam clip.",
+  "tags": ["dashcam", "driving", "placeholder"],
+  "events": [
+    {
+      "timestamp_seconds": 3.5,
+      "label": "placeholder_event",
+      "description": "Fake event generated by placeholder analyzer",
+      "confidence": 0.5
+    }
+  ],
+  "metadata": {
+    "analyzer_version": "placeholder-0.1",
+    "processed_by": "caden-desktop-1"
+  }
+}
+
+Backend behavior:
+- Only allow completion by the worker that claimed the job.
+- Save the placeholder analysis data.
+- Set analysis_status = "complete".
+- Set analysis_stage = "complete".
+- Set analysis_progress = 100.
+- Set analysis_completed_at.
+- Clear or preserve worker_id depending on preferred audit behavior. Prefer preserving worker_id for audit.
+- Return updated video/job data.
+
+7. Fail job
+
+POST /api/worker/jobs/{job_id}/fail/
+
+Request:
+{
+  "worker_id": "caden-desktop-1",
+  "error": "Download failed: timeout",
+  "stage": "downloading"
+}
+
+Backend behavior:
+- Only allow the claiming worker to fail the job.
+- Set analysis_status = "failed".
+- Set analysis_stage = "failed".
+- Save error.
+- Set analysis_failed_at.
+- Set progress to current or 0.
+- Job can later be retried manually or automatically.
+
+8. Cancel/release job
+
+POST /api/worker/jobs/{job_id}/cancel/
+
+Request:
+{
+  "worker_id": "caden-desktop-1",
+  "reason": "Worker stopped by user"
+}
+
+Backend behavior:
+- Only allow the claiming worker or admin to cancel.
+- Set analysis_status = "cancelled" or return it to "pending" depending on desired behavior.
+- For MVP, prefer returning to "pending" if the user manually stops the worker before analysis finishes.
+- Save cancellation reason in metadata/error field.
+- Clear active processing state if needed.
+
+Recommended behavior:
+If the desktop worker is intentionally stopped, release the job back to pending unless partial processing results matter.
+
+9. Admin retry route
+
+POST /api/admin/jobs/{job_id}/retry/
+
+Purpose:
+Allow an admin to retry failed/cancelled jobs.
+
+Backend behavior:
+- Set analysis_status = "pending".
+- Clear analysis_error.
+- Reset progress/stage.
+- Keep historical timestamps if useful, or overwrite depending on current model style.
+
+Stale job handling:
+Add logic so the backend can detect stale processing jobs.
+
+A job is stale if:
+- analysis_status = "processing"
+- worker_last_seen_at is older than a configured timeout, for example 2 minutes
+
+For MVP:
+Implement a management command or API-safe helper that can reset stale jobs:
+- processing → pending
+- stage → queued
+- worker_id cleared or preserved in error/history
+- progress reset to 0
+- analysis_error = "Worker heartbeat timed out"
+
+Desktop app requirements:
+
+Build a C#/.NET Windows desktop application.
+
+Acceptable UI:
+- WPF, WinForms, or MAUI
+- Prefer WPF if not otherwise specified
+
+The app should have:
+- Server URL input
+- Worker ID input
+- Worker name input
+- API token input
+- Connect button
+- Start Worker button
+- Stop Worker button
+- Current status display
+- Current job display
+- Progress bar
+- Log output panel
+- Last heartbeat timestamp
+- Current stage label
+
+Desktop app behavior:
+
+On Connect:
+- Save config locally.
+- Call GET /api/worker/status/ or POST heartbeat.
+- Display whether connection succeeded.
+
+On Start Worker:
+- Start background loop.
+- Send heartbeat every 5-15 seconds.
+- Poll for pending jobs every 10-30 seconds when idle.
+- When a job is found:
+  1. Claim the job.
+  2. If claim succeeds, process it.
+  3. If claim fails, return to idle polling.
+  4. Download the video to a local temp/work folder.
+  5. Simulate processing with staged progress updates.
+  6. Submit placeholder complete response.
+  7. Return to idle.
+
+On Stop Worker:
+- Stop after current safe checkpoint.
+- If currently processing, ask/allow:
+  - “Stop after current job”
+  - “Cancel current job and release it”
+- For MVP, implement “Cancel current job and release it.”
+- Send cancel/release request to backend.
+- Stop heartbeat after final update.
+- Display status as stopped.
+
+Placeholder analyzer:
+Implement a class or service like:
+
+IAnalyzer
+- AnalyzeAsync(videoPath, cancellationToken)
+
+For now, it should:
+- Wait/simulate processing
+- Report progress
+- Return fake structured results
+
+Example fake result:
+{
+  summary: "Placeholder analysis completed. Real AI analyzer will be added later.",
+  tags: ["dashcam", "placeholder", "needs-review"],
+  events: [
+    {
+      timestamp_seconds: 1.0,
+      label: "placeholder",
+      description: "Placeholder event generated for testing the worker pipeline.",
+      confidence: 0.5
+    }
+  ],
+  metadata: {
+    analyzer_version: "placeholder-0.1"
+  }
+}
+
+Important desktop implementation details:
+- Use HttpClient properly.
+- Use async/await.
+- Use CancellationToken for stopping the worker.
+- Do not block the UI thread.
+- Log every important action:
+  - connecting
+  - heartbeat sent
+  - polling
+  - job found
+  - claim success/failure
+  - download started
+  - progress update
+  - complete submitted
+  - failure submitted
+  - cancellation submitted
+- Handle network failures gracefully.
+- Retry transient failures with small backoff.
+- Do not infinitely retry a bad job without marking it failed.
+- Store downloaded videos in a local worker folder and clean them up after completion.
+- Avoid hardcoded absolute paths.
+- Make server URL configurable.
+
+Suggested desktop folder structure:
+
+CaughtOnDash.Worker/
+  App.xaml
+  MainWindow.xaml
+  MainWindow.xaml.cs
+  Models/
+    WorkerConfig.cs
+    WorkerStatus.cs
+    JobDto.cs
+    AnalysisResult.cs
+  Services/
+    WorkerApiClient.cs
+    WorkerLoopService.cs
+    PlaceholderAnalyzer.cs
+    LocalVideoStorageService.cs
+    AppConfigService.cs
+  ViewModels/
+    MainViewModel.cs
+  Utils/
+    Logger.cs
+
+Suggested backend folder structure:
+
+backend/
+  apps/
+    videos/
+      models.py
+      serializers.py
+      views.py
+      urls.py
+    worker/
+      authentication.py
+      permissions.py
+      views.py
+      serializers.py
+      urls.py
+      services.py
+      management/
+        commands/
+          reset_stale_jobs.py
+
+Frontend/admin UI requirements:
+
+Update existing feed/admin/video display minimally.
+
+Show analysis status on video cards:
+- Pending analysis
+- Processing: 42%
+- Complete
+- Failed
+- Cancelled
+
+If processing:
+Show stage:
+- downloading
+- analyzing
+- uploading_results
+
+In Admin:
+Show:
+- analysis_status
+- worker_id
+- worker_last_seen_at
+- progress
+- stage
+- retry button for failed/cancelled jobs
+- maybe reset stale jobs button later
+
+Do not build a full analytics UI yet. Just expose the processing state clearly.
+
+Reliability rules:
+- Backend is source of truth.
+- Worker sends heartbeat; backend decides whether worker is alive.
+- Worker should only process one job at a time for MVP.
+- Job claiming must be atomic.
+- A worker cannot complete a job it did not claim.
+- A failed worker should not permanently trap a job in processing.
+- Job status transitions should be explicit and predictable.
+
+Recommended status transitions:
+
+pending → processing → complete
+pending → processing → failed
+pending → processing → pending, if cancelled/released
+processing → pending, if stale timeout detected
+failed → pending, if admin retries
+cancelled → pending, if admin retries
+
+Do not:
+- Do not implement the real AI analyzer yet.
+- Do not use WebSockets for the desktop worker.
+- Do not require the desktop worker to stay connected with a persistent socket.
+- Do not hardcode API tokens.
+- Do not let unauthenticated users access worker routes.
+- Do not let two workers process the same job.
+- Do not make the frontend the source of truth for processing status.
+
+Deliverables:
+1. Backend model changes/migrations.
+2. Backend worker API routes.
+3. Worker authentication.
+4. Stale job handling helper or management command.
+5. C# Windows desktop app.
+6. Placeholder analyzer.
+7. Minimal frontend/admin updates to display processing status.
+8. Clear README instructions for:
+   - setting worker API token
+   - running backend migrations
+   - starting the desktop worker
+   - testing the full pending → processing → complete flow
+
+Testing plan:
+Create or upload a test video.
+Confirm backend marks it pending.
+Start desktop worker.
+Confirm heartbeat updates.
+Confirm worker claims job.
+Confirm video status changes to processing.
+Confirm progress updates appear.
+Confirm placeholder analysis is submitted.
+Confirm video status becomes complete.
+Stop worker during processing.
+Confirm job is released back to pending or marked cancelled according to implemented behavior.
+Disconnect network or kill app.
+Confirm stale job recovery can reset the job.
+
+Implement this cleanly and incrementally. Prioritize correctness, simple communication, reliable state transitions, and readable code over advanced features.

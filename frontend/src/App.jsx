@@ -131,6 +131,71 @@ function App() {
     return 'tag-pill--user'
   }
 
+  const getAnalysisStatusColor = (status) => {
+    switch (status) {
+      case 'complete':
+        return '#10b981' // green
+      case 'processing':
+        return '#f59e0b' // amber
+      case 'failed':
+        return '#ef4444' // red
+      case 'cancelled':
+        return '#6b7280' // gray
+      case 'pending':
+      default:
+        return '#9ca3af' // gray
+    }
+  }
+
+  const renderAnalysisStatus = (post) => {
+    if (!post.analysis_status) {
+      return null
+    }
+
+    const status = post.analysis_status
+    const stage = post.analysis_stage || 'queued'
+    const progress = post.analysis_progress || 0
+    const color = getAnalysisStatusColor(status)
+
+    let statusLabel = status.charAt(0).toUpperCase() + status.slice(1)
+    if (status === 'processing') {
+      statusLabel = `Processing: ${progress}%`
+    }
+
+    return (
+      <div className="analysis-status-container" style={{ marginTop: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span
+            style={{
+              display: 'inline-block',
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: color,
+            }}
+          />
+          <span style={{ fontSize: '0.9rem', color: '#666' }}>{statusLabel}</span>
+          {status === 'processing' && stage && (
+            <span style={{ fontSize: '0.85rem', color: '#999' }}>({stage})</span>
+          )}
+        </div>
+        {status === 'processing' && (
+          <div style={{ marginTop: '6px', width: '100%', height: '4px', backgroundColor: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
+            <div
+              style={{
+                height: '100%',
+                width: `${progress}%`,
+                backgroundColor: color,
+                transition: 'width 0.3s ease',
+              }}
+            />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+
   const clerkEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || ''
   const clerkUsername = user?.username || clerkEmail.split('@')[0] || ''
   const clerkDisplayName =
@@ -951,6 +1016,7 @@ function App() {
       <h2>{post.title}</h2>
 
       {renderTagPills(post.id, post.tags || [])}
+      {renderAnalysisStatus(post)}
 
       {post.playback_url ? (
         <video
@@ -1101,6 +1167,8 @@ function App() {
               {renderTagPills(post.id, adminTagEditsByPostId[post.id] || post.tags || [], { editable: true })}
 
               {Boolean(tagsExpandedByPostId[post.id]) ? renderTagEditor(post.id, post.tags || []) : null}
+
+              {renderAnalysisStatus(post)}
 
               <div className="video-meta">
                 <span>{post.duration_seconds ? `${post.duration_seconds}s` : 'Duration unavailable'}</span>
@@ -1354,6 +1422,8 @@ function App() {
         </div>
 
         {renderTagPills(video.id, video.tags || [])}
+
+        {renderAnalysisStatus(video)}
 
         {video.playback_url ? (
           <video className="detail-video" controls preload="metadata">

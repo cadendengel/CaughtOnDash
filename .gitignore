@@ -1,5 +1,5 @@
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,27 +7,49 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Dependency and build output
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+dist-ssr/
+bin/
+obj/
+desktop_worker/src/worker/bin/
+desktop_worker/src/worker/obj/
+backend/staticfiles/
+backend/db.sqlite3
+*.sqlite3
+*.sqlite
+
+# Local config and environment files
+.env
+.env.*
 *.local
+backend/.env
+frontend/.env
+desktop_worker/src/worker/appsettings.json
+desktop_worker/src/worker/appsettings.*.json
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.user
+*.rsuser
+*.cache
 
-# Environment variables
-.env
-
-# Django collectstatic output
-backend/staticfiles/
-
-# Pycache
+# Python cache
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
