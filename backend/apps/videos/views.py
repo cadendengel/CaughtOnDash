@@ -38,6 +38,24 @@ def _profile_for_clerk_user_id(clerk_user_id: str) -> Profile | None:
         return None
 
 
+def _looks_like_clerk_identifier(value: str | None) -> bool:
+    if not value:
+        return False
+
+    text = str(value).strip().lower()
+    return text.startswith('user_') or text.startswith('org_')
+
+
+def _public_profile_fields(clerk_user_id: str, profile: Profile | None) -> tuple[str, str, str]:
+    fallback_username, fallback_display_name = _fallback_identity_display(clerk_user_id)
+    if not profile:
+        return fallback_username, fallback_display_name, ''
+
+    username = profile.username if profile.username and not _looks_like_clerk_identifier(profile.username) else fallback_username
+    display_name = profile.display_name if profile.display_name and not _looks_like_clerk_identifier(profile.display_name) else fallback_display_name
+    return username, display_name, profile.avatar_url or ''
+
+
 def _fallback_identity_display(clerk_user_id: str) -> tuple[str, str]:
     # Avoid leaking raw Clerk IDs into public UI when profile records are missing.
     return ('dash_user', 'Dash User')
@@ -45,7 +63,7 @@ def _fallback_identity_display(clerk_user_id: str) -> tuple[str, str]:
 
 def _serialize_comment(comment: VideoComment, liked_comment_ids: set[UUID] | None = None) -> dict:
     profile = _profile_for_clerk_user_id(comment.user_clerk_user_id)
-    fallback_username, fallback_display_name = _fallback_identity_display(comment.user_clerk_user_id)
+    username, display_name, avatar_url = _public_profile_fields(comment.user_clerk_user_id, profile)
     replies = []
     if comment.parent_comment_id is None:
         replies = [_serialize_comment(reply, liked_comment_ids) for reply in comment.replies.all()]
@@ -55,9 +73,9 @@ def _serialize_comment(comment: VideoComment, liked_comment_ids: set[UUID] | Non
         'video_id': str(comment.video.id),
         'parent_comment_id': str(comment.parent_comment_id) if comment.parent_comment_id else None,
         'user_clerk_user_id': comment.user_clerk_user_id,
-        'username': profile.username if profile else fallback_username,
-        'display_name': profile.display_name if profile else fallback_display_name,
-        'avatar_url': profile.avatar_url if profile else '',
+        'username': username,
+        'display_name': display_name,
+        'avatar_url': avatar_url,
         'text': comment.text,
         'likes_count': getattr(comment, 'likes_count', comment.likes.count()),
         'liked': bool(liked_comment_ids and comment.id in liked_comment_ids),
@@ -69,15 +87,15 @@ def _serialize_comment(comment: VideoComment, liked_comment_ids: set[UUID] | Non
 
 def _serialize_comment_row(row: dict) -> dict:
     profile = _profile_for_clerk_user_id(row['user_clerk_user_id'])
-    fallback_username, fallback_display_name = _fallback_identity_display(row['user_clerk_user_id'])
+    username, display_name, avatar_url = _public_profile_fields(row['user_clerk_user_id'], profile)
     return {
         'id': str(row['id']),
         'video_id': str(row['video_id']),
         'parent_comment_id': None,
         'user_clerk_user_id': row['user_clerk_user_id'],
-        'username': profile.username if profile else fallback_username,
-        'display_name': profile.display_name if profile else fallback_display_name,
-        'avatar_url': profile.avatar_url if profile else '',
+        'username': username,
+        'display_name': display_name,
+        'avatar_url': avatar_url,
         'text': row['text'],
         'likes_count': 0,
         'liked': False,
@@ -89,21 +107,21 @@ def _serialize_comment_row(row: dict) -> dict:
 
 def _video_author_payload(video: Video) -> dict:
     profile = _profile_for_clerk_user_id(video.owner_clerk_user_id)
-    fallback_username, fallback_display_name = _fallback_identity_display(video.owner_clerk_user_id)
+    username, display_name, avatar_url = _public_profile_fields(video.owner_clerk_user_id, profile)
     return {
-        'username': profile.username if profile else fallback_username,
-        'display_name': profile.display_name if profile else fallback_display_name,
-        'avatar_url': profile.avatar_url if profile else '',
+        'username': username,
+        'display_name': display_name,
+        'avatar_url': avatar_url,
     }
 
 
 def _video_author_payload_from_owner(owner_clerk_user_id: str) -> dict:
     profile = _profile_for_clerk_user_id(owner_clerk_user_id)
-    fallback_username, fallback_display_name = _fallback_identity_display(owner_clerk_user_id)
+    username, display_name, avatar_url = _public_profile_fields(owner_clerk_user_id, profile)
     return {
-        'username': profile.username if profile else fallback_username,
-        'display_name': profile.display_name if profile else fallback_display_name,
-        'avatar_url': profile.avatar_url if profile else '',
+        'username': username,
+        'display_name': display_name,
+        'avatar_url': avatar_url,
     }
 
 
@@ -125,9 +143,9 @@ def _serialize_video_row(row: dict, *, include_defaults: bool = True) -> dict:
         'created_at': row['created_at'].isoformat() if hasattr(row['created_at'], 'isoformat') else row['created_at'],
         'updated_at': row['updated_at'].isoformat() if hasattr(row['updated_at'], 'isoformat') else row['updated_at'],
         'deleted_at': row['deleted_at'].isoformat() if hasattr(row['deleted_at'], 'isoformat') else row['deleted_at'],
-        'username': _profile_for_clerk_user_id(row['owner_clerk_user_id']).username if _profile_for_clerk_user_id(row['owner_clerk_user_id']) else row['owner_clerk_user_id'],
-        'display_name': _profile_for_clerk_user_id(row['owner_clerk_user_id']).display_name if _profile_for_clerk_user_id(row['owner_clerk_user_id']) else row['owner_clerk_user_id'],
-        'avatar_url': _profile_for_clerk_user_id(row['owner_clerk_user_id']).avatar_url if _profile_for_clerk_user_id(row['owner_clerk_user_id']) else '',
+        'username': _public_profile_fields(row['owner_clerk_user_id'], _profile_for_clerk_user_id(row['owner_clerk_user_id']))[0],
+        'display_name': _public_profile_fields(row['owner_clerk_user_id'], _profile_for_clerk_user_id(row['owner_clerk_user_id']))[1],
+        'avatar_url': _public_profile_fields(row['owner_clerk_user_id'], _profile_for_clerk_user_id(row['owner_clerk_user_id']))[2],
     }
 
     if include_defaults:
@@ -386,6 +404,24 @@ def search_videos(request):
 
     items = []
     count = 0
+    select_fields = [
+        'id',
+        'owner_clerk_user_id',
+        'title',
+        'description',
+        'visibility',
+        'status',
+        'original_filename',
+        'upload_url',
+        'playback_url',
+        'thumbnail_url',
+        'duration_seconds',
+        'views',
+        'tags',
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ]
 
     # Prefer Postgres full-text search when available and configured.
     if HAS_PG_SEARCH and 'postgres' in settings.DATABASES['default']['ENGINE']:
@@ -403,8 +439,8 @@ def search_videos(request):
             .order_by('-rank', '-created_at')
         )
         count = annotated.count()
-        results = annotated[offset: offset + limit]
-        items = [v.to_dict() for v in results]
+        results = annotated.values(*select_fields)[offset: offset + limit]
+        items = [_serialize_video_row(row) for row in results]
     else:
         # SQLite or other DB fallback: use simple ILIKE/contains queries across
         # title, description and the JSON tags text.
@@ -412,8 +448,8 @@ def search_videos(request):
             Q(title__icontains=q) | Q(description__icontains=q) | Q(tags__icontains=q)
         ).order_by('-created_at')
         count = filtered.count()
-        results = filtered[offset: offset + limit]
-        items = [v.to_dict() for v in results]
+        results = filtered.values(*select_fields)[offset: offset + limit]
+        items = [_serialize_video_row(row) for row in results]
 
     return JsonResponse(response_envelope('video-search', {'query': q, 'count': count, 'items': items}), status=200)
 

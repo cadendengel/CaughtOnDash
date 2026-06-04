@@ -83,6 +83,14 @@ function App() {
     return ['user', 'admin', 'ai'].includes(source) ? source : fallback
   }
 
+  const getDisplayName = (item) => {
+    return item?.display_name || item?.username || 'Dash User'
+  }
+
+  const getHandle = (item) => {
+    return item?.username || 'dash_user'
+  }
+
   const normalizeTagObjects = (tags, fallbackSource = 'user') => {
     const seen = new Set()
     const normalized = []
@@ -1007,8 +1015,8 @@ function App() {
     <article key={post.id} className="feed-card">
       <div className="feed-card-head">
         <div className="author-block">
-          <span className="author-name">{post.display_name || post.username || post.owner_clerk_user_id}</span>
-          <span className="author-handle">@{post.username || post.owner_clerk_user_id}</span>
+          <span className="author-name">{getDisplayName(post)}</span>
+          <span className="author-handle">@{getHandle(post)}</span>
         </div>
         <span className="timestamp">{formatTimestamp(post.created_at)}</span>
       </div>
@@ -1060,14 +1068,14 @@ function App() {
   )
 
   const renderCommentNode = (comment, videoId, depth = 0, showAdminActions = false) => {
-    const handle = comment.username || comment.user_clerk_user_id
+    const handle = getHandle(comment)
     const isReply = depth > 0
 
     return (
       <article key={comment.id} className={isReply ? 'comment-card comment-reply-card' : 'comment-card'}>
         <div className="comment-head">
           <div className="comment-author-block">
-            <span className="comment-author-name">{comment.display_name || comment.username}</span>
+            <span className="comment-author-name">{getDisplayName(comment)}</span>
             <span className="comment-author-handle">@{handle}</span>
           </div>
           <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
@@ -1156,8 +1164,8 @@ function App() {
             <article key={post.id} className="feed-card admin-card">
               <div className="feed-card-head">
                 <div className="author-block">
-                  <span className="author-name">{post.display_name || post.username || post.owner_clerk_user_id}</span>
-                  <span className="author-handle">@{post.username || post.owner_clerk_user_id}</span>
+                  <span className="author-name">{getDisplayName(post)}</span>
+                  <span className="author-handle">@{getHandle(post)}</span>
                 </div>
                 <span className="timestamp">{formatTimestamp(post.created_at)}</span>
               </div>
@@ -1415,8 +1423,8 @@ function App() {
       <section className="page-content video-detail-page">
         <div className="page-heading">
           <div className="author-block detail-author-block">
-            <span className="author-name">{video.display_name || video.username || video.owner_clerk_user_id}</span>
-            <span className="author-handle">@{video.username || video.owner_clerk_user_id}</span>
+            <span className="author-name">{getDisplayName(video)}</span>
+            <span className="author-handle">@{getHandle(video)}</span>
           </div>
           <h2>{video.title}</h2>
         </div>
