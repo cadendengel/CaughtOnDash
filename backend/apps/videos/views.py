@@ -30,6 +30,7 @@ from apps.store import (
     response_envelope,
 )
 from apps.storage import upload_bytes_to_supabase
+from apps.videos.worker_services import request_analysis
 
 
 def _method_not_allowed(*allowed_methods: str) -> JsonResponse:
@@ -320,10 +321,20 @@ def upload_file_view(request):
     except Exception as exc:
         return JsonResponse({'detail': f'Upload failed: {exc}'}, status=500)
 
-    # Update video record with playback_url and mark ready
+    # Update video record with playback_url, mark ready, and queue it for
+    # analysis. The video was already implicitly claimable (analysis_status
+    # defaults to 'pending'), but analysis_requested_at was never populated --
+    # leaving the worker's ordering column permanently NULL. Setting it here
+    # makes the enqueue explicit and gives the queue a real FIFO key.
     video.playback_url = public_url
     video.status = 'ready'
-    video.save(update_fields=['playback_url', 'status', 'updated_at'])
+    video.analysis_status = 'pending'
+    video.analysis_stage = 'queued'
+    video.analysis_requested_at = timezone.now()
+    video.save(update_fields=[
+        'playback_url', 'status', 'analysis_status', 'analysis_stage',
+        'analysis_requested_at', 'updated_at',
+    ])
 
     return JsonResponse(response_envelope('video-uploaded', {'video': video.to_dict()}), status=200)
     
@@ -848,6 +859,36 @@ def admin_video_tags_view(request, video_id):
     video.save(update_fields=['tags', 'updated_at'])
 
     return JsonResponse(response_envelope('video-tags', {'video': video.to_dict()}), status=200)
+
+
+@csrf_exempt
+def video_request_analysis_view(request, video_id):
+    # POST /api/videos/<video_id>/analyze/ - owner re-queues the video for analysis.
+    if request.method != 'POST':
+        return _method_not_allowed('POST')
+
+    try:
+        video_uuid = UUID(str(video_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
+
+    try:
+        video = Video.objects.get(id=video_uuid, deleted_at__isnull=True)
+    except Video.DoesNotExist:
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    # Owner or admin. Unlike /manage/, admins are allowed here: re-running
+    # analysis is not destructive and is part of moderating bad AI output.
+    caller = resolve_current_clerk_user_id(request)
+    if not (_is_owner(caller, video.owner_clerk_user_id) or AdminUser.is_admin_for(caller)):
+        return JsonResponse({'detail': 'You do not have permission to analyze this video.'}, status=403)
+
+    result = request_analysis(video_uuid)
+    if not result['success']:
+        return JsonResponse({'detail': result['error']}, status=409)
+
+    video.refresh_from_db()
+    return JsonResponse(response_envelope('video-analysis-requested', {'video': video.to_dict()}), status=200)
 
 
 def video_update_delete_view(request, video_id):

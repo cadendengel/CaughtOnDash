@@ -3,6 +3,11 @@ import { SignIn, UserButton, useAuth, useUser } from '@clerk/react'
 import './App.css'
 import './VideoDetail.css'
 
+// Re-analysis is only offered on your own videos, and only from a settled state
+// -- the backend rejects anything else, so the button mirrors its rules rather
+// than inviting a request that will 409.
+const REQUEUEABLE_ANALYSIS_STATUSES = ['complete', 'failed', 'cancelled']
+
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const { getToken } = useAuth()
@@ -41,6 +46,8 @@ function App() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailReturnPage, setDetailReturnPage] = useState('feed')
   const [shareStatusByPostId, setShareStatusByPostId] = useState({})
+  const [analysisRequestLoadingByPostId, setAnalysisRequestLoadingByPostId] = useState({})
+  const [analysisRequestErrorByPostId, setAnalysisRequestErrorByPostId] = useState({})
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
@@ -877,6 +884,78 @@ function App() {
     }
   }
 
+  const canRequestAnalysis = (post) => {
+    if (!post || !user?.id) {
+      return false
+    }
+
+    if (post.status !== 'ready') {
+      return false
+    }
+
+    if (!(post.owner_clerk_user_id === user.id || isAdmin)) {
+      return false
+    }
+
+    return REQUEUEABLE_ANALYSIS_STATUSES.includes(post.analysis_status)
+  }
+
+  const requestAnalysis = async (videoId) => {
+    if (!videoId || analysisRequestLoadingByPostId[videoId]) {
+      return
+    }
+
+    setAnalysisRequestLoadingByPostId((current) => ({ ...current, [videoId]: true }))
+    setAnalysisRequestErrorByPostId((current) => ({ ...current, [videoId]: '' }))
+
+    try {
+      const response = await authFetch(`${API_BASE}/api/videos/${videoId}/analyze/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        // Surface the backend's reason ("Analysis is already queued", "Video is
+        // not ready for analysis yet") rather than a generic failure.
+        setAnalysisRequestErrorByPostId((current) => ({
+          ...current,
+          [videoId]: data.detail || 'Could not request analysis.',
+        }))
+        return
+      }
+
+      const updated = data.video || (data.payload && data.payload.video) || {}
+      const applyAnalysisState = (item) =>
+        item && item.id === videoId
+          ? {
+              ...item,
+              analysis_status: updated.analysis_status ?? 'pending',
+              analysis_stage: updated.analysis_stage ?? 'queued',
+              analysis_progress: updated.analysis_progress ?? 0,
+              analysis_error: updated.analysis_error ?? '',
+            }
+          : item
+
+      setPosts((current) => current.map(applyAnalysisState))
+      setSearchResults((current) => current.map(applyAnalysisState))
+      setCurrentVideo((current) => applyAnalysisState(current))
+    } catch {
+      // Network-level failure. Binding the error and reading err.message here
+      // makes the React Compiler bail on this whole component, which silences
+      // its diagnostics for the entire file -- so keep this message static.
+      setAnalysisRequestErrorByPostId((current) => ({
+        ...current,
+        [videoId]: 'Could not reach the server. Please try again.',
+      }))
+    } finally {
+      setAnalysisRequestLoadingByPostId((current) => ({ ...current, [videoId]: false }))
+    }
+  }
+
   const deleteAdminVideo = async (videoId) => {
     if (!isAdmin || !videoId) {
       return
@@ -1101,7 +1180,21 @@ function App() {
         <button type="button" className="ghost-btn" onClick={() => shareVideo(post)}>
           {shareStatusByPostId[post.id] === 'shared' ? 'Copied' : 'Share'}
         </button>
+        {canRequestAnalysis(post) ? (
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => requestAnalysis(post.id)}
+            disabled={analysisRequestLoadingByPostId[post.id]}
+          >
+            {analysisRequestLoadingByPostId[post.id] ? 'Queueing...' : 'Re-analyze'}
+          </button>
+        ) : null}
       </div>
+
+      {analysisRequestErrorByPostId[post.id] ? (
+        <p className="analysis-request-error">{analysisRequestErrorByPostId[post.id]}</p>
+      ) : null}
     </article>
   )
 
@@ -1494,7 +1587,21 @@ function App() {
           <button type="button" className="secondary-btn" onClick={closeDetail}>
             Back to Feed
           </button>
+          {canRequestAnalysis(video) ? (
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => requestAnalysis(video.id)}
+              disabled={analysisRequestLoadingByPostId[video.id]}
+            >
+              {analysisRequestLoadingByPostId[video.id] ? 'Queueing...' : 'Re-analyze'}
+            </button>
+          ) : null}
         </div>
+
+        {analysisRequestErrorByPostId[video.id] ? (
+          <p className="analysis-request-error">{analysisRequestErrorByPostId[video.id]}</p>
+        ) : null}
 
         <div className="comments-panel detail-comments detail-comments-sheet">
           {loadingCommentsByPostId[video.id] ? (

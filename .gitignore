@@ -56,3 +56,6 @@ env/
 # Desktop worker local config (holds the backend API token)
 desktop_worker/src/*/appsettings.json
 desktop_worker/src/*/appsettings.*.json
+
+# Playwright MCP session artifacts
+.playwright-mcp/
