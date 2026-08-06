@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import uuid
 
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from apps.videos.models import Video, Worker
@@ -33,11 +34,15 @@ def update_worker_heartbeat(worker_id: str, status: str, current_job_id: uuid.UU
 
 def get_next_pending_job() -> Video | None:
     """Get the next pending analysis job without claiming it."""
+    # nulls_last matters: SQLite sorts NULLs first and Postgres sorts them last,
+    # so a bare order_by would queue rows predating the explicit enqueue in a
+    # different order locally than in production. Pinning it keeps dev and prod
+    # in agreement, and puts legacy NULL rows behind explicitly-requested ones.
     job = Video.objects.filter(
         analysis_status='pending',
         status='ready',
         deleted_at__isnull=True,
-    ).order_by('analysis_requested_at', 'created_at').first()
+    ).order_by(F('analysis_requested_at').asc(nulls_last=True), 'created_at').first()
     return job
 
 
@@ -250,6 +255,59 @@ def reset_stale_jobs(timeout_minutes: int = 2) -> dict:
     return {'reset_count': count}
 
 
+# States a video can be re-queued from. 'processing' is excluded so a request
+# cannot yank a job out from under a worker that is actively running it, and
+# 'pending' is excluded because it is already queued.
+REQUEUEABLE_ANALYSIS_STATUSES = ('complete', 'failed', 'cancelled')
+
+
+@transaction.atomic
+def request_analysis(job_id: uuid.UUID) -> dict:
+    """Re-queue a video for analysis at the owner's request.
+
+    Previous AI results are left in place until the new run overwrites them, so
+    the video keeps showing its old summary/tags while it waits in the queue
+    rather than blanking out.
+    """
+    try:
+        job = Video.objects.select_for_update().get(id=job_id)
+    except Video.DoesNotExist:
+        return {'success': False, 'error': 'Video not found'}
+
+    if job.deleted_at is not None:
+        return {'success': False, 'error': 'Video not found'}
+
+    if job.status != 'ready':
+        return {'success': False, 'error': 'Video is not ready for analysis yet'}
+
+    if job.analysis_status == 'pending':
+        return {'success': False, 'error': 'Analysis is already queued'}
+
+    if job.analysis_status not in REQUEUEABLE_ANALYSIS_STATUSES:
+        return {'success': False, 'error': f'Cannot re-analyze a video in state: {job.analysis_status}'}
+
+    job.analysis_status = 'pending'
+    job.analysis_stage = 'queued'
+    job.analysis_progress = 0
+    job.analysis_error = ''
+    job.analysis_requested_at = timezone.now()
+    job.analysis_started_at = None
+    job.analysis_completed_at = None
+    job.analysis_failed_at = None
+    job.worker_id = None
+    job.worker_name = ''
+    job.worker_claimed_at = None
+    job.worker_last_seen_at = None
+    job.save()
+
+    return {
+        'success': True,
+        'job_id': str(job_id),
+        'analysis_status': job.analysis_status,
+        'analysis_requested_at': job.analysis_requested_at.isoformat(),
+    }
+
+
 @transaction.atomic
 def admin_retry_job(job_id: uuid.UUID) -> dict:
     """Admin endpoint to retry a failed or cancelled job."""
@@ -261,11 +319,14 @@ def admin_retry_job(job_id: uuid.UUID) -> dict:
     if job.analysis_status not in ('failed', 'cancelled'):
         return {'success': False, 'error': f'Cannot retry job in state: {job.analysis_status}'}
     
-    # Reset to pending
+    # Reset to pending. Re-stamping analysis_requested_at sends the retry to the
+    # back of the queue rather than leaving it NULL, so one repeatedly-failing
+    # video cannot starve newer uploads.
     job.analysis_status = 'pending'
     job.analysis_stage = 'queued'
     job.analysis_progress = 0
     job.analysis_error = ''
+    job.analysis_requested_at = timezone.now()
     job.worker_id = None
     job.worker_name = ''
     job.save()

@@ -560,6 +560,12 @@
   align-items: center;
 }
 
+.analysis-request-error {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: #b91c1c;
+}
+
 .ghost-btn {
   border: 1px solid rgba(15, 23, 42, 0.14);
   border-radius: 999px;
