@@ -3,6 +3,7 @@ from django.db.models import Count
 
 from apps.accounts.models import Profile
 from apps.videos.models import Video, VideoLike
+from apps.videos.tagging import serialize_video_tags
 from apps.store import current_clerk_user_id as resolve_current_clerk_user_id, response_envelope
 
 
@@ -39,10 +40,19 @@ def feed_view(request):
         'playback_url',
         'thumbnail_url',
         'duration_seconds',
+        'views',
         'tags',
         'created_at',
         'updated_at',
         'deleted_at',
+        # The feed omitted analysis state entirely, so cards could not show an
+        # analysis badge and the owner Re-analyze button never rendered.
+        'analysis_status',
+        'analysis_stage',
+        'analysis_progress',
+        'worker_last_seen_at',
+        'ai_summary',
+        'ai_tags',
     ).annotate(
         likes_count=Count('likes', distinct=True),
         comments_count=Count('comments', distinct=True),
@@ -79,12 +89,22 @@ def feed_view(request):
             'playback_url': video['playback_url'],
             'thumbnail_url': video['thumbnail_url'],
             'duration_seconds': video['duration_seconds'],
-            'tags': video['tags'],
+            'views': video.get('views', 0),
+            # Tags go through the shared serializer so the feed emits the same
+            # {text, source} shape as search and detail.
+            'tags': serialize_video_tags(video['tags']),
+            'analysis_status': video['analysis_status'],
+            'analysis_stage': video['analysis_stage'],
+            'analysis_progress': video['analysis_progress'],
+            'worker_last_seen_at': video['worker_last_seen_at'].isoformat() if video['worker_last_seen_at'] else None,
+            'ai_summary': video['ai_summary'],
+            'ai_tags': video['ai_tags'],
             'created_at': video['created_at'].isoformat() if hasattr(video['created_at'], 'isoformat') else video['created_at'],
             'updated_at': video['updated_at'].isoformat() if hasattr(video['updated_at'], 'isoformat') else video['updated_at'],
             'deleted_at': video['deleted_at'].isoformat() if hasattr(video['deleted_at'], 'isoformat') else video['deleted_at'],
             'username': profile.username if profile else fallback_username,
             'display_name': profile.display_name if profile else fallback_display_name,
+            'avatar_url': profile.avatar_url if profile else '',
             'likes_count': video.get('likes_count', 0),
             'comments_count': video.get('comments_count', 0),
             'liked': video['id'] in liked_video_ids,
