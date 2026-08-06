@@ -405,6 +405,25 @@ def video_detail_view(request, video_id):
         'created_at',
         'updated_at',
         'deleted_at',
+        # Analysis state must be selected explicitly. Without these,
+        # _serialize_video_row falls back to its defaults and every video
+        # reports 'pending' with empty AI results regardless of the database.
+        'analysis_status',
+        'analysis_stage',
+        'analysis_progress',
+        'analysis_requested_at',
+        'analysis_started_at',
+        'analysis_completed_at',
+        'analysis_failed_at',
+        'analysis_error',
+        'worker_id',
+        'worker_name',
+        'worker_claimed_at',
+        'worker_last_seen_at',
+        'ai_summary',
+        'ai_tags',
+        'ai_events',
+        'ai_metadata',
     ).first()
     if video is None or video['deleted_at'] is not None:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
