@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { SignIn, UserButton, useUser } from '@clerk/react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { SignIn, UserButton, useAuth, useUser } from '@clerk/react'
 import './App.css'
 import './VideoDetail.css'
 
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
+  const { getToken } = useAuth()
   const [activePage, setActivePage] = useState('feed')
   const [isAdmin, setIsAdmin] = useState(false)
   const [posts, setPosts] = useState([])
@@ -42,6 +43,31 @@ function App() {
   const [shareStatusByPostId, setShareStatusByPostId] = useState({})
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+
+  // Every backend call goes through this so the Clerk session token is attached
+  // consistently. The backend treats the token as the authoritative identity;
+  // the X-Clerk-User-Id header some callers still send is ignored once
+  // REQUIRE_CLERK_JWT is enabled server-side.
+  const authFetch = useCallback(
+    async (url, options = {}) => {
+      let token
+      try {
+        token = await getToken()
+      } catch {
+        // Signed out, or the token could not be refreshed. Fall through as an
+        // anonymous request rather than breaking public reads like the feed.
+        token = null
+      }
+
+      const headers = { ...(options.headers || {}) }
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
+      }
+
+      return fetch(url, { ...options, headers })
+    },
+    [getToken],
+  )
 
   const formatTimestamp = (value) => {
     if (!value) {
@@ -258,7 +284,7 @@ function App() {
     viewedVideoIdsRef.current.add(videoId)
 
     try {
-      await fetch(`${API_BASE}/api/videos/${videoId}/view/`, {
+      await authFetch(`${API_BASE}/api/videos/${videoId}/view/`, {
         method: 'POST',
       })
     } catch (err) {
@@ -269,7 +295,7 @@ function App() {
   const loadFeed = async () => {
     try {
       const headers = user?.id ? { 'X-Clerk-User-Id': user.id } : {}
-      const res = await fetch(`${API_BASE}/api/feed/`, { headers })
+      const res = await authFetch(`${API_BASE}/api/feed/`, { headers })
       if (!res.ok) return
       const data = await res.json()
       const items = data.items || []
@@ -295,7 +321,7 @@ function App() {
     setSearchLoading(true)
     try {
       const headers = user?.id ? { 'X-Clerk-User-Id': user.id } : {}
-      const response = await fetch(
+      const response = await authFetch(
         `${API_BASE}/api/videos/search/?q=${encodeURIComponent(normalizedQuery)}&limit=20`,
         { headers },
       )
@@ -326,7 +352,7 @@ function App() {
     setLoadingCommentsByPostId((current) => ({ ...current, [videoId]: true }))
     try {
       const headers = user?.id ? { 'X-Clerk-User-Id': user.id } : {}
-      const res = await fetch(`${API_BASE}/api/videos/${videoId}/comments/`, { headers })
+      const res = await authFetch(`${API_BASE}/api/videos/${videoId}/comments/`, { headers })
       if (!res.ok) return
       const data = await res.json()
       const items = data.items || []
@@ -364,7 +390,7 @@ function App() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/api/auth/me/`, {
+      const res = await authFetch(`${API_BASE}/api/auth/me/`, {
         headers: {
           'X-Clerk-User-Id': user.id,
         },
@@ -404,7 +430,7 @@ function App() {
       if (skipViewCount) {
         headers['X-Skip-View-Count'] = '1'
       }
-      const res = await fetch(`${API_BASE}/api/videos/${videoId}/`, { headers })
+      const res = await authFetch(`${API_BASE}/api/videos/${videoId}/`, { headers })
       if (!res.ok) return
       const data = await res.json()
       // Response envelope: payload.video
@@ -519,7 +545,7 @@ function App() {
     setAdminTagSavingByPostId((current) => ({ ...current, [videoId]: true }))
 
     try {
-      const response = await fetch(`${API_BASE}/api/videos/admin/videos/${videoId}/tags/`, {
+      const response = await authFetch(`${API_BASE}/api/videos/admin/videos/${videoId}/tags/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -726,7 +752,7 @@ function App() {
 
     setCommentLikeLoadingByCommentId((current) => ({ ...current, [commentId]: true }))
     try {
-      const response = await fetch(`${API_BASE}/api/videos/comments/${commentId}/like/`, {
+      const response = await authFetch(`${API_BASE}/api/videos/comments/${commentId}/like/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -769,7 +795,7 @@ function App() {
 
     setReplyLoadingByCommentId((current) => ({ ...current, [parentComment.id]: true }))
     try {
-      const response = await fetch(`${API_BASE}/api/videos/${videoId}/comments/`, {
+      const response = await authFetch(`${API_BASE}/api/videos/${videoId}/comments/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -803,7 +829,7 @@ function App() {
 
     setLikeLoadingByPostId((current) => ({ ...current, [videoId]: true }))
     try {
-      const response = await fetch(`${API_BASE}/api/videos/${videoId}/like/`, {
+      const response = await authFetch(`${API_BASE}/api/videos/${videoId}/like/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -857,7 +883,7 @@ function App() {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/videos/admin/videos/${videoId}/`, {
+      const response = await authFetch(`${API_BASE}/api/videos/admin/videos/${videoId}/`, {
         method: 'DELETE',
         headers: {
           'X-Clerk-User-Id': user?.id || '',
@@ -889,7 +915,7 @@ function App() {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/videos/admin/comments/${commentId}/`, {
+      const response = await authFetch(`${API_BASE}/api/videos/admin/comments/${commentId}/`, {
         method: 'DELETE',
         headers: {
           'X-Clerk-User-Id': user?.id || '',
@@ -923,7 +949,7 @@ function App() {
 
     setCommentLoadingByPostId((current) => ({ ...current, [videoId]: true }))
     try {
-      const response = await fetch(`${API_BASE}/api/videos/${videoId}/comments/`, {
+      const response = await authFetch(`${API_BASE}/api/videos/${videoId}/comments/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -954,7 +980,7 @@ function App() {
     }
 
     try {
-      await fetch(`${API_BASE}/api/auth/bootstrap/`, {
+      await authFetch(`${API_BASE}/api/auth/bootstrap/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1322,7 +1348,7 @@ function App() {
     try {
       const durationSeconds = await getVideoDurationSeconds(uploadFile)
 
-      const bootstrapResponse = await fetch(`${API_BASE}/api/videos/upload-url/`, {
+      const bootstrapResponse = await authFetch(`${API_BASE}/api/videos/upload-url/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1348,7 +1374,7 @@ function App() {
       formData.append('video_id', video.id)
       formData.append('file', uploadFile)
 
-      const uploadResponse = await fetch(`${API_BASE}/api/videos/upload/`, {
+      const uploadResponse = await authFetch(`${API_BASE}/api/videos/upload/`, {
         method: 'POST',
         body: formData,
       })

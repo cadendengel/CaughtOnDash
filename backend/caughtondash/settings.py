@@ -132,6 +132,16 @@ CORS_ALLOWED_ORIGINS = [
 # Read through settings (not os.getenv directly) so tests can override it.
 CLERK_SECRET_KEY = os.getenv('CLERK_SECRET_KEY', '')
 
+# Clerk session-token verification.
+# CLERK_ISSUER is the Frontend API origin, e.g. https://<slug>.clerk.accounts.dev
+# Its JWKS document is fetched from <issuer>/.well-known/jwks.json.
+CLERK_ISSUER = os.getenv('CLERK_ISSUER', '').strip().rstrip('/')
+
+# When True, a verified bearer token is the ONLY accepted identity and the
+# X-Clerk-User-Id header is ignored. Leave False until the frontend ships tokens,
+# then flip it -- the header is trivially forgeable and must not remain accepted.
+REQUIRE_CLERK_JWT = os.getenv('REQUIRE_CLERK_JWT', 'False').lower() in {'1', 'true', 'yes'}
+
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-clerk-user-id',
     'x-skip-view-count',

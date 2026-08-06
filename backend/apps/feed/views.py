@@ -3,7 +3,7 @@ from django.db.models import Count
 
 from apps.accounts.models import Profile
 from apps.videos.models import Video, VideoLike
-from apps.store import response_envelope
+from apps.store import current_clerk_user_id as resolve_current_clerk_user_id, response_envelope
 
 
 def _fallback_identity_display(clerk_user_id: str) -> tuple[str, str]:
@@ -48,7 +48,7 @@ def feed_view(request):
         comments_count=Count('comments', distinct=True),
     ).order_by('-created_at')[:100])  # Limit to 100 for now
 
-    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+    current_clerk_user_id = resolve_current_clerk_user_id(request)
     liked_video_ids = set()
     if current_clerk_user_id:
         liked_video_ids = set(
