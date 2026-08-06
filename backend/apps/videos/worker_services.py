@@ -260,6 +260,25 @@ def reset_stale_jobs(timeout_minutes: int = 2) -> dict:
 # 'pending' is excluded because it is already queued.
 REQUEUEABLE_ANALYSIS_STATUSES = ('complete', 'failed', 'cancelled')
 
+# A worker heartbeats every 10 seconds. Past this, treat it as gone and let the
+# job be re-queued -- otherwise a worker that dies mid-job (or, as happened in
+# production, one whose write-backs were all rejected) leaves the video wedged
+# in 'processing' forever with no route back for its owner.
+STALE_PROCESSING_MINUTES = 5
+
+
+def _is_stale_processing(job, now) -> bool:
+    """True when a job claims to be processing but its worker has gone quiet."""
+    if job.analysis_status != 'processing':
+        return False
+
+    last_seen = job.worker_last_seen_at or job.worker_claimed_at or job.analysis_started_at
+    if last_seen is None:
+        # Claimed with no timestamps at all: nothing is coming back for it.
+        return True
+
+    return last_seen < now - timedelta(minutes=STALE_PROCESSING_MINUTES)
+
 
 @transaction.atomic
 def request_analysis(job_id: uuid.UUID) -> dict:
@@ -283,14 +302,15 @@ def request_analysis(job_id: uuid.UUID) -> dict:
     if job.analysis_status == 'pending':
         return {'success': False, 'error': 'Analysis is already queued'}
 
-    if job.analysis_status not in REQUEUEABLE_ANALYSIS_STATUSES:
+    now = timezone.now()
+    if job.analysis_status not in REQUEUEABLE_ANALYSIS_STATUSES and not _is_stale_processing(job, now):
         return {'success': False, 'error': f'Cannot re-analyze a video in state: {job.analysis_status}'}
 
     job.analysis_status = 'pending'
     job.analysis_stage = 'queued'
     job.analysis_progress = 0
     job.analysis_error = ''
-    job.analysis_requested_at = timezone.now()
+    job.analysis_requested_at = now
     job.analysis_started_at = None
     job.analysis_completed_at = None
     job.analysis_failed_at = None

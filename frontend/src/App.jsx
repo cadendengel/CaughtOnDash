@@ -3,10 +3,32 @@ import { SignIn, UserButton, useAuth, useUser } from '@clerk/react'
 import './App.css'
 import './VideoDetail.css'
 
-// Re-analysis is only offered on your own videos, and only from a settled state
-// -- the backend rejects anything else, so the button mirrors its rules rather
-// than inviting a request that will 409.
+// Re-analysis is only offered on your own videos, and only from a state the
+// backend will accept, so the button mirrors its rules rather than inviting a
+// request that will 409.
 const REQUEUEABLE_ANALYSIS_STATUSES = ['complete', 'failed', 'cancelled']
+
+// Keep in step with STALE_PROCESSING_MINUTES in worker_services.py. A job whose
+// worker has gone quiet for longer than this is wedged, not running, and its
+// owner needs a way to re-queue it.
+const STALE_PROCESSING_MS = 5 * 60 * 1000
+
+const isStaleProcessing = (post) => {
+  if (post?.analysis_status !== 'processing') {
+    return false
+  }
+
+  if (!post.worker_last_seen_at) {
+    return true
+  }
+
+  const lastSeen = new Date(post.worker_last_seen_at).getTime()
+  if (Number.isNaN(lastSeen)) {
+    return true
+  }
+
+  return Date.now() - lastSeen > STALE_PROCESSING_MS
+}
 
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
@@ -897,7 +919,7 @@ function App() {
       return false
     }
 
-    return REQUEUEABLE_ANALYSIS_STATUSES.includes(post.analysis_status)
+    return REQUEUEABLE_ANALYSIS_STATUSES.includes(post.analysis_status) || isStaleProcessing(post)
   }
 
   const requestAnalysis = async (videoId) => {
