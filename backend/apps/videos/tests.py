@@ -5,7 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
 from apps.accounts.models import AdminUser, Profile
-from apps.videos.models import Video
+from apps.videos.models import Video, VideoLike
 
 
 class VideoUploadFlowTests(TestCase):
@@ -83,6 +83,41 @@ class VideoUploadFlowTests(TestCase):
         video = Video.objects.get(id=video_id)
         self.assertEqual(video.tags[0]['source'], 'user')
         self.assertEqual(video.tags[1]['source'], 'admin')
+
+    def test_search_includes_author_and_like_state(self):
+        Profile.objects.create(
+            clerk_user_id='owner-user',
+            email='owner@example.com',
+            username='ownername',
+            display_name='Owner Name',
+        )
+        Profile.objects.create(
+            clerk_user_id='viewer-user',
+            email='viewer@example.com',
+            username='viewername',
+            display_name='Viewer Name',
+        )
+        video = Video.objects.create(
+            owner_clerk_user_id='owner-user',
+            title='Brake Check Near Miss',
+            description='demo',
+            visibility='public',
+            status='ready',
+            playback_url='https://example.com/video.mp4',
+        )
+        VideoLike.objects.create(video=video, user_clerk_user_id='viewer-user')
+
+        response = self.client.get('/api/videos/search/?q=Brake&limit=10', HTTP_X_CLERK_USER_ID='viewer-user')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['count'], 1)
+        item = payload['items'][0]
+        self.assertEqual(item['username'], 'ownername')
+        self.assertEqual(item['display_name'], 'Owner Name')
+        self.assertEqual(item['likes_count'], 1)
+        self.assertEqual(item['comments_count'], 0)
+        self.assertTrue(item['liked'])
 
     @patch('apps.videos.views.upload_bytes_to_supabase')
     def test_upload_file_stores_video_to_supabase_and_marks_ready(self, mock_upload_bytes):

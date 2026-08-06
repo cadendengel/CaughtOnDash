@@ -89,6 +89,15 @@ def _video_author_payload(video: Video) -> dict:
     }
 
 
+def _serialize_video_card(video: Video, liked_video_ids: set[UUID] | None = None) -> dict:
+    payload = video.to_dict()
+    payload.update(_video_author_payload(video))
+    payload['likes_count'] = getattr(video, 'likes_count', video.likes.count())
+    payload['comments_count'] = getattr(video, 'comments_count', video.comments.count())
+    payload['liked'] = bool(liked_video_ids and video.id in liked_video_ids)
+    return payload
+
+
 def _normalize_video_payload_tags(payload: dict, default_source: str = 'user') -> list[dict[str, str]]:
     return normalize_video_tags(payload.get('tags', []), default_source=default_source)
 
@@ -301,6 +310,15 @@ def search_videos(request):
     offset = (page - 1) * limit
 
     base_qs = Video.objects.filter(deleted_at__isnull=True, status='ready', visibility='public')
+    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+    liked_video_ids = set()
+    if current_clerk_user_id:
+        liked_video_ids = set(
+            VideoLike.objects.filter(
+                user_clerk_user_id=current_clerk_user_id,
+                video_id__in=base_qs.values_list('id', flat=True),
+            ).values_list('video_id', flat=True)
+        )
 
     if not q:
         return JsonResponse(response_envelope('video-search', {'query': q, 'count': 0, 'items': []}), status=200)
@@ -318,6 +336,10 @@ def search_videos(request):
         query = SearchQuery(q)
         annotated = (
             base_qs
+            .annotate(
+                likes_count=Count('likes', distinct=True),
+                comments_count=Count('comments', distinct=True),
+            )
             .annotate(search=vector)
             .filter(search=query)
             .annotate(rank=SearchRank(vector, query))
@@ -325,16 +347,19 @@ def search_videos(request):
         )
         count = annotated.count()
         results = annotated[offset: offset + limit]
-        items = [v.to_dict() for v in results]
+        items = [_serialize_video_card(video, liked_video_ids) for video in results]
     else:
         # SQLite or other DB fallback: use simple ILIKE/contains queries across
         # title, description and the JSON tags text.
-        filtered = base_qs.filter(
+        filtered = base_qs.annotate(
+            likes_count=Count('likes', distinct=True),
+            comments_count=Count('comments', distinct=True),
+        ).filter(
             Q(title__icontains=q) | Q(description__icontains=q) | Q(tags__icontains=q)
         ).order_by('-created_at')
         count = filtered.count()
         results = filtered[offset: offset + limit]
-        items = [v.to_dict() for v in results]
+        items = [_serialize_video_card(video, liked_video_ids) for video in results]
 
     return JsonResponse(response_envelope('video-search', {'query': q, 'count': count, 'items': items}), status=200)
 

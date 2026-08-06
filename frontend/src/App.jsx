@@ -739,25 +739,21 @@ function App() {
 
       const data = await response.json()
       const result = data.video || (data.payload && data.payload.video) || {}
-      setPosts((current) =>
-        current.map((post) =>
-          post.id === videoId
-            ? {
-                ...post,
-                likes_count: result.likes_count ?? post.likes_count,
-                liked: result.liked ?? post.liked,
-              }
-            : post,
-        ),
-      )
-      setCurrentVideo((current) =>
-        current && current.id === videoId
+      const applyLikeState = (item) =>
+        item && item.id === videoId
           ? {
-              ...current,
-              likes_count: result.likes_count ?? current.likes_count,
-              liked: result.liked ?? current.liked,
+              ...item,
+              likes_count: result.likes_count ?? item.likes_count,
+              liked: result.liked ?? item.liked,
             }
-          : current,
+          : item
+
+      setPosts((current) =>
+        current.map(applyLikeState),
+      )
+      setSearchResults((current) => current.map(applyLikeState))
+      setCurrentVideo((current) =>
+        applyLikeState(current),
       )
     } catch (err) {
       // ignore for now

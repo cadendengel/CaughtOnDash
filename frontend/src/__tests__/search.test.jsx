@@ -1,6 +1,6 @@
 import React from 'react'
 import { expect, vi, describe, it, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 // Mock Clerk react hooks/components used by App
 vi.mock('@clerk/react', () => {
@@ -19,7 +19,31 @@ describe('Search UI', () => {
     // Simple fetch mock that returns different payloads based on URL
     global.fetch = vi.fn((url) => {
       if (String(url).includes('/api/videos/search')) {
-        return Promise.resolve({ ok: true, json: async () => ({ payload: { items: [ { id: 'vid-1', title: 'Brake Check Near Miss', playback_url: '', tags: [], owner_clerk_user_id: 'u1', created_at: new Date().toISOString() } ] } }) })
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            payload: {
+              items: [
+                {
+                  id: 'vid-1',
+                  title: 'Brake Check Near Miss',
+                  playback_url: '',
+                  tags: [],
+                  owner_clerk_user_id: 'u1',
+                  username: 'dashdriver',
+                  display_name: 'Dash Driver',
+                  likes_count: 0,
+                  comments_count: 0,
+                  liked: false,
+                  created_at: new Date().toISOString(),
+                },
+              ],
+            },
+          }),
+        })
+      }
+      if (String(url).includes('/api/videos/vid-1/like/')) {
+        return Promise.resolve({ ok: true, json: async () => ({ video: { id: 'vid-1', liked: true, likes_count: 1 } }) })
       }
       if (String(url).includes('/api/feed/')) {
         return Promise.resolve({ ok: true, json: async () => ({ items: [] }) })
@@ -56,6 +80,32 @@ describe('Search UI', () => {
 
     const resultTitle = await screen.findByText(/Brake Check Near Miss/i)
     expect(resultTitle).toBeTruthy()
+
+    expect(await screen.findByText(/Dash Driver/i)).toBeTruthy()
+  })
+
+  it('updates the search result like button after clicking it', async () => {
+    render(<App />)
+
+    const searchNav = screen.getByRole('button', { name: /search/i })
+    fireEvent.click(searchNav)
+
+    const input = screen.getByPlaceholderText(/freeway merge, near miss, brake check/i)
+    fireEvent.change(input, { target: { value: 'brake' } })
+
+    const buttons = screen.getAllByRole('button', { name: /search/i })
+    fireEvent.click(buttons[1])
+
+    const resultTitle = await screen.findByText(/Brake Check Near Miss/i)
+    const resultCard = resultTitle.closest('article')
+    expect(resultCard).toBeTruthy()
+
+    const likeButton = within(resultCard).getByRole('button', { name: /like/i })
+    fireEvent.click(likeButton)
+
+    await waitFor(() => {
+      expect(within(resultCard).getByRole('button', { name: /unlike/i })).toBeTruthy()
+    })
   })
 
   it('clear button resets the input and shows the empty search card', async () => {
