@@ -71,6 +71,8 @@ namespace CaughtOnDash.Worker.ViewModels
             _mainWindow.StatusText.Foreground = Brushes.Gray;
             _mainWindow.StartButton.IsEnabled = true;
             _mainWindow.StopButton.IsEnabled = false;
+
+            await StartWorker();
         }
 
         public async System.Threading.Tasks.Task StartWorker()
@@ -78,6 +80,12 @@ namespace CaughtOnDash.Worker.ViewModels
             if (!_config.IsConfigured)
             {
                 AddLog("Worker not configured. Check appsettings.json.", Logger.LogLevel.Error);
+                return;
+            }
+
+            if (_workerLoopService != null && _workerLoopService.IsRunning)
+            {
+                AddLog("Worker is already running.");
                 return;
             }
 
