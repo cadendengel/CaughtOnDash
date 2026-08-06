@@ -53,3 +53,6 @@ __pycache__/
 .venv/
 venv/
 env/
+# Desktop worker local config (holds the backend API token)
+desktop_worker/src/*/appsettings.json
+desktop_worker/src/*/appsettings.*.json

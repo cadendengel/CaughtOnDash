@@ -1,8 +1,10 @@
 """Worker API views for desktop worker communication."""
 
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
+from apps.accounts.auth import admin_required
 from apps.videos.models import Video
 from apps.videos.worker_auth import worker_required
 from apps.videos.worker_serializers import (
@@ -43,6 +45,7 @@ def worker_status(request):
     })
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 @worker_required
 def worker_heartbeat(request):
@@ -105,6 +108,7 @@ def get_next_job(request):
     })
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 @worker_required
 def claim_job_view(request, job_id):
@@ -131,6 +135,7 @@ def claim_job_view(request, job_id):
     return JsonResponse(result)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 @worker_required
 def update_job_progress_view(request, job_id):
@@ -158,6 +163,7 @@ def update_job_progress_view(request, job_id):
     return JsonResponse(result)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 @worker_required
 def complete_job_view(request, job_id):
@@ -187,6 +193,7 @@ def complete_job_view(request, job_id):
     return JsonResponse(result)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 @worker_required
 def fail_job_view(request, job_id):
@@ -214,6 +221,7 @@ def fail_job_view(request, job_id):
     return JsonResponse(result)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 @worker_required
 def cancel_job_view(request, job_id):
@@ -240,10 +248,11 @@ def cancel_job_view(request, job_id):
     return JsonResponse(result)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
+@admin_required
 def admin_retry_job_view(request, job_id):
     """POST /api/admin/jobs/{job_id}/retry/ - Admin: Retry a failed/cancelled job."""
-    # TODO: Add admin auth check here
     result = admin_retry_job(job_id)
     
     if not result['success']:
@@ -252,10 +261,11 @@ def admin_retry_job_view(request, job_id):
     return JsonResponse(result)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
+@admin_required
 def reset_stale_jobs_view(request):
     """POST /api/admin/jobs/reset-stale/ - Admin: Reset stale processing jobs."""
-    # TODO: Add admin auth check here
     timeout_minutes = request.GET.get('timeout_minutes', 2)
     try:
         timeout_minutes = int(timeout_minutes)

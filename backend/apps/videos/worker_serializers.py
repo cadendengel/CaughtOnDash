@@ -23,7 +23,8 @@ class WorkerHeartbeatSerializer(serializers.Serializer):
     worker_name = serializers.CharField(max_length=255)
     status = serializers.ChoiceField(choices=['idle', 'processing', 'error'])
     current_job_id = serializers.UUIDField(required=False, allow_null=True)
-    stage = serializers.CharField(max_length=25, required=False)
+    # An idle worker legitimately has no stage, so blank must be accepted.
+    stage = serializers.CharField(max_length=25, required=False, allow_blank=True)
     progress = serializers.IntegerField(min_value=0, max_value=100, required=False, default=0)
 
 

@@ -72,7 +72,7 @@ namespace CaughtOnDash.Worker.Services
             return result != null;
         }
 
-        public async Task SendHeartbeat(string workerId, string workerName, string status, string? currentJobId = null, string stage = "", int progress = 0, CancellationToken cancellationToken = default)
+        public async Task<bool> SendHeartbeat(string workerId, string workerName, string status, string? currentJobId = null, string stage = "", int progress = 0, CancellationToken cancellationToken = default)
         {
             var heartbeat = new
             {
@@ -84,7 +84,8 @@ namespace CaughtOnDash.Worker.Services
                 progress = progress
             };
 
-            await SendRequest<dynamic>("POST", "/api/videos/worker/heartbeat/", heartbeat, cancellationToken);
+            var result = await SendRequest<dynamic>("POST", "/api/videos/worker/heartbeat/", heartbeat, cancellationToken);
+            return result != null;
         }
 
         public async Task<JobDto?> GetNextPendingJob(CancellationToken cancellationToken = default)

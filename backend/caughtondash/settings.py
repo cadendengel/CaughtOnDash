@@ -128,6 +128,10 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
+# Clerk server-side secret, used by the sync_profiles_from_clerk management command.
+# Read through settings (not os.getenv directly) so tests can override it.
+CLERK_SECRET_KEY = os.getenv('CLERK_SECRET_KEY', '')
+
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-clerk-user-id',
     'x-skip-view-count',
