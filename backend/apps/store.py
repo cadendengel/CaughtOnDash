@@ -41,6 +41,27 @@ def _header_value(request, *names: str) -> str:
     return ''
 
 
+def _looks_like_clerk_identifier(value: str | None) -> bool:
+    if not value:
+        return False
+
+    text = str(value).strip().lower()
+    return text.startswith('user_') or text.startswith('org_')
+
+
+def _derive_username(email: str, display_name: str) -> str:
+    email_local_part = email.split('@', 1)[0].strip().lower().replace(' ', '_')
+    display_slug = ''.join(character for character in display_name.lower() if character.isalnum())
+
+    if display_slug:
+        return display_slug
+
+    if email_local_part and not _looks_like_clerk_identifier(email_local_part):
+        return email_local_part
+
+    return 'dashuser'
+
+
 def get_identity(request, payload: dict[str, Any] | None = None) -> dict[str, str]:
     payload = payload or {}
     clerk_user_id = (
@@ -63,12 +84,13 @@ def get_identity(request, payload: dict[str, Any] | None = None) -> dict[str, st
         or email_local_part
         or 'Dash User'
     )
-    username = (
+
+    username_candidate = (
         payload.get('username')
         or request.GET.get('username')
-        or email_local_part
-        or f"{display_name.lower().replace(' ', '_')}_{clerk_user_id.replace('-', '_')[:8]}"
+        or _derive_username(email, display_name)
     )
+    username = username_candidate if not _looks_like_clerk_identifier(username_candidate) else _derive_username(email, display_name)
     avatar_url = payload.get('avatar_url') or request.GET.get('avatar_url') or ''
 
     return {

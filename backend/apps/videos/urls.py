@@ -16,6 +16,18 @@ from .views import (
     admin_video_tags_view,
     search_videos,
 )
+from .worker_views import (
+    worker_status,
+    worker_heartbeat,
+    get_next_job,
+    claim_job_view,
+    update_job_progress_view,
+    complete_job_view,
+    fail_job_view,
+    cancel_job_view,
+    admin_retry_job_view,
+    reset_stale_jobs_view,
+)
 
 urlpatterns = [
     # POST /api/videos/upload-url/ - create a presigned upload target for a new video.
@@ -45,4 +57,26 @@ urlpatterns = [
     path('<uuid:video_id>/status/', video_status_view, name='video-status'),
     # PATCH/DELETE /api/videos/<video_id>/ - update or remove a video.
     path('<uuid:video_id>/manage/', video_update_delete_view, name='video-manage'),
+    
+    # Worker API routes
+    # GET /api/videos/worker/status/ - get worker status
+    path('worker/status/', worker_status, name='worker-status'),
+    # POST /api/videos/worker/heartbeat/ - send worker heartbeat
+    path('worker/heartbeat/', worker_heartbeat, name='worker-heartbeat'),
+    # GET /api/videos/worker/jobs/next/ - get next pending job
+    path('worker/jobs/next/', get_next_job, name='worker-jobs-next'),
+    # POST /api/videos/worker/jobs/<job_id>/claim/ - claim a job
+    path('worker/jobs/<uuid:job_id>/claim/', claim_job_view, name='worker-job-claim'),
+    # POST /api/videos/worker/jobs/<job_id>/progress/ - update job progress
+    path('worker/jobs/<uuid:job_id>/progress/', update_job_progress_view, name='worker-job-progress'),
+    # POST /api/videos/worker/jobs/<job_id>/complete/ - complete a job
+    path('worker/jobs/<uuid:job_id>/complete/', complete_job_view, name='worker-job-complete'),
+    # POST /api/videos/worker/jobs/<job_id>/fail/ - fail a job
+    path('worker/jobs/<uuid:job_id>/fail/', fail_job_view, name='worker-job-fail'),
+    # POST /api/videos/worker/jobs/<job_id>/cancel/ - cancel a job
+    path('worker/jobs/<uuid:job_id>/cancel/', cancel_job_view, name='worker-job-cancel'),
+    # POST /api/videos/admin/jobs/<job_id>/retry/ - admin retry a job
+    path('admin/jobs/<uuid:job_id>/retry/', admin_retry_job_view, name='admin-job-retry'),
+    # POST /api/videos/admin/jobs/reset-stale/ - admin reset stale jobs
+    path('admin/jobs/reset-stale/', reset_stale_jobs_view, name='admin-reset-stale'),
 ]

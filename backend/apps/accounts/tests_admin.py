@@ -1,5 +1,6 @@
 from django.test import TestCase, RequestFactory
 from apps.accounts.models import AdminUser
+from apps.accounts.models import Profile
 from apps.accounts.auth import admin_required
 from apps.store import response_envelope
 from django.http import JsonResponse
@@ -44,3 +45,25 @@ class AdminUserTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         payload = json.loads(resp.content)
         self.assertTrue(payload['is_admin'])
+
+    def test_me_view_does_not_overwrite_existing_profile(self):
+        from apps.accounts.views import me_view
+        import json
+
+        Profile.objects.create(
+            clerk_user_id='user_3DvMSRePa3b4iyH37ZkejLHbo0L',
+            email='caden@example.com',
+            username='cadendengel',
+            display_name='Caden Dengel',
+            avatar_url='https://example.com/avatar.png',
+        )
+
+        req = self.factory.get('/api/auth/me/', HTTP_X_CLERK_USER_ID='user_3DvMSRePa3b4iyH37ZkejLHbo0L')
+        resp = me_view(req)
+        self.assertEqual(resp.status_code, 200)
+        payload = json.loads(resp.content)
+
+        profile = Profile.objects.get(clerk_user_id='user_3DvMSRePa3b4iyH37ZkejLHbo0L')
+        self.assertEqual(profile.username, 'cadendengel')
+        self.assertEqual(profile.display_name, 'Caden Dengel')
+        self.assertEqual(payload['profile']['username'], 'cadendengel')
