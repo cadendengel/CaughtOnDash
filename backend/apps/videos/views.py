@@ -23,7 +23,12 @@ from apps.accounts.models import AdminUser, Profile
 from apps.accounts.auth import admin_required
 from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
 from apps.videos.tagging import normalize_video_tags, serialize_video_tags
-from apps.store import get_identity, parse_json_request, response_envelope
+from apps.store import (
+    current_clerk_user_id as resolve_current_clerk_user_id,
+    get_identity,
+    parse_json_request,
+    response_envelope,
+)
 from apps.storage import upload_bytes_to_supabase
 
 
@@ -393,7 +398,7 @@ def video_detail_view(request, video_id):
     if video is None or video['deleted_at'] is not None:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
-    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+    current_clerk_user_id = resolve_current_clerk_user_id(request)
 
     # Private videos are visible only to their owner (and admins). 'unlisted' stays
     # reachable by direct link -- that is the point of unlisted. Answer 404 rather
@@ -457,7 +462,7 @@ def search_videos(request):
     offset = (page - 1) * limit
 
     base_qs = Video.objects.filter(deleted_at__isnull=True, status='ready', visibility='public')
-    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+    current_clerk_user_id = resolve_current_clerk_user_id(request)
     liked_video_ids = set()
     if current_clerk_user_id:
         liked_video_ids = set(
@@ -472,7 +477,7 @@ def search_videos(request):
 
     items = []
     count = 0
-    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+    current_clerk_user_id = resolve_current_clerk_user_id(request)
     select_fields = [
         'id',
         'owner_clerk_user_id',
@@ -620,7 +625,7 @@ def video_comments_view(request, video_id):
     if video is None:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
-    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+    current_clerk_user_id = resolve_current_clerk_user_id(request)
 
     if request.method == 'GET':
         try:

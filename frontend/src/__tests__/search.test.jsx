@@ -8,6 +8,7 @@ vi.mock('@clerk/react', () => {
     SignIn: () => null,
     UserButton: () => <div data-testid="userbutton" />,
     useUser: () => ({ isLoaded: true, isSignedIn: true, user: { id: 'test-user', firstName: 'Test', emailAddresses: [{ emailAddress: 'test@example.com' }], username: 'tester', imageUrl: '' } }),
+    useAuth: () => ({ getToken: async () => 'test-session-token' }),
   }
 })
 

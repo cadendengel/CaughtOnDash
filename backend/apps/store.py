@@ -62,19 +62,66 @@ def _derive_username(email: str, display_name: str) -> str:
     return 'dashuser'
 
 
+def current_clerk_user_id(request) -> str:
+    """The caller's Clerk id for read-side use, or '' when anonymous.
+
+    Unlike get_identity() this never invents a 'demo-user' fallback, because
+    callers use it for personalization (liked flags) and visibility decisions
+    where guessing an identity would be wrong -- and, for private videos,
+    unsafe.
+    """
+    from django.conf import settings
+
+    from apps.accounts.jwt_auth import verified_clerk_user_id
+
+    verified = verified_clerk_user_id(request)
+    if verified:
+        return verified
+
+    if getattr(settings, 'REQUIRE_CLERK_JWT', False):
+        return ''
+
+    return _header_value(request, 'X-Clerk-User-Id', 'Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+
+
 def get_identity(request, payload: dict[str, Any] | None = None) -> dict[str, str]:
+    """Resolve the caller's identity.
+
+    The Clerk user id is authorization input and comes from a verified bearer
+    token whenever one is present. The unverified X-Clerk-User-Id header is only
+    consulted while REQUIRE_CLERK_JWT is off, to allow the backend and frontend
+    to be deployed independently during the cutover.
+
+    Everything else here (email, display name, username, avatar) is display data
+    supplied by the client. It is deliberately NOT treated as trusted, and must
+    never be used for an access-control decision.
+    """
+    from django.conf import settings
+
+    from apps.accounts.jwt_auth import verified_clerk_user_id
+
     payload = payload or {}
-    clerk_user_id = (
-        payload.get('clerk_user_id')
-        or request.GET.get('clerk_user_id')
-        or _header_value(request, 'X-Clerk-User-Id', 'Clerk-User-Id')
-        or 'demo-user'
-    )
+
+    verified_user_id = verified_clerk_user_id(request)
+    require_jwt = getattr(settings, 'REQUIRE_CLERK_JWT', False)
+
+    if verified_user_id:
+        clerk_user_id = verified_user_id
+    elif require_jwt:
+        # No usable token and the header is not trusted: caller is anonymous.
+        clerk_user_id = ''
+    else:
+        clerk_user_id = (
+            payload.get('clerk_user_id')
+            or request.GET.get('clerk_user_id')
+            or _header_value(request, 'X-Clerk-User-Id', 'Clerk-User-Id')
+            or 'demo-user'
+        )
     email = (
         payload.get('email')
         or request.GET.get('email')
         or _header_value(request, 'X-Clerk-Email', 'Clerk-Email')
-        or f'{clerk_user_id}@example.com'
+        or (f'{clerk_user_id}@example.com' if clerk_user_id else '')
     )
     email_local_part = email.split('@', 1)[0].strip().lower().replace(' ', '_')
     display_name = (
