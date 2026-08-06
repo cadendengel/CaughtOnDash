@@ -19,7 +19,7 @@ try:
 except Exception:
     HAS_PG_SEARCH = False
 
-from apps.accounts.models import Profile
+from apps.accounts.models import AdminUser, Profile
 from apps.accounts.auth import admin_required
 from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
 from apps.videos.tagging import normalize_video_tags, serialize_video_tags
@@ -29,6 +29,19 @@ from apps.storage import upload_bytes_to_supabase
 
 def _method_not_allowed(*allowed_methods: str) -> JsonResponse:
     return JsonResponse({'detail': 'Method not allowed.', 'allowed': list(allowed_methods)}, status=405)
+
+
+def _is_owner(clerk_user_id: str, owner_clerk_user_id: str) -> bool:
+    """True when the caller is the video's owner.
+
+    Both values are compared as non-empty strings so an anonymous caller (empty
+    id) never matches a video whose owner id is somehow also empty.
+    """
+    return bool(clerk_user_id) and clerk_user_id == owner_clerk_user_id
+
+
+def _can_view_private(clerk_user_id: str, owner_clerk_user_id: str) -> bool:
+    return _is_owner(clerk_user_id, owner_clerk_user_id) or AdminUser.is_admin_for(clerk_user_id)
 
 
 def _profile_for_clerk_user_id(clerk_user_id: str) -> Profile | None:
@@ -380,12 +393,19 @@ def video_detail_view(request, video_id):
     if video is None or video['deleted_at'] is not None:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
 
+    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
+
+    # Private videos are visible only to their owner (and admins). 'unlisted' stays
+    # reachable by direct link -- that is the point of unlisted. Answer 404 rather
+    # than 403 so the endpoint does not confirm that a private video exists.
+    if video['visibility'] == 'private' and not _can_view_private(current_clerk_user_id, video['owner_clerk_user_id']):
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
     if request.headers.get('X-Skip-View-Count') not in ('1', 'true', 'True'):
         # Increment view count on user-initiated opens only.
         Video.objects.filter(id=video_uuid).update(views=F('views') + 1)
         video['views'] = (video.get('views') or 0) + 1
 
-    current_clerk_user_id = request.headers.get('X-Clerk-User-Id') or request.GET.get('clerk_user_id') or ''
     video_data = _serialize_video_row(video)
     video_data.update(_video_author_payload_from_owner(video['owner_clerk_user_id']))
     video_data['likes_count'] = VideoLike.objects.filter(video_id=video_uuid).count()
@@ -694,6 +714,10 @@ def video_comments_view(request, video_id):
             status=201,
         )
 
+    # Any other method fell through to an implicit None here, which Django turns
+    # into a 500 rather than a 405.
+    return _method_not_allowed('GET', 'POST')
+
 
 @csrf_exempt
 def video_comment_like_view(request, comment_id):
@@ -743,8 +767,6 @@ def video_comment_like_view(request, comment_id):
         ),
         status=200,
     )
-
-    return _method_not_allowed('GET', 'POST')
 
 
 @csrf_exempt
@@ -824,7 +846,10 @@ def admin_video_tags_view(request, video_id):
 
 
 def video_update_delete_view(request, video_id):
-    # PATCH / DELETE for video metadata or soft-delete
+    # PATCH / DELETE for video metadata or soft-delete.
+    # NOTE: still CSRF-protected, so it is not reachable from the SPA yet. The
+    # ownership check below is in place for when authentication lands; opening
+    # this up while identity is a spoofable header would be a step backwards.
     if request.method not in ('PATCH', 'DELETE'):
         return _method_not_allowed('PATCH', 'DELETE')
 
@@ -840,6 +865,13 @@ def video_update_delete_view(request, video_id):
 
     if video.deleted_at is not None:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    # Only the owner may edit or remove a video. Admins have their own dedicated
+    # endpoints (admin_video_delete_view / admin_video_tags_view) and are not
+    # granted an implicit bypass here.
+    identity = get_identity(request, parse_json_request(request) if request.method == 'PATCH' else None)
+    if not _is_owner(identity['clerk_user_id'], video.owner_clerk_user_id):
+        return JsonResponse({'detail': 'You do not have permission to modify this video.'}, status=403)
 
     if request.method == 'PATCH':
         payload = parse_json_request(request)
