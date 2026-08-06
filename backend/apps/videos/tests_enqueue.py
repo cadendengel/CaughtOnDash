@@ -184,12 +184,37 @@ class OwnerRequestAnalysisTests(TestCase):
         AdminUser.objects.create(clerk_user_id='user_admin')
         self.assertEqual(self._post('user_admin').status_code, 200)
 
-    def test_cannot_requeue_while_a_worker_is_processing(self):
-        Video.objects.filter(id=self.video.id).update(analysis_status='processing')
+    def test_cannot_requeue_while_a_worker_is_actively_processing(self):
+        Video.objects.filter(id=self.video.id).update(
+            analysis_status='processing', worker_last_seen_at=timezone.now())
         response = self._post('user_owner')
         self.assertEqual(response.status_code, 409)
         self.video.refresh_from_db()
         self.assertEqual(self.video.analysis_status, 'processing')
+
+    def test_can_requeue_a_processing_job_whose_worker_went_quiet(self):
+        # The production case: a worker claimed the job, then every write-back
+        # was rejected, leaving the video wedged in 'processing' indefinitely.
+        Video.objects.filter(id=self.video.id).update(
+            analysis_status='processing',
+            worker_id='dead-worker',
+            worker_last_seen_at=timezone.now() - timedelta(minutes=30))
+
+        response = self._post('user_owner')
+        self.assertEqual(response.status_code, 200)
+
+        self.video.refresh_from_db()
+        self.assertEqual(self.video.analysis_status, 'pending')
+        self.assertIsNone(self.video.worker_id)
+        self.assertEqual(get_next_pending_job().id, self.video.id)
+
+    def test_can_requeue_a_processing_job_with_no_worker_timestamps(self):
+        Video.objects.filter(id=self.video.id).update(
+            analysis_status='processing', worker_last_seen_at=None,
+            worker_claimed_at=None, analysis_started_at=None)
+        self.assertEqual(self._post('user_owner').status_code, 200)
+        self.video.refresh_from_db()
+        self.assertEqual(self.video.analysis_status, 'pending')
 
     def test_cannot_requeue_something_already_queued(self):
         Video.objects.filter(id=self.video.id).update(analysis_status='pending')
