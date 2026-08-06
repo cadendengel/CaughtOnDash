@@ -11,8 +11,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Net.Http" Version="4.3.4" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Services, Models and Utils now live in the shared cross-platform core
+         so the macOS host can reuse them. Namespaces are unchanged. -->
+    <ProjectReference Include="..\CaughtOnDash.Worker.Core\CaughtOnDash.Worker.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

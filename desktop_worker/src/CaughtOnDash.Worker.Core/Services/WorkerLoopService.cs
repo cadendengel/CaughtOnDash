@@ -122,7 +122,7 @@ namespace CaughtOnDash.Worker.Services
                     var stage = _currentJobId.HasValue ? "analyzing" : "";
                     var progress = 0; // This would be updated by the analyzer
 
-                    await _apiClient.SendHeartbeat(
+                    var delivered = await _apiClient.SendHeartbeat(
                         _config.WorkerId,
                         _config.WorkerName,
                         status,
@@ -132,8 +132,18 @@ namespace CaughtOnDash.Worker.Services
                         cancellationToken
                     );
 
-                    Logger.Log($"Heartbeat sent (status: {status})");
-                    OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "heartbeat", Message = "Heartbeat sent" });
+                    if (delivered)
+                    {
+                        Logger.Log($"Heartbeat sent (status: {status})");
+                        OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "heartbeat", Message = "Heartbeat sent" });
+                    }
+                    else
+                    {
+                        // Do not report success on a rejected heartbeat -- that is what
+                        // hid the backend rejecting every worker POST.
+                        Logger.Log("Heartbeat rejected by backend", Logger.LogLevel.Error);
+                        OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "error", Message = "Heartbeat rejected by backend" });
+                    }
 
                     await Task.Delay(10000, cancellationToken); // 10 seconds
                 }
@@ -177,8 +187,11 @@ namespace CaughtOnDash.Worker.Services
                     var claimed = await _apiClient.ClaimJob(job.JobId, _config.WorkerId, _config.WorkerName, cancellationToken);
                     if (!claimed)
                     {
+                        // Back off before retrying: another worker may hold the job,
+                        // and retrying immediately spins the loop against the server.
                         Logger.Log($"Failed to claim job {job.JobId}");
                         OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "claim_failed", Message = "Failed to claim job" });
+                        await Task.Delay(5000, cancellationToken);
                         continue;
                     }
 

@@ -34,7 +34,9 @@ def update_worker_heartbeat(worker_id: str, status: str, current_job_id: uuid.UU
 def get_next_pending_job() -> Video | None:
     """Get the next pending analysis job without claiming it."""
     job = Video.objects.filter(
-        analysis_status='pending'
+        analysis_status='pending',
+        status='ready',
+        deleted_at__isnull=True,
     ).order_by('analysis_requested_at', 'created_at').first()
     return job
 

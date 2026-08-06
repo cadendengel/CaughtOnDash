@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 import requests
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.accounts.models import Profile
@@ -95,7 +96,7 @@ class Command(BaseCommand):
         parser.add_argument('--force', action='store_true', help='Overwrite profile fields even if they already look valid')
 
     def handle(self, *args, **options):
-        secret_key = os.getenv('CLERK_SECRET_KEY')
+        secret_key = getattr(settings, 'CLERK_SECRET_KEY', '') or os.getenv('CLERK_SECRET_KEY')
         if not secret_key:
             raise CommandError('CLERK_SECRET_KEY is required to sync profiles from Clerk.')
 
