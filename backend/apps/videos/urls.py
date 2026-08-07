@@ -12,6 +12,7 @@ from .views import (
     video_status_view,
     video_update_delete_view,
     video_request_analysis_view,
+    video_approval_view,
     admin_video_delete_view,
     admin_comment_delete_view,
     admin_video_tags_view,
@@ -50,8 +51,10 @@ urlpatterns = [
     path('admin/comments/<uuid:comment_id>/', admin_comment_delete_view, name='admin-comment-delete'),
     # PATCH /api/videos/admin/videos/<video_id>/tags/ - update a video's tags.
     path('admin/videos/<uuid:video_id>/tags/', admin_video_tags_view, name='admin-video-tags'),
-    # POST /api/videos/<video_id>/analyze/ - owner re-queues the video for analysis.
+    # POST /api/videos/<video_id>/analyze/ - owner requests re-analysis (needs re-approval).
     path('<uuid:video_id>/analyze/', video_request_analysis_view, name='video-request-analysis'),
+    # POST /api/videos/<video_id>/approval/ - approve or reject for analysis.
+    path('<uuid:video_id>/approval/', video_approval_view, name='video-approval'),
     # POST /api/videos/<video_id>/like/ - toggle a like for the current user.
     path('<uuid:video_id>/like/', video_like_view, name='video-like'),
     # GET /api/videos/<video_id>/ - return the full video object and metadata.

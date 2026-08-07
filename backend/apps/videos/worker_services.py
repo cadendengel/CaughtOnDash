@@ -7,8 +7,48 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
-from apps.videos.models import Video, Worker
+from apps.videos.models import AnalysisRun, Video, Worker
 from apps.videos.tagging import normalize_video_tags
+
+
+def open_analysis_run(video: Video, requested_by: str = '') -> AnalysisRun:
+    """Record a new attempt and put the video back in the review queue.
+
+    Called whenever analysis is requested -- on upload and on re-analysis --
+    rather than on completion, so an attempt that was never approved, or that
+    failed, still appears in the history.
+    """
+    last_attempt = (
+        AnalysisRun.objects.filter(video=video)
+        .order_by('-attempt_number')
+        .values_list('attempt_number', flat=True)
+        .first()
+    )
+
+    return AnalysisRun.objects.create(
+        video=video,
+        attempt_number=(last_attempt or 0) + 1,
+        status='awaiting_approval',
+        requested_by=requested_by or '',
+    )
+
+
+def current_analysis_run(video_id: uuid.UUID) -> AnalysisRun | None:
+    """The most recent attempt for a video, whatever state it is in."""
+    return AnalysisRun.objects.filter(video_id=video_id).order_by('-attempt_number').first()
+
+
+def _finish_run(video_id: uuid.UUID, status: str, **fields) -> None:
+    """Close out the current run. Never raises: history must not fail a job."""
+    run = current_analysis_run(video_id)
+    if run is None:
+        return
+
+    run.status = status
+    run.finished_at = timezone.now()
+    for name, value in fields.items():
+        setattr(run, name, value)
+    run.save()
 
 
 def merge_ai_tags(existing_tags, ai_tags) -> list[dict[str, str]]:
@@ -80,6 +120,9 @@ def get_next_pending_job() -> Video | None:
     job = Video.objects.filter(
         analysis_status='pending',
         status='ready',
+        # Approval gate: analysis capacity is spent on videos someone chose,
+        # not on everything that happens to be uploaded.
+        approval_status='approved',
         deleted_at__isnull=True,
     ).order_by(F('analysis_requested_at').asc(nulls_last=True), 'created_at').first()
     return job
@@ -132,6 +175,14 @@ def claim_job(job_id: uuid.UUID, worker_id: str, worker_name: str) -> dict:
     job.analysis_error = ''
     job.save()
     
+    run = current_analysis_run(job_id)
+    if run is not None:
+        run.status = 'processing'
+        run.started_at = now
+        run.worker_id = worker_id
+        run.worker_name = worker_name
+        run.save()
+
     # Update worker status
     update_worker_heartbeat(worker_id, 'processing', job_id)
     
@@ -194,6 +245,10 @@ def complete_job(job_id: uuid.UUID, worker_id: str, summary: str, tags: list, ev
     job.ai_events = events or []
     job.ai_metadata = metadata or {}
 
+    _finish_run(
+        job_id, 'complete',
+        summary=summary, tags=tags or [], events=events or [], metadata=metadata or {})
+
     # Publish the detections into `tags` as well, sourced 'ai'. That field is
     # what the feed renders and what search indexes, so tags left only in
     # ai_tags are invisible to both. The tag vocabulary already had an 'ai'
@@ -243,6 +298,8 @@ def fail_job(job_id: uuid.UUID, worker_id: str, error: str, stage: str | None = 
     
     job.save()
     
+    _finish_run(job_id, 'failed', error=error)
+
     # Update worker to error state
     update_worker_heartbeat(worker_id, 'error')
     
@@ -273,6 +330,11 @@ def cancel_job(job_id: uuid.UUID, worker_id: str, reason: str = '') -> dict:
     job.worker_name = ''
     job.worker_claimed_at = None
     job.analysis_error = f'Cancelled: {reason}' if reason else 'Cancelled by worker'
+    # A cancelled job goes back to the review queue: it was approved once, but
+    # re-running it is a fresh decision.
+    job.approval_status = 'pending_review'
+    job.approval_decided_by = ''
+    job.approval_decided_at = None
     
     job.save()
     
@@ -308,6 +370,58 @@ def reset_stale_jobs(timeout_minutes: int = 2) -> dict:
     return {'reset_count': count}
 
 
+@transaction.atomic
+def decide_approval(video_id: uuid.UUID, approve: bool, decided_by: str) -> dict:
+    """Approve or reject a video for analysis.
+
+    Approval only controls whether analysis may run. A rejected video stays
+    visible in the feed -- moderating content is a separate decision from
+    moderating compute, and conflating them would make this button do two
+    things at once.
+    """
+    try:
+        video = Video.objects.select_for_update().get(id=video_id, deleted_at__isnull=True)
+    except Video.DoesNotExist:
+        return {'success': False, 'error': 'Video not found'}
+
+    if video.analysis_status == 'processing':
+        return {'success': False, 'error': 'Analysis is already running for this video'}
+
+    now = timezone.now()
+    video.approval_status = 'approved' if approve else 'rejected'
+    video.approval_decided_by = decided_by or ''
+    video.approval_decided_at = now
+
+    if approve:
+        # Approving is what puts it in the queue, so stamp the request time here
+        # -- that is the moment it started waiting for a worker.
+        video.analysis_status = 'pending'
+        video.analysis_stage = 'queued'
+        video.analysis_progress = 0
+        video.analysis_error = ''
+        video.analysis_requested_at = now
+    else:
+        video.analysis_status = 'cancelled'
+        video.analysis_stage = 'cancelled'
+
+    video.save()
+
+    run = current_analysis_run(video_id) or open_analysis_run(video, decided_by)
+    run.status = 'approved' if approve else 'rejected'
+    run.decided_by = decided_by or ''
+    run.decided_at = now
+    if not approve:
+        run.finished_at = now
+    run.save()
+
+    return {
+        'success': True,
+        'video_id': str(video_id),
+        'approval_status': video.approval_status,
+        'attempt_number': run.attempt_number,
+    }
+
+
 # States a video can be re-queued from. 'processing' is excluded so a request
 # cannot yank a job out from under a worker that is actively running it, and
 # 'pending' is excluded because it is already queued.
@@ -334,12 +448,16 @@ def _is_stale_processing(job, now) -> bool:
 
 
 @transaction.atomic
-def request_analysis(job_id: uuid.UUID) -> dict:
-    """Re-queue a video for analysis at the owner's request.
+def request_analysis(job_id: uuid.UUID, requested_by: str = '') -> dict:
+    """Request re-analysis of a video.
+
+    This asks for a re-run; it does not queue one. The video returns to
+    pending_review and needs approving again, so a re-analysis costs the same
+    deliberate decision the first one did.
 
     Previous AI results are left in place until the new run overwrites them, so
-    the video keeps showing its old summary/tags while it waits in the queue
-    rather than blanking out.
+    the video keeps showing its old summary/tags while it waits rather than
+    blanking out.
     """
     try:
         job = Video.objects.select_for_update().get(id=job_id)
@@ -352,14 +470,19 @@ def request_analysis(job_id: uuid.UUID) -> dict:
     if job.status != 'ready':
         return {'success': False, 'error': 'Video is not ready for analysis yet'}
 
-    if job.analysis_status == 'pending':
-        return {'success': False, 'error': 'Analysis is already queued'}
+    if job.approval_status == 'pending_review':
+        return {'success': False, 'error': 'This video is already waiting for review'}
 
     now = timezone.now()
     if job.analysis_status not in REQUEUEABLE_ANALYSIS_STATUSES and not _is_stale_processing(job, now):
         return {'success': False, 'error': f'Cannot re-analyze a video in state: {job.analysis_status}'}
 
-    job.analysis_status = 'pending'
+    # Back to the review queue, not straight into the work queue.
+    job.approval_status = 'pending_review'
+    job.approval_decided_by = ''
+    job.approval_decided_at = None
+
+    job.analysis_status = 'cancelled'
     job.analysis_stage = 'queued'
     job.analysis_progress = 0
     job.analysis_error = ''
@@ -373,11 +496,13 @@ def request_analysis(job_id: uuid.UUID) -> dict:
     job.worker_last_seen_at = None
     job.save()
 
+    run = open_analysis_run(job, requested_by)
+
     return {
         'success': True,
         'job_id': str(job_id),
-        'analysis_status': job.analysis_status,
-        'analysis_requested_at': job.analysis_requested_at.isoformat(),
+        'approval_status': job.approval_status,
+        'attempt_number': run.attempt_number,
     }
 
 
