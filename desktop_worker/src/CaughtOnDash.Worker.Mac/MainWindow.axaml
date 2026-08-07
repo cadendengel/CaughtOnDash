@@ -15,10 +15,13 @@
         </Border>
 
         <!-- Main content -->
-        <Grid Grid.Row="1" Margin="15" ColumnDefinitions="*,*">
+        <!-- Log on the right because it is the tall content; status and progress
+             stack on the left. The reverse left the short Processing card in a
+             full-height column and squeezed the log into half of the other. -->
+        <Grid Grid.Row="1" Margin="15" ColumnDefinitions="380,*">
 
-            <!-- Left: status, controls, logs -->
-            <Grid Grid.Column="0" Margin="0,0,10,0" RowDefinitions="Auto,*">
+            <!-- Left: status, progress, controls -->
+            <Grid Grid.Column="0" Margin="0,0,15,0" RowDefinitions="Auto,Auto,*">
                 <Border Grid.Row="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="1"
                         CornerRadius="5" Margin="0,0,0,15">
                     <StackPanel Margin="15">
@@ -48,17 +51,10 @@
                     </StackPanel>
                 </Border>
 
-                <Border Grid.Row="1" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
-                    <Grid Margin="15" RowDefinitions="Auto,*">
-                        <TextBlock Text="Activity Log" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                        <ListBox Grid.Row="1" x:Name="LogListBox" BorderThickness="0" Background="#F9F9F9" Margin="2"/>
-                    </Grid>
-                </Border>
-            </Grid>
-
-            <!-- Right: processing -->
-            <StackPanel Grid.Column="1">
-                <Border Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
+                <!-- Whole card hides when idle. A progress bar sitting at 0%
+                     reads as stuck; nothing there reads as nothing running. -->
+                <Border Grid.Row="1" x:Name="ProcessingPanel" IsVisible="False"
+                        Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
                     <StackPanel Margin="15">
                         <TextBlock Text="Processing" FontWeight="Bold" FontSize="14" Margin="0,0,0,15"/>
 
@@ -78,7 +74,7 @@
                         <StackPanel Margin="0,0,0,15">
                             <TextBlock Text="Job Details:" FontWeight="SemiBold" Margin="0,0,0,5"/>
                             <TextBlock x:Name="JobDetailsText" Text="No active job" FontSize="13"
-                                       Foreground="#666666" TextWrapping="Wrap" Height="80"/>
+                                       Foreground="#666666" TextWrapping="Wrap"/>
                         </StackPanel>
 
                         <Button x:Name="CancelJobButton" Content="Cancel Current Job" Click="CancelJobButton_Click"
@@ -87,7 +83,25 @@
                                 IsEnabled="False"/>
                     </StackPanel>
                 </Border>
-            </StackPanel>
+
+                <!-- Shown in the Processing card's place while nothing is running. -->
+                <Border Grid.Row="1" x:Name="IdlePanel" Background="White" BorderBrush="#E0E0E0"
+                        BorderThickness="1" CornerRadius="5">
+                    <StackPanel Margin="15">
+                        <TextBlock Text="Processing" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="IdleText" Text="No job running." FontSize="13" Foreground="#888888"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Right: the activity log, full height -->
+            <Border Grid.Column="1" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
+                <Grid Margin="15" RowDefinitions="Auto,*">
+                    <TextBlock Text="Activity Log" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
+                    <ListBox Grid.Row="1" x:Name="LogListBox" BorderThickness="0" Background="#F9F9F9" Margin="2"/>
+                </Grid>
+            </Border>
         </Grid>
 
         <!-- Footer -->

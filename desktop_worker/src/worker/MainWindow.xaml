@@ -22,9 +22,11 @@
 
         <!-- Main Content -->
         <Grid Grid.Row="1" Margin="15">
+            <!-- Log on the right because it is the tall content; status and
+                 progress stack on the left. -->
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1*"/>
-                <ColumnDefinition Width="1*"/>
+                <ColumnDefinition Width="380"/>
+                <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Left: Status & Controls -->
@@ -59,29 +61,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Logs Panel -->
-                <Border Grid.Row="1" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
-                    <Grid Margin="15">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Text="Activity Log" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                        <ListBox Grid.Row="1" x:Name="LogListBox" BorderThickness="0" Background="#F9F9F9" Margin="2"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBoxItem Foreground="#666666">
-                                <TextBlock Text="Ready to connect..." TextWrapping="Wrap"/>
-                            </ListBoxItem>
-                        </ListBox>
-                    </Grid>
-                </Border>
-            </Grid>
-
-            <!-- Right: Progress & Job Info -->
-            <StackPanel Grid.Column="1">
-                <Border Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
+                <Border Grid.Row="1" x:Name="ProcessingPanel" Visibility="Collapsed" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
                     <StackPanel Margin="15">
                         <TextBlock Text="Processing" FontWeight="Bold" FontSize="14" Margin="0,0,0,15"/>
 
@@ -105,7 +85,28 @@
                                 Background="#E67E22" Foreground="White" Height="35" IsEnabled="False"/>
                     </StackPanel>
                 </Border>
-            </StackPanel>
+
+                <Border Grid.Row="1" x:Name="IdlePanel" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
+                    <StackPanel Margin="15">
+                        <TextBlock Text="Processing" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="IdleText" Text="No job running." FontSize="13" Foreground="#888888" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Right: the activity log, full height -->
+            <Border Grid.Column="1" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
+                <Grid Margin="15">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Activity Log" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
+                    <ListBox Grid.Row="1" x:Name="LogListBox" BorderThickness="0" Background="#F9F9F9" Margin="2"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                </Grid>
+            </Border>
         </Grid>
 
         <!-- Footer -->

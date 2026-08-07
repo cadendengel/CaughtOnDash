@@ -191,6 +191,17 @@ namespace CaughtOnDash.Worker.ViewModels
                         break;
                 }
 
+                // Show the progress card only while a job is actually running.
+                // A bar sitting at 0% reads as stuck; nothing there reads as
+                // nothing running.
+                var isProcessing = evt.Status == "processing";
+                _mainWindow.ProcessingPanel.Visibility = isProcessing ? Visibility.Visible : Visibility.Collapsed;
+                _mainWindow.IdlePanel.Visibility = isProcessing ? Visibility.Collapsed : Visibility.Visible;
+                if (!isProcessing)
+                {
+                    _mainWindow.IdleText.Text = evt.Status == "stopped" ? "Worker stopped." : "Waiting for a job.";
+                }
+
                 _mainWindow.LastHeartbeatText.Text = DateTime.Now.ToString("HH:mm:ss");
                 AddLog(evt.Message);
             });
