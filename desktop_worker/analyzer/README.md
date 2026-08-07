@@ -90,12 +90,52 @@ reporting one:
 | 2 | Video file not found |
 | 3 | Missing Python dependency — install requirements |
 | 4 | Video could not be read: corrupt, truncated, or unsupported |
+| 5 | Object detection failed (model missing, or video unreadable partway) |
 
-## What it currently reports
+## What it reports
 
-Real container metadata: width, height, fps, frame count, duration, file size.
+**Container metadata** — width, height, fps, frame count, duration, file size.
 
-`tags` and `events` are deliberately empty. Nothing has looked at the frames
-yet, and returning `[]` is honest where inventing plausible values is not —
-which is exactly what the placeholder analyzer did. Object detection is
-milestone 3 in `../ANALYZER_PLAN.md`.
+**Object tags** — YOLOv8n over sampled frames. COCO's vocabulary suits dashcam
+footage: `car`, `truck`, `bus`, `motorcycle`, `person`, `bicycle`,
+`traffic light`, `stop sign`.
+
+Sampling defaults to one frame per second, capped at 300 frames. The cap is
+spread across the whole video rather than truncating it, so a long clip is still
+covered end to end, just more coarsely. A class must appear in at least 5% of
+sampled frames to become a tag, which drops single-frame false positives without
+losing brief real events.
+
+`events` stays empty. Locating an incident in time is a different problem from
+recognising objects, and inventing timestamps would be exactly the placeholder
+behaviour this replaced.
+
+### Options
+
+```bash
+./.venv/bin/python analyze.py video.mp4 --sample-fps 2 --max-frames 500
+./.venv/bin/python analyze.py video.mp4 --confidence 0.4
+./.venv/bin/python analyze.py video.mp4 --no-detect     # metadata only
+```
+
+`--no-detect` is the fallback for a host without the ML dependencies installed:
+metadata still works and the summary says detection was not run, rather than
+implying nothing was there.
+
+### Model weights
+
+`yolov8n.pt` (~6 MB) downloads on first run into the working directory and is
+gitignored. The first analysis on a new host therefore needs network access and
+takes noticeably longer than subsequent ones.
+
+### Speed
+
+Roughly, for a five-minute clip at one frame per second:
+
+| Host | Device | Time |
+|---|---|---|
+| Desktop, RTX 3070 Ti | `cuda` | seconds |
+| Mac, Apple M3 | `mps` | 10-20s |
+| Laptop, Intel i7-10610U | `cpu` | 1-2 min |
+
+All workable. Lower `--sample-fps` if the slowest host becomes a problem.

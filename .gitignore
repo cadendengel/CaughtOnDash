@@ -60,5 +60,8 @@ env/
 desktop_worker/src/*/appsettings.json
 desktop_worker/src/*/appsettings.*.json
 
+# Model weights, downloaded on first run into the analyzer working directory
+desktop_worker/analyzer/*.pt
+
 # Playwright MCP session artifacts
 .playwright-mcp/
