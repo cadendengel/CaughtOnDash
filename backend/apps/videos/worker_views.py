@@ -71,16 +71,27 @@ def worker_heartbeat(request):
     # Update worker
     worker = update_worker_heartbeat(worker_id, status, current_job_id)
     
-    # If processing a job, update its progress and last_seen_at
+    # If processing a job, update its progress and last_seen_at.
+    #
+    # Scoped to jobs still owned by this worker and still processing, and
+    # written with a queryset update rather than save(). A bare save() writes
+    # every column from the copy that was read, so a heartbeat that loaded the
+    # row just before complete_job committed would write its stale snapshot
+    # back and revert the job from 'complete' to 'processing' -- which happened
+    # in production, leaving a video showing "Processing: 100% (complete)".
     if current_job_id:
-        try:
-            job = Video.objects.get(id=current_job_id)
-            job.analysis_stage = stage or job.analysis_stage
-            job.analysis_progress = progress
-            job.worker_last_seen_at = worker.last_seen_at
-            job.save()
-        except Video.DoesNotExist:
-            pass
+        updates = {
+            'analysis_progress': progress,
+            'worker_last_seen_at': worker.last_seen_at,
+        }
+        if stage:
+            updates['analysis_stage'] = stage
+
+        Video.objects.filter(
+            id=current_job_id,
+            worker_id=worker_id,
+            analysis_status='processing',
+        ).update(**updates)
     
     return JsonResponse({
         'worker_id': worker.id,
