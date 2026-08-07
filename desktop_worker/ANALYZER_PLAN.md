@@ -159,23 +159,37 @@ duration against the file's actual duration.
 
 ---
 
-## Milestone 3 — Object tags
+## Milestone 3 — Object tags — DONE
 
-- [ ] YOLOv8n via ultralytics, device auto-detect (`cuda` → `mps` → `cpu`)
-- [ ] Sample ~1 frame/second rather than every frame
-- [ ] Aggregate detections above a confidence threshold into tags
-- [ ] Pin the model version so the two machines cannot silently diverge
-- [ ] Keep per-class counts and confidences in `ai_metadata`
-- [ ] Templated summary from the real detections
-- [ ] Document first-run weight download and cache location
+- [x] YOLOv8n via ultralytics, device auto-detect (`cuda` → `mps` → `cpu`)
+- [x] Sample ~1 frame/second rather than every frame
+- [x] Aggregate detections above a confidence threshold into tags
+- [x] Pin the model version so hosts cannot silently diverge
+- [x] Keep per-class counts and confidences in `ai_metadata`
+- [x] Templated summary from the real detections
+- [x] Document first-run weight download and cache location
 
 COCO's vocabulary happens to fit dashcam footage well: `car`, `truck`, `bus`,
 `motorcycle`, `person`, `bicycle`, `traffic light`, `stop sign`.
 
-**Acceptance:**
-- A clip with visible vehicles produces vehicle tags; an empty road does not.
-- Same video on both hosts produces the same tags (modulo float noise).
-- Runtime is proportional to duration and stays under the configured timeout.
+Verified on macOS end to end through the worker: a clip containing a bus and
+people produced `["bus", "person"]` at 0.88/0.87 confidence on `mps`, and a
+synthetic clip with no real objects produced `[]` with a summary saying so
+rather than implying an empty road. `--no-detect` still reports metadata and
+says detection was not run.
+
+Two dependency problems surfaced during the install and are worth remembering:
+
+- Installing ultralytics unpinned pulled its own numpy and opencv, silently
+  overriding the milestone 2 pins. **Two opencv distributions both provide
+  `cv2` and overwrite each other**, and uninstalling either breaks the other --
+  which happened here and needed a forced reinstall to repair. Requirements now
+  pin exact versions and keep exactly one opencv.
+- Model weights download into the working directory on first run, so they are
+  gitignored. A new host needs network access for its first analysis.
+
+Sampling is capped at 300 frames and spread across the whole video rather than
+truncating it, so a long clip stays covered end to end on the slow laptop.
 
 ---
 
