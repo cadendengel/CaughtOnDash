@@ -106,9 +106,40 @@ covered end to end, just more coarsely. A class must appear in at least 5% of
 sampled frames to become a tag, which drops single-frame false positives without
 losing brief real events.
 
+**A dashcam signal** — whether the footage looks like dashcam material, in
+`metadata.classification`:
+
+```json
+{"looks_like_dashcam": true,
+ "reason": "road objects across most frames, landscape orientation",
+ "orientation": "landscape",
+ "road_classes_detected": ["car", "traffic light", "truck"],
+ "strongest_road_class_share": 0.889}
+```
+
+It requires **both** road objects across most frames **and** landscape
+orientation. Either alone is too easy to trip: a passenger filming out of a
+window is landscape with cars in it, and a phone in a car mount is portrait
+footage of a road. Requiring both keeps false positives low at the cost of
+missing unusual dashcam setups — the right trade for something that might drive
+moderation.
+
+It is a heuristic and reports itself as one. The signals behind the verdict are
+returned alongside it so a person can disagree. It is not turned into a tag,
+because it is a judgement about the upload rather than an observation of it.
+
 `events` stays empty. Locating an incident in time is a different problem from
 recognising objects, and inventing timestamps would be exactly the placeholder
 behaviour this replaced.
+
+## Tests
+
+```bash
+./.venv/bin/python -m unittest discover -s desktop_worker/analyzer
+```
+
+Frame selection, summary wording and the dashcam heuristic are pure functions,
+so these need no model, no weights and no video file.
 
 ### Options
 

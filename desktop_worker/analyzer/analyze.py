@@ -163,6 +163,10 @@ def main(argv: list[str]) -> int:
             metadata['detection'] = {
                 key: value for key, value in result.items() if key != 'tags'
             }
+            # Reported as a signal with its reasoning, not folded into the tags:
+            # it is a judgement about the footage, and a moderator should be able
+            # to see why before acting on it.
+            metadata['classification'] = detection.classify_footage(metadata, result)
             log(f"Detected {len(tags)} tag(s) on {result['device']} "
                 f"from {result['frames_sampled']} frames")
         except ImportError as exc:
