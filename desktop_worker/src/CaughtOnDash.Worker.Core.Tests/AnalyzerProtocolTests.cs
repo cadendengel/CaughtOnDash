@@ -78,6 +78,7 @@ namespace CaughtOnDash.Worker.Core.Tests
         [InlineData(2, "could not find the video")]
         [InlineData(3, "missing a Python dependency")]
         [InlineData(4, "could not read the video")]
+        [InlineData(5, "Object detection failed")]
         [InlineData(99, "exit code 99")]
         public void ExitCodesGetSpecificExplanations(int exitCode, string expectedFragment)
         {

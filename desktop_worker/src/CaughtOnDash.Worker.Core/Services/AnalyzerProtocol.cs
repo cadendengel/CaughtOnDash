@@ -99,6 +99,7 @@ namespace CaughtOnDash.Worker.Services
                 2 => "Analyzer could not find the video file." + detail,
                 3 => "Analyzer is missing a Python dependency. Install the analyzer requirements." + detail,
                 4 => "Analyzer could not read the video. It may be corrupt or in an unsupported format." + detail,
+                5 => "Object detection failed. The model may be missing or the video unreadable partway through." + detail,
                 _ => $"Analyzer failed with exit code {exitCode}.{detail}",
             };
         }
