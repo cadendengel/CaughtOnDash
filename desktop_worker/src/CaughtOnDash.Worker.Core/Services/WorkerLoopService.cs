@@ -258,11 +258,12 @@ namespace CaughtOnDash.Worker.Services
                 var success = await _apiClient.CompleteJob(job.JobId, _config.WorkerId, result, cancellationToken);
                 if (success)
                 {
-                    // Close the bar out. The backend already records 100 as part
-                    // of completing the job, so this is only for the local UI --
-                    // which otherwise showed a job finishing at 95%.
+                    // Close the bar out locally. Deliberately not sent to the
+                    // backend: complete_job already recorded 100, and the
+                    // progress endpoint rejects a job that is already complete,
+                    // so reporting it would log an error on every success.
                     stage = "complete";
-                    ReportProgress(job, stage, 100, cancellationToken);
+                    ReportProgress(job, stage, 100, cancellationToken, notifyBackend: false);
                 }
                 else
                 {
@@ -300,7 +301,9 @@ namespace CaughtOnDash.Worker.Services
         /// The call is fire-and-forget: a dropped progress update must not fail
         /// the job, and blocking analysis on it would be worse than losing one.
         /// </remarks>
-        private void ReportProgress(JobDto job, string stage, int percent, CancellationToken cancellationToken)
+        private void ReportProgress(
+            JobDto job, string stage, int percent, CancellationToken cancellationToken,
+            bool notifyBackend = true)
         {
             _currentStage = stage;
             _currentProgress = percent;
@@ -316,7 +319,7 @@ namespace CaughtOnDash.Worker.Services
                 Stage = stage
             });
 
-            if (ShouldSendProgress(stage, percent))
+            if (notifyBackend && ShouldSendProgress(stage, percent))
             {
                 _lastSentStage = stage;
                 _lastSentProgress = percent;
