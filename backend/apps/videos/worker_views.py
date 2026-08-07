@@ -5,7 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from apps.accounts.auth import admin_required
-from apps.videos.models import Video
+from apps.videos.models import AnalysisRun, Video
 from apps.videos.worker_auth import worker_required
 from apps.videos.worker_serializers import (
     WorkerStatusSerializer,
@@ -16,8 +16,13 @@ from apps.videos.worker_serializers import (
     JobCompleteSerializer,
     JobFailSerializer,
     JobCancelSerializer,
+    QueueEntrySerializer,
 )
 from apps.videos.worker_services import (
+    claimable_jobs,
+    decide_approval,
+    reorder_queue,
+    review_queue,
     get_or_create_worker,
     update_worker_heartbeat,
     get_next_pending_job,
@@ -117,6 +122,86 @@ def get_next_job(request):
         'job': serializer.data,
         'message': 'Job available for claiming'
     })
+
+
+def _queue_payload(queryset, limit=200):
+    """Serialize a queue, pulling each video's run history in one extra query."""
+    videos = list(queryset[:limit])
+    runs_by_video = {}
+    if videos:
+        for run in AnalysisRun.objects.filter(
+            video_id__in=[video.id for video in videos]
+        ).order_by('-attempt_number'):
+            runs_by_video.setdefault(run.video_id, []).append(run)
+
+    for video in videos:
+        # Newest attempt first, which is what the serializer's helpers expect.
+        video.prefetched_runs = runs_by_video.get(video.id, [])
+
+    return QueueEntrySerializer(videos, many=True).data
+
+
+@require_http_methods(["GET"])
+@worker_required
+def list_queue(request):
+    """GET /api/videos/worker/jobs/ - the approved queue, in run order."""
+    entries = _queue_payload(claimable_jobs())
+    return JsonResponse({'count': len(entries), 'items': entries})
+
+
+@require_http_methods(["GET"])
+@worker_required
+def list_review_queue(request):
+    """GET /api/videos/worker/jobs/review/ - videos awaiting a decision."""
+    entries = _queue_payload(review_queue())
+    return JsonResponse({'count': len(entries), 'items': entries})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@worker_required
+def worker_decide_approval(request, job_id):
+    """POST /api/videos/worker/jobs/{job_id}/approval/ - approve or reject.
+
+    Worker-token authenticated rather than Clerk: the desktop app holds the
+    worker token, and whoever runs it is the operator making these decisions.
+    That token can already claim jobs and write analysis results, so approving
+    is not a wider grant -- but it does mean the token approves as well as
+    processes. The Clerk-authenticated endpoint for owners still exists.
+    """
+    try:
+        import json
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    approve = data.get('approve')
+    if not isinstance(approve, bool):
+        return JsonResponse({'error': 'approve must be provided as a boolean'}, status=400)
+
+    result = decide_approval(job_id, approve=approve, decided_by=data.get('decided_by') or 'worker')
+    if not result['success']:
+        return JsonResponse(result, status=409)
+
+    return JsonResponse(result)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@worker_required
+def reorder_queue_view(request):
+    """POST /api/videos/worker/jobs/reorder/ - set the order the queue runs in."""
+    try:
+        import json
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    result = reorder_queue(data.get('video_ids'))
+    if not result['success']:
+        return JsonResponse(result, status=400)
+
+    return JsonResponse(result)
 
 
 @csrf_exempt

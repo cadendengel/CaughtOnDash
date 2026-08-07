@@ -111,21 +111,72 @@ def update_worker_heartbeat(worker_id: str, status: str, current_job_id: uuid.UU
     return worker
 
 
-def get_next_pending_job() -> Video | None:
-    """Get the next pending analysis job without claiming it."""
-    # nulls_last matters: SQLite sorts NULLs first and Postgres sorts them last,
-    # so a bare order_by would queue rows predating the explicit enqueue in a
-    # different order locally than in production. Pinning it keeps dev and prod
-    # in agreement, and puts legacy NULL rows behind explicitly-requested ones.
-    job = Video.objects.filter(
+def claimable_jobs():
+    """Videos approved and waiting for a worker, in the order they will run.
+
+    Priority first so a reorder actually takes effect, then request time so
+    equal-priority work stays FIFO. nulls_last matters on the timestamp:
+    SQLite sorts NULLs first and Postgres sorts them last, so a bare order_by
+    would queue rows predating the explicit enqueue differently in dev and
+    production.
+    """
+    return Video.objects.filter(
         analysis_status='pending',
         status='ready',
-        # Approval gate: analysis capacity is spent on videos someone chose,
-        # not on everything that happens to be uploaded.
         approval_status='approved',
         deleted_at__isnull=True,
-    ).order_by(F('analysis_requested_at').asc(nulls_last=True), 'created_at').first()
-    return job
+    ).order_by(
+        '-analysis_priority',
+        F('analysis_requested_at').asc(nulls_last=True),
+        'created_at',
+    )
+
+
+def review_queue():
+    """Uploaded videos waiting for someone to approve or reject them."""
+    return Video.objects.filter(
+        approval_status='pending_review',
+        status='ready',
+        deleted_at__isnull=True,
+    ).order_by(
+        '-analysis_priority',
+        F('analysis_requested_at').asc(nulls_last=True),
+        'created_at',
+    )
+
+
+@transaction.atomic
+def reorder_queue(video_ids: list) -> dict:
+    """Set priority so the given ids run in the order supplied.
+
+    Takes the whole ordered list rather than a move-up/move-down instruction:
+    the caller already knows the order it wants, and applying it in one write
+    avoids two clients fighting over adjacent swaps.
+
+    Priorities are assigned descending from the list length, so appending to
+    the queue later (priority 0) naturally lands behind anything explicitly
+    ordered.
+    """
+    if not isinstance(video_ids, list):
+        return {'success': False, 'error': 'video_ids must be a list'}
+
+    found = {str(v.id): v for v in Video.objects.filter(id__in=video_ids)}
+    missing = [str(vid) for vid in video_ids if str(vid) not in found]
+    if missing:
+        return {'success': False, 'error': f'Unknown video ids: {", ".join(missing[:5])}'}
+
+    total = len(video_ids)
+    for position, video_id in enumerate(video_ids):
+        video = found[str(video_id)]
+        video.analysis_priority = total - position
+        video.save(update_fields=['analysis_priority', 'updated_at'])
+
+    return {'success': True, 'reordered': total}
+
+
+def get_next_pending_job() -> Video | None:
+    """Get the next pending analysis job without claiming it."""
+    return claimable_jobs().first()
 
 
 @transaction.atomic
