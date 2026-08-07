@@ -20,6 +20,13 @@ namespace CaughtOnDash.Worker.Services
         private volatile string _currentStage = "";
         private volatile int _currentProgress;
 
+        // Backend progress reporting is throttled to these bounds. See ReportProgress.
+        private const int ProgressReportStepPercent = 10;
+        private static readonly TimeSpan ProgressReportInterval = TimeSpan.FromSeconds(5);
+        private string _lastSentStage = "";
+        private int _lastSentProgress = -1;
+        private DateTime _lastSentAt = DateTime.MinValue;
+
         public event Action<WorkerLoopEvent>? OnStatusUpdate;
 
         public WorkerLoopService(WorkerConfig config, WorkerApiClient apiClient, IAnalyzer analyzer, LocalVideoStorageService storageService)
@@ -228,6 +235,7 @@ namespace CaughtOnDash.Worker.Services
             // file if the download is cancelled or fails part-way through.
             var downloadedPath = _storageService.GetVideoPath(job.VideoId);
             var stage = "downloading";
+            ResetProgressThrottle();
 
             try
             {
@@ -275,9 +283,14 @@ namespace CaughtOnDash.Worker.Services
         /// Push progress to the UI, the backend, and the heartbeat.
         /// </summary>
         /// <remarks>
-        /// The backend call is fire-and-forget: a dropped progress update must
-        /// not fail the job, and blocking analysis on it would be worse than
-        /// losing an update. Failures are logged by the API client.
+        /// The UI is updated on every report -- it is local and free. The backend
+        /// call is throttled, because a fast download emits a report per percent
+        /// and each one costs an HTTP request and a row-locking transaction. Left
+        /// unthrottled this produced ~77 writes in under a second and SQLite
+        /// answered "database is locked".
+        ///
+        /// The call is fire-and-forget: a dropped progress update must not fail
+        /// the job, and blocking analysis on it would be worse than losing one.
         /// </remarks>
         private void ReportProgress(JobDto job, string stage, int percent, CancellationToken cancellationToken)
         {
@@ -295,7 +308,39 @@ namespace CaughtOnDash.Worker.Services
                 Stage = stage
             });
 
-            _ = _apiClient.UpdateJobProgress(job.JobId, _config.WorkerId, stage, percent, cancellationToken);
+            if (ShouldSendProgress(stage, percent))
+            {
+                _lastSentStage = stage;
+                _lastSentProgress = percent;
+                _lastSentAt = DateTime.UtcNow;
+                _ = _apiClient.UpdateJobProgress(job.JobId, _config.WorkerId, stage, percent, cancellationToken);
+            }
+        }
+
+        private bool ShouldSendProgress(string stage, int percent)
+        {
+            // Always report a stage change or the end of one: those are the
+            // transitions a watching user actually cares about.
+            if (stage != _lastSentStage || percent >= 100 || percent == 0)
+            {
+                return true;
+            }
+
+            if (percent - _lastSentProgress >= ProgressReportStepPercent)
+            {
+                return true;
+            }
+
+            // A slow analysis can sit on the same percentage for a long time;
+            // a periodic update keeps the job visibly alive.
+            return DateTime.UtcNow - _lastSentAt >= ProgressReportInterval;
+        }
+
+        private void ResetProgressThrottle()
+        {
+            _lastSentStage = "";
+            _lastSentProgress = -1;
+            _lastSentAt = DateTime.MinValue;
         }
     }
 
