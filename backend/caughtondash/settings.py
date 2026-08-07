@@ -12,12 +12,23 @@ from dotenv import load_dotenv
 import dj_database_url
 from corsheaders.defaults import default_headers
 
+from caughtondash.env import get_allowed_hosts, get_bool, get_secret_key
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-me')
-DEBUG = os.getenv('DEBUG', 'True').lower() in {'1', 'true', 'yes'}
-ALLOWED_HOSTS = [host.strip() for host in os.getenv('DJANGO_ALLOWED_HOSTS', '').split(',') if host.strip()]
+# These fail closed: DEBUG defaults off, and with DEBUG off a missing or
+# placeholder SECRET_KEY raises rather than falling back to a value that is
+# published in this repository. See caughtondash/env.py.
+DEBUG = get_bool('DEBUG', default=False)
+
+# The test runner needs a key but must not require a production secret to be
+# present, so it is allowed the development placeholder. This only ever applies
+# to `manage.py test`, never to a served process.
+RUNNING_TESTS = 'test' in sys.argv
+
+SECRET_KEY = get_secret_key(DEBUG or RUNNING_TESTS)
+ALLOWED_HOSTS = get_allowed_hosts(DEBUG)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -120,6 +131,25 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Transport security. Only applied with DEBUG off so local http:// development
+# keeps working; secure cookies over plain http would simply never be sent.
+if not DEBUG:
+    # Render (and Cloudflare in front of it) terminate TLS and forward over
+    # http, so Django needs this header to know the original request was https.
+    # Without it, is_secure() is False and any redirect below would loop.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+    # Opt-in, because both can lock you out of a misconfigured deployment:
+    # a redirect loop if the proxy header is wrong, and a browser-cached HSTS
+    # policy that outlives the mistake. Enable once https is known good.
+    SECURE_SSL_REDIRECT = get_bool('SECURE_SSL_REDIRECT', default=False)
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '0'))
+    if SECURE_HSTS_SECONDS:
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = get_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', default=True)
+        SECURE_HSTS_PRELOAD = get_bool('SECURE_HSTS_PRELOAD', default=False)
 
 _default_cors_origins = 'http://localhost:5173,https://caught-on-dash.vercel.app'
 CORS_ALLOWED_ORIGINS = [
