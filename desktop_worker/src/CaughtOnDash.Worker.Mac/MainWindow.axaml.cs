@@ -80,6 +80,14 @@ namespace CaughtOnDash.Worker.Mac
                 ? "No active job"
                 : $"{state.CurrentJob}\nStage: {state.Stage}\nProgress: {state.ProgressDisplay}";
 
+            // Show the progress card only while a job is actually running.
+            var isProcessing = state.Status == "Processing";
+            ProcessingPanel.IsVisible = isProcessing;
+            IdlePanel.IsVisible = !isProcessing;
+            IdleText.Text = state.IsConfigured
+                ? state.CanStop ? "Waiting for a job." : "Worker stopped."
+                : "Worker is not configured.";
+
             StartButton.IsEnabled = state.CanStart;
             StopButton.IsEnabled = state.CanStop;
             CancelJobButton.IsEnabled = state.CanCancelJob;
@@ -89,7 +97,7 @@ namespace CaughtOnDash.Worker.Mac
         {
             Dispatcher.UIThread.Post(() =>
             {
-                LogListBox.Items.Add(new TextBlock
+                var row = new TextBlock
                 {
                     Text = entry.Display,
                     TextWrapping = TextWrapping.Wrap,
@@ -99,12 +107,20 @@ namespace CaughtOnDash.Worker.Mac
                         Logger.LogLevel.Warning => Brushes.Orange,
                         _ => Brushes.Black,
                     },
-                });
+                };
+
+                LogListBox.Items.Add(row);
 
                 while (LogListBox.Items.Count > MaxLogRows)
                 {
                     LogListBox.Items.RemoveAt(0);
                 }
+
+                // Follow the newest entry. Without this the list stays pinned at
+                // the top while entries scroll past below the fold, which is
+                // useless during a job. The WPF host has always done this; the
+                // Avalonia port did not.
+                LogListBox.ScrollIntoView(LogListBox.Items.Count - 1);
             });
         }
     }
