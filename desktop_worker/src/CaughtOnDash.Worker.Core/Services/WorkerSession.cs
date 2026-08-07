@@ -30,8 +30,8 @@ namespace CaughtOnDash.Worker.Services
             _configService = new AppConfigService();
             _apiClient = new WorkerApiClient();
             _storageService = new LocalVideoStorageService();
-            _analyzer = analyzer ?? new PlaceholderAnalyzer();
             _config = _configService.LoadConfig();
+            _analyzer = analyzer ?? CreateAnalyzer(_config);
 
             State = new WorkerSessionState
             {
@@ -46,6 +46,36 @@ namespace CaughtOnDash.Worker.Services
             if (_config.IsConfigured)
             {
                 _apiClient.Initialize(_config.BackendUrl, _config.ApiToken);
+            }
+        }
+
+        /// <summary>
+        /// Pick the analyzer named in config, defaulting to the placeholder.
+        /// </summary>
+        /// <remarks>
+        /// An unrecognised name falls back rather than throwing: a typo should
+        /// leave a working worker with a loud log line, not a dead one.
+        /// </remarks>
+        private static IAnalyzer CreateAnalyzer(WorkerConfig config)
+        {
+            var name = (config.Analyzer ?? "").Trim().ToLowerInvariant();
+
+            switch (name)
+            {
+                case "python":
+                    Logger.Log($"Using the Python analyzer ({config.PythonExecutable})");
+                    return new PythonAnalyzer(config);
+
+                case "placeholder":
+                case "":
+                    Logger.Log("Using the placeholder analyzer -- results are not real");
+                    return new PlaceholderAnalyzer();
+
+                default:
+                    Logger.Log(
+                        $"Unknown analyzer '{config.Analyzer}'; falling back to the placeholder.",
+                        Logger.LogLevel.Warning);
+                    return new PlaceholderAnalyzer();
             }
         }
 

@@ -1,0 +1,10 @@
+# Analyzer dependencies. Python 3.12.
+#
+# One file for every host. The default PyPI wheels give MPS acceleration on
+# macOS and CPU elsewhere. For CUDA on a machine with an NVIDIA GPU, install
+# torch from NVIDIA's index afterwards -- see README.md.
+#
+# Headless OpenCV: the worker never opens a window, and the GUI build drags in
+# system libraries that are awkward on both Windows and macOS.
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
