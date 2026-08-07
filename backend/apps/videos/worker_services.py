@@ -8,6 +8,45 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.videos.models import Video, Worker
+from apps.videos.tagging import normalize_video_tags
+
+
+def merge_ai_tags(existing_tags, ai_tags) -> list[dict[str, str]]:
+    """Replace the AI-sourced tags on a video, leaving human ones alone.
+
+    Re-analysis must not delete tags a person added, so only entries sourced
+    'ai' are cleared. Where a model tag duplicates one a human already applied,
+    the human's is kept -- their source attribution is the more informative of
+    the two, and duplicate pills would render twice.
+    """
+    kept = [tag for tag in normalize_video_tags(existing_tags) if tag['source'] != 'ai']
+    seen = {tag['text'].casefold() for tag in kept}
+
+    detected = [
+        tag for tag in normalize_video_tags(ai_tags or [], default_source='ai')
+        if tag['text'].casefold() not in seen
+    ]
+
+    return kept + detected
+
+
+def _duration_from_metadata(metadata: dict | None) -> int | None:
+    """Whole seconds from analyzer metadata, or None if it did not report any."""
+    if not metadata:
+        return None
+
+    raw = metadata.get('duration_seconds')
+    if raw is None:
+        return None
+
+    try:
+        duration = int(round(float(raw)))
+    except (TypeError, ValueError):
+        return None
+
+    # A zero or negative duration means the analyzer could not determine one;
+    # keep whatever the record already had rather than overwriting with nothing.
+    return duration if duration > 0 else None
 
 
 def get_or_create_worker(worker_id: str, worker_name: str) -> Worker:
@@ -154,7 +193,21 @@ def complete_job(job_id: uuid.UUID, worker_id: str, summary: str, tags: list, ev
     job.ai_tags = tags or []
     job.ai_events = events or []
     job.ai_metadata = metadata or {}
-    
+
+    # Publish the detections into `tags` as well, sourced 'ai'. That field is
+    # what the feed renders and what search indexes, so tags left only in
+    # ai_tags are invisible to both. The tag vocabulary already had an 'ai'
+    # source and the frontend already styles it -- this connects them.
+    job.tags = merge_ai_tags(job.tags, tags)
+
+    # Prefer the analyzer's duration. The upload path sets one from the
+    # browser's video element, which is absent for non-browser uploads and zero
+    # whenever the browser could not read the metadata. This value comes from
+    # the file itself.
+    duration = _duration_from_metadata(metadata)
+    if duration is not None:
+        job.duration_seconds = duration
+
     job.save()
     
     # Update worker to idle

@@ -193,13 +193,32 @@ truncating it, so a long clip stays covered end to end on the slow laptop.
 
 ---
 
-## Milestone 4 — Wire the results through
+## Milestone 4 — Wire the results through — DONE
 
-- [ ] Populate `Video.duration_seconds` from analyzer metadata
-- [ ] Decide and implement the `ai_tags` shape (see Open decisions)
-- [ ] Surface real analysis state in the UI where it is useful
-- [ ] Update `desktop_worker/README.md`, which still describes the worker as
+- [x] Populate `Video.duration_seconds` from analyzer metadata
+- [x] Decide and implement the `ai_tags` shape
+- [x] Surface real analysis state in the UI where it is useful
+- [x] Update `desktop_worker/README.md`, which still described the worker as
       something to be built
+
+The tag decision turned out to be already made by the existing code:
+`VALID_TAG_SOURCES` has included `'ai'` from the start, the frontend has a
+`.tag-pill--ai` style and returns it from `getTagColorClass`, and search indexes
+`tags`. Publishing detections into `tags` with source `ai` therefore made them
+searchable and correctly styled with no frontend or search changes at all —
+where keeping them in `ai_tags` would have meant building a parallel rendering
+path and extending search to a second field.
+
+`ai_tags` is still written as the raw model output, so the provenance of a tag
+stays visible; `tags` is the published view of it.
+
+Re-analysis replaces only `ai`-sourced tags. Tags a person added survive, and a
+human tag wins over an identical detected one so the same word cannot render
+twice in two colours.
+
+No frontend change was needed: the feed already renders `tags` through
+`renderTagPills`, and the admin view already showed `duration_seconds` — it just
+had nothing to show, since the analyzer never reported one.
 
 ---
 

@@ -1,79 +1,102 @@
 # Desktop Worker
 
-This folder will hold the local desktop worker that runs on your PC and processes videos manually when you are available.
+Claims dashcam videos from the backend, downloads them, analyzes them locally,
+and reports the results back.
 
-The worker is intended to work with the main CaughtOnDash backend and frontend:
+Runs on Windows and macOS from a shared core. GPU is an accelerator, never a
+requirement — the analyzer uses CUDA, Apple Silicon MPS, or CPU depending on
+what the host has.
 
-- The backend stores the queue and video status.
-- The desktop worker checks in with the backend and reports whether it is online.
-- The worker downloads videos, processes them locally, and sends results back to the server.
-- The backend updates the frontend and can notify you by phone or email when work is waiting.
+## Layout
 
-## Recommended Stack
-
-- C# / .NET for the desktop app shell and user interface.
-- Python for the actual video analysis and GPU-heavy processing.
-- HTTPS requests for communication with the backend.
-
-## What This Worker Should Do
-
-- Show whether the worker is online or offline.
-- Show how many videos are waiting to be processed.
-- Let you start or stop processing manually.
-- Claim one video at a time from the backend.
-- Download the video, run analysis locally, and upload the results.
-- Send a heartbeat so the backend knows the app is running.
-
-## Basic Workflow
-
-1. Start the desktop worker on your PC.
-2. The worker sends a heartbeat to the backend.
-3. The backend marks the worker as online.
-4. If there are queued videos, you can begin processing them.
-5. The worker requests a video, analyzes it, and returns the result.
-6. The backend saves the result and updates the frontend.
-
-## Suggested Folder Layout
-
-```text
-desktop_worker/
-	README.md
-	src/
-		worker/        # C# app shell and UI
-		analyzer/      # Python analysis code
-	scripts/         # helper scripts for local setup
+```
+src/
+  CaughtOnDash.Worker.Core/        net8.0   — services, models, protocol. All logic.
+  CaughtOnDash.Worker.Core.Tests/  net8.0   — unit tests, no Python required
+  worker/                          net8.0-windows — WPF host
+  CaughtOnDash.Worker.Mac/         net8.0   — Avalonia host
+analyzer/                          Python 3.12 — the analysis itself
 ```
 
-## Setup Notes
+Everything meaningful lives in `Core`; the two host projects are thin UI shells
+over the same `WorkerSession`. WPF cannot build on macOS, which is why the
+Avalonia host exists.
 
-Before building the worker, make sure you have:
+## Build and run
 
-- .NET SDK installed
-- Python 3.11 or newer installed
-- GPU drivers installed if you plan to use local GPU processing
-- Backend API URL and authentication details from the main app
+```bash
+# macOS
+dotnet run --project src/CaughtOnDash.Worker.Mac
 
-## Environment Variables
+# Windows
+dotnet run --project src\worker\CaughtOnDash.Worker.csproj
 
-These are example values the worker may need:
-
-```env
-BACKEND_API_URL=https://your-backend.example.com
-WORKER_ID=your-worker-id
-WORKER_TOKEN=your-worker-token
-PYTHON_PATH=C:\\Path\\To\\Python.exe
+# tests (either platform)
+dotnet test src/CaughtOnDash.Worker.Core.Tests
 ```
 
-## Next Steps
+Analyzer setup — Python version, dependencies, and the optional CUDA upgrade —
+is in [`analyzer/README.md`](analyzer/README.md).
 
-When you start implementing this worker, add:
+## Configuration
 
-- a C# project for the UI and backend communication
-- a Python module for analysis
-- a heartbeat endpoint or polling loop
-- a result upload endpoint
-- a small settings screen for backend URL and credentials
+`appsettings.json` beside the host project, gitignored because it holds the API
+token:
 
-## Notes
+```json
+{
+  "BackendUrl": "https://your-backend",
+  "ApiToken": "the WORKER_API_TOKEN from the backend environment",
+  "WorkerId": "caden-desktop-1",
+  "WorkerName": "Caden Desktop",
+  "Analyzer": "python",
+  "PythonExecutable": "/absolute/path/to/analyzer/.venv/bin/python",
+  "AnalyzerScriptPath": "/absolute/path/to/analyzer/analyze.py",
+  "AnalyzerTimeoutSeconds": 900
+}
+```
 
-This README is intentionally basic and can be expanded once the worker code exists.
+`"Analyzer": "placeholder"` skips Python entirely and returns stub results —
+useful for exercising the queue on a host with no Python environment. It is the
+default, so a misconfigured worker still runs rather than failing to start.
+
+## How a job flows
+
+1. Poll `/api/videos/worker/jobs/next/` every 15 seconds
+2. Claim it — the backend rejects a second claim on the same job
+3. Download the video to a temp working directory
+4. Run the analyzer, forwarding progress to the backend as it goes
+5. Report results, or report the failure with the stage it happened at
+6. Delete the downloaded file, including after a failure
+
+A heartbeat goes out every 10 seconds throughout, carrying the current stage and
+progress. A worker that dies mid-job leaves its video in `processing`; the
+backend treats that as stale after five minutes and lets it be re-queued.
+
+## What the analyzer reports
+
+Real container metadata — resolution, fps, frame count, duration — and object
+tags detected with YOLOv8n over sampled frames. Detected tags are published to
+the video's `tags` with source `ai`, which is what the feed renders and what
+search indexes.
+
+`events` is deliberately empty. Locating an incident in time is a different
+problem from recognising objects, and timestamps that were never measured would
+be worse than none.
+
+## Troubleshooting
+
+**Every request returns 401** — `ApiToken` does not match `WORKER_API_TOKEN` on
+the backend. They are separate from user authentication; Clerk settings do not
+affect the worker.
+
+**Jobs are found but never claimed** — usually a stale build. Check that the
+worker log prints a real job id rather than all zeros.
+
+**"Analyzer is missing a Python dependency"** — the venv exists but
+`requirements.txt` was not installed into it, or `PythonExecutable` points at
+system Python instead of the venv.
+
+**The queue is always empty** — a video only becomes claimable once its upload
+completes (`status='ready'`). A record whose upload failed stays `pending` and
+is skipped.

@@ -126,7 +126,9 @@ implying nothing was there.
 
 `yolov8n.pt` (~6 MB) downloads on first run into the working directory and is
 gitignored. The first analysis on a new host therefore needs network access and
-takes noticeably longer than subsequent ones.
+takes noticeably longer than subsequent ones — measured on the CPU-only laptop,
+an 8 second clip took 58s cold and 6.8s warm. Nearly all of that gap is the
+download, not inference.
 
 ### Speed
 
