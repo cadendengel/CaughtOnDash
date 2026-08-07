@@ -11,6 +11,21 @@ namespace CaughtOnDash.Worker.Models
         public string BackendUrl { get; set; } = "";
         public string ApiToken { get; set; } = "";
 
+        /// <summary>"python" for real analysis, "placeholder" for the stub.</summary>
+        /// <remarks>
+        /// Defaults to the placeholder so a worker without a Python environment
+        /// still runs. Switching is a config change, not a rebuild.
+        /// </remarks>
+        public string Analyzer { get; set; } = "placeholder";
+
+        /// <summary>Interpreter to run the analyzer with -- point this at the venv.</summary>
+        public string PythonExecutable { get; set; } = "python";
+
+        /// <summary>Path to analyze.py, absolute or relative to the worker binary.</summary>
+        public string AnalyzerScriptPath { get; set; } = "";
+
+        public int AnalyzerTimeoutSeconds { get; set; } = 900;
+
         public bool IsConfigured => !string.IsNullOrWhiteSpace(BackendUrl) && !string.IsNullOrWhiteSpace(ApiToken);
     }
 
