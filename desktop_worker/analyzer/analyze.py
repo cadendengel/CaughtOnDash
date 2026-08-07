@@ -24,7 +24,7 @@ import os
 import sys
 import time
 
-ANALYZER_VERSION = 'metadata-1.0'
+ANALYZER_VERSION = 'detect-1.0'
 
 
 def emit(payload: dict) -> None:
@@ -86,7 +86,7 @@ def probe_video(path: str) -> dict:
 
 
 def describe(metadata: dict) -> str:
-    """A factual one-liner. No claims about content -- nothing has looked at it."""
+    """Metadata-only fallback, used when detection is unavailable."""
     parts = [f"{metadata['width']}x{metadata['height']} video"]
 
     duration = metadata['duration_seconds']
@@ -97,12 +97,20 @@ def describe(metadata: dict) -> str:
     if metadata['fps']:
         parts.append(f"{metadata['fps']:g} fps")
 
-    return ', '.join(parts) + '. Content analysis not yet available.'
+    return ', '.join(parts) + '. Object detection was not run.'
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description='Analyze a dashcam video.')
     parser.add_argument('video_path', help='Path to the video file')
+    parser.add_argument('--no-detect', action='store_true',
+                        help='Skip object detection and report metadata only')
+    parser.add_argument('--sample-fps', type=float, default=None,
+                        help='Frames sampled per second of video (default 1)')
+    parser.add_argument('--max-frames', type=int, default=None,
+                        help='Ceiling on sampled frames regardless of duration')
+    parser.add_argument('--confidence', type=float, default=None,
+                        help='Minimum detection confidence (default 0.5)')
     args = parser.parse_args(argv)
 
     started = time.monotonic()
@@ -115,7 +123,7 @@ def main(argv: list[str]) -> int:
     log(f'Analyzing {args.video_path}')
 
     try:
-        progress('analyzing', 30)
+        progress('analyzing', 10)
         metadata = probe_video(args.video_path)
     except ImportError as exc:
         log(f'Missing Python dependency: {exc}. Install the analyzer requirements.')
@@ -124,18 +132,58 @@ def main(argv: list[str]) -> int:
         log(f'Failed to read the video: {exc}')
         return 4
 
-    progress('analyzing', 80)
+    tags: list[str] = []
+    summary = describe(metadata)
+
+    if not args.no_detect:
+        try:
+            import detection
+
+            options = {}
+            if args.sample_fps is not None:
+                options['sample_fps'] = args.sample_fps
+            if args.max_frames is not None:
+                options['max_frames'] = args.max_frames
+            if args.confidence is not None:
+                options['confidence'] = args.confidence
+
+            log('Loading detection model...')
+            progress('analyzing', 15)
+
+            # Detection dominates the runtime, so map it across most of the bar.
+            result = detection.detect(
+                args.video_path,
+                metadata,
+                on_progress=lambda pct: progress('detecting_events', 15 + int(pct * 0.7)),
+                **options,
+            )
+
+            tags = result['tags']
+            summary = detection.summarize(metadata, result)
+            metadata['detection'] = {
+                key: value for key, value in result.items() if key != 'tags'
+            }
+            log(f"Detected {len(tags)} tag(s) on {result['device']} "
+                f"from {result['frames_sampled']} frames")
+        except ImportError as exc:
+            log(f'Missing Python dependency: {exc}. Install the analyzer requirements.')
+            return 3
+        except Exception as exc:
+            log(f'Object detection failed: {exc}')
+            return 5
+
+    progress('uploading_results', 90)
 
     metadata['analyzer_version'] = ANALYZER_VERSION
     metadata['analysis_seconds'] = round(time.monotonic() - started, 3)
 
-    progress('uploading_results', 90)
     emit({
         'type': 'result',
-        'summary': describe(metadata),
-        # Tags and events stay empty until milestone 3 can derive them from the
-        # actual frames. Emitting plausible guesses is what the placeholder did.
-        'tags': [],
+        'summary': summary,
+        'tags': tags,
+        # Events stay empty: locating a real incident in time is a different
+        # problem from recognising objects, and inventing timestamps would be
+        # exactly the placeholder behaviour this replaced.
         'events': [],
         'metadata': metadata,
     })
