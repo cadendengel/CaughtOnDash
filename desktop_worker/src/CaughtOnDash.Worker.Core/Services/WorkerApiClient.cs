@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -64,6 +65,82 @@ namespace CaughtOnDash.Worker.Services
                 Logger.Log($"Failed to send request to {endpoint}: {ex.Message}", Logger.LogLevel.Error);
                 return default;
             }
+        }
+
+        /// <summary>
+        /// Stream a video to disk, reporting 0-100 as it goes.
+        /// </summary>
+        /// <remarks>
+        /// The file is written as it arrives rather than buffered in memory --
+        /// dashcam clips are large enough that ReadAsByteArrayAsync would be a
+        /// problem. No Authorization header: playback URLs point at Supabase
+        /// public storage, not at our API.
+        /// </remarks>
+        public async Task DownloadVideo(
+            string videoUrl,
+            string destinationPath,
+            IProgress<int>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(videoUrl))
+            {
+                throw new InvalidOperationException(
+                    "This job has no video_url, so there is nothing to analyze. The upload " +
+                    "probably never completed.");
+            }
+
+            using var response = await _httpClient.GetAsync(
+                videoUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(
+                    $"Could not download the video ({(int)response.StatusCode} {response.ReasonPhrase}) from {videoUrl}");
+            }
+
+            var totalBytes = response.Content.Headers.ContentLength;
+            var directory = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var destination = new FileStream(
+                destinationPath, FileMode.Create, FileAccess.Write, FileShare.None,
+                bufferSize: 81920, useAsync: true);
+
+            var buffer = new byte[81920];
+            long received = 0;
+            var lastReported = -1;
+            int read;
+
+            while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                received += read;
+
+                // Without Content-Length we cannot compute a percentage, so hold
+                // at 0 rather than inventing one.
+                if (progress == null || totalBytes is null or <= 0)
+                {
+                    continue;
+                }
+
+                var percent = (int)(received * 100 / totalBytes.Value);
+                if (percent != lastReported)
+                {
+                    lastReported = percent;
+                    progress.Report(percent);
+                }
+            }
+
+            if (received == 0)
+            {
+                throw new InvalidOperationException($"Downloaded an empty file from {videoUrl}");
+            }
+
+            Logger.Log($"Downloaded {received:N0} bytes to {destinationPath}");
         }
 
         public async Task<bool> GetWorkerStatus(CancellationToken cancellationToken = default)

@@ -82,18 +82,25 @@ testing without a Python environment.
 
 ---
 
-## Milestone 1 — Plumbing, no ML
+## Milestone 1 — Plumbing, no ML — DONE
 
 Needed regardless of which model wins. Deletes dead code and fixes progress
 reporting before a slow analyzer exposes it.
 
-- [ ] Download `JobDto.VideoUrl` to `LocalVideoStorageService.GetVideoPath(videoId)`
-- [ ] Report download progress as stage `downloading`
-- [ ] Call `UpdateJobProgress` from `ProcessJob` so the backend sees real progress
-- [ ] Feed real progress into `HeartbeatLoop` instead of the hardcoded `0`
-- [ ] Delete the dead `downloadedPath` branch; clean up the real file in `finally`
-- [ ] Fail the job with a clear error when the download fails or the URL is empty
-- [ ] Honour cancellation mid-download
+- [x] Download `JobDto.VideoUrl` to `LocalVideoStorageService.GetVideoPath(videoId)`
+- [x] Report download progress as stage `downloading`
+- [x] Call `UpdateJobProgress` from `ProcessJob` so the backend sees real progress
+- [x] Feed real progress into `HeartbeatLoop` instead of the hardcoded `0`
+- [x] Delete the dead `downloadedPath` branch; clean up the real file in `finally`
+- [x] Fail the job with a clear error when the download fails or the URL is empty
+- [x] Honour cancellation mid-download
+
+Verified on macOS against the local stack: a 2.9 MB download reported smooth
+0-100 progress, 77 progress updates reached the backend, the file was removed
+afterwards, and the job completed. A video with no `playback_url` and one with
+a dead URL both failed at stage `downloading` with readable errors, where
+previously they would have "analyzed" a path that did not exist and reported
+success.
 
 **Files:** `Services/WorkerLoopService.cs`, `Services/WorkerApiClient.cs`,
 `Services/LocalVideoStorageService.cs`

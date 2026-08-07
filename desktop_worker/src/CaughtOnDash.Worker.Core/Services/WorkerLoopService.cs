@@ -17,6 +17,8 @@ namespace CaughtOnDash.Worker.Services
         private bool _isRunning;
         private Guid? _currentJobId;
         private TaskCompletionSource<bool>? _stopTcs;
+        private volatile string _currentStage = "";
+        private volatile int _currentProgress;
 
         public event Action<WorkerLoopEvent>? OnStatusUpdate;
 
@@ -118,9 +120,11 @@ namespace CaughtOnDash.Worker.Services
             {
                 try
                 {
+                    // Report the stage and progress the job is actually at, not a
+                    // fixed guess. These are set by ReportProgress as work moves.
                     var status = _currentJobId.HasValue ? "processing" : "idle";
-                    var stage = _currentJobId.HasValue ? "analyzing" : "";
-                    var progress = 0; // This would be updated by the analyzer
+                    var stage = _currentJobId.HasValue ? _currentStage : "";
+                    var progress = _currentJobId.HasValue ? _currentProgress : 0;
 
                     var delivered = await _apiClient.SendHeartbeat(
                         _config.WorkerId,
@@ -220,59 +224,78 @@ namespace CaughtOnDash.Worker.Services
 
         private async Task ProcessJob(JobDto job, CancellationToken cancellationToken)
         {
-            string? downloadedPath = null;
+            // Set before the download so the finally block cleans up a partial
+            // file if the download is cancelled or fails part-way through.
+            var downloadedPath = _storageService.GetVideoPath(job.VideoId);
+            var stage = "downloading";
 
             try
             {
                 var progress = new Progress<(string stage, int progressValue)>(report =>
-                {
-                    Logger.Log($"[{job.Title}] {report.stage}: {report.progressValue}%");
-                    OnStatusUpdate?.Invoke(new WorkerLoopEvent
-                    {
-                        Status = "processing",
-                        Message = $"Processing: {report.stage}",
-                        JobId = job.JobId,
-                        JobTitle = job.Title,
-                        Progress = report.progressValue,
-                        Stage = report.stage
-                    });
-                });
+                    ReportProgress(job, report.stage, report.progressValue, cancellationToken));
 
-                // For MVP, use placeholder video path since we're doing placeholder analysis
-                var placeholderPath = Path.Combine(Path.GetTempPath(), $"video_{job.JobId}.mp4");
+                ReportProgress(job, stage, 0, cancellationToken);
+                await _apiClient.DownloadVideo(
+                    job.VideoUrl,
+                    downloadedPath,
+                    new Progress<int>(percent => ReportProgress(job, "downloading", percent, cancellationToken)),
+                    cancellationToken);
 
-                // Simulate analysis
-                var result = await _analyzer.AnalyzeAsync(placeholderPath, progress, cancellationToken);
+                stage = "analyzing";
+                var result = await _analyzer.AnalyzeAsync(downloadedPath, progress, cancellationToken);
 
-                // Submit results
+                stage = "uploading_results";
+                ReportProgress(job, stage, 95, cancellationToken);
+
                 var success = await _apiClient.CompleteJob(job.JobId, _config.WorkerId, result, cancellationToken);
                 if (!success)
                 {
-                    await _apiClient.FailJob(job.JobId, _config.WorkerId, "Failed to submit analysis results", "uploading_results", cancellationToken);
+                    await _apiClient.FailJob(job.JobId, _config.WorkerId, "Failed to submit analysis results", stage, cancellationToken);
                 }
             }
             catch (OperationCanceledException)
             {
                 Logger.Log($"Job {job.JobId} processing cancelled by user");
-                await _apiClient.CancelJob(job.JobId, _config.WorkerId, "User cancelled processing", cancellationToken);
+                // Cancellation token is already tripped, so report on a fresh one
+                // or the cancel call itself is cancelled before it is sent.
+                await _apiClient.CancelJob(job.JobId, _config.WorkerId, "User cancelled processing", CancellationToken.None);
             }
             catch (Exception ex)
             {
                 Logger.Log($"Job {job.JobId} processing failed: {ex.Message}", Logger.LogLevel.Error);
-                await _apiClient.FailJob(job.JobId, _config.WorkerId, ex.Message, "analyzing", cancellationToken);
+                await _apiClient.FailJob(job.JobId, _config.WorkerId, ex.Message, stage, cancellationToken);
             }
             finally
             {
-                // Clean up downloaded video
-                if (downloadedPath != null && File.Exists(downloadedPath))
-                {
-                    try
-                    {
-                        File.Delete(downloadedPath);
-                    }
-                    catch { }
-                }
+                _storageService.CleanupVideoFile(downloadedPath);
             }
+        }
+
+        /// <summary>
+        /// Push progress to the UI, the backend, and the heartbeat.
+        /// </summary>
+        /// <remarks>
+        /// The backend call is fire-and-forget: a dropped progress update must
+        /// not fail the job, and blocking analysis on it would be worse than
+        /// losing an update. Failures are logged by the API client.
+        /// </remarks>
+        private void ReportProgress(JobDto job, string stage, int percent, CancellationToken cancellationToken)
+        {
+            _currentStage = stage;
+            _currentProgress = percent;
+
+            Logger.Log($"[{job.Title}] {stage}: {percent}%");
+            OnStatusUpdate?.Invoke(new WorkerLoopEvent
+            {
+                Status = "processing",
+                Message = $"Processing: {stage}",
+                JobId = job.JobId,
+                JobTitle = job.Title,
+                Progress = percent,
+                Stage = stage
+            });
+
+            _ = _apiClient.UpdateJobProgress(job.JobId, _config.WorkerId, stage, percent, cancellationToken);
         }
     }
 
