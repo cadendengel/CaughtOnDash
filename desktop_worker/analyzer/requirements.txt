@@ -4,7 +4,17 @@
 # macOS and CPU elsewhere. For CUDA on a machine with an NVIDIA GPU, install
 # torch from NVIDIA's index afterwards -- see README.md.
 #
-# Headless OpenCV: the worker never opens a window, and the GUI build drags in
-# system libraries that are awkward on both Windows and macOS.
-opencv-python-headless==4.10.0.84
-numpy==1.26.4
+# Versions are pinned exactly, and that matters more than it looks: installing
+# ultralytics unpinned pulls its own opencv and numpy, which silently overrode
+# an earlier looser pin here. Two opencv distributions both provide `cv2` and
+# overwrite each other, so removing either breaks the other. Keep exactly one.
+#
+# opencv-python rather than -headless: ultralytics depends on the former, and
+# having both installed is the failure described above. The GUI extras are
+# unused but harmless on a desktop host.
+
+ultralytics==8.4.116
+opencv-python==5.0.0.93
+numpy==2.5.1
+torch==2.13.0
+torchvision==0.28.0
