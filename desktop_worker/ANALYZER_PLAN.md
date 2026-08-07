@@ -118,19 +118,36 @@ success.
 
 ---
 
-## Milestone 2 — Python sidecar, real metadata
+## Milestone 2 — Python sidecar, real metadata — DONE
 
 The point where fabricated data disappears. No models yet, so it is the cheapest
 possible proof the subprocess contract works on both machines.
 
-- [ ] `analyzer/analyze.py` — takes a video path, emits the JSON Lines protocol
-- [ ] Extract duration, resolution, fps, frame count via OpenCV
-- [ ] `PythonAnalyzer : IAnalyzer` — spawn, stream stdout, parse, map progress
-- [ ] Timeout, non-zero exit, and missing-`result` handling
-- [ ] Kill the process tree on cancellation
-- [ ] Clear failure when the Python executable or script is missing
-- [ ] `analyzer/requirements-cuda.txt` and `analyzer/requirements-mps.txt`
-- [ ] C# unit tests for the protocol parser using a fake script (no Python needed in CI)
+- [x] `analyzer/analyze.py` — takes a video path, emits the JSON Lines protocol
+- [x] Extract duration, resolution, fps, frame count via OpenCV
+- [x] `PythonAnalyzer : IAnalyzer` — spawn, stream stdout, parse, map progress
+- [x] Timeout, non-zero exit, and missing-`result` handling
+- [x] Kill the process tree on cancellation
+- [x] Clear failure when the Python executable or script is missing
+- [x] One `analyzer/requirements.txt` for every host (CUDA is an upgrade step)
+- [x] C# unit tests for the protocol parser, no Python required — 18 tests
+
+Verified on macOS: a real 640x360 25fps clip produced exactly those values plus
+frame count, duration and file size. A corrupt file failed at stage `analyzing`
+with "could not read the video", and a missing file with "could not find the
+video file" — distinct exit codes, distinct messages.
+
+Two things surfaced only by running it end to end:
+
+- Milestone 1 reported progress on **every percent**, so a fast download fired
+  ~77 HTTP requests and write transactions in under a second and SQLite answered
+  "database is locked". Backend reporting is now throttled to 10% steps, stage
+  changes, and a 5s heartbeat; the UI still updates on every tick.
+- Even throttled, the local sqlite settings needed `transaction_mode=IMMEDIATE`.
+  Django's default defers the write lock, so a read-then-write transaction must
+  upgrade mid-flight, and a failed upgrade returns SQLITE_BUSY instantly — which
+  `timeout` cannot wait out. Every worker write has that shape. With WAL plus
+  IMMEDIATE, a full job run produces zero locks.
 
 **Acceptance:**
 - `ai_metadata` contains real duration/resolution/fps for a known file.
@@ -172,22 +189,43 @@ COCO's vocabulary happens to fit dashcam footage well: `car`, `truck`, `bus`,
 
 ---
 
-## Cross-platform setup
+## Hosts and hardware
 
-Identical Python code; only the install differs.
-
-| | Windows | macOS |
-|---|---|---|
-| Device | `cuda` | `mps` |
-| Torch install | CUDA-specific index URL | default wheel |
-| Requirements | `requirements-cuda.txt` | `requirements-mps.txt` |
+GPU is an **optional accelerator, never a requirement**. The same script runs
+everywhere and uses whatever it finds:
 
 ```python
 device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 ```
 
-Everything above that line is shared. Pin torch and ultralytics versions in both
-files.
+| Host | Compute | Role |
+|---|---|---|
+| Home desktop — Ryzen 9 5900X, RTX 3070 Ti | `cuda` | Primary for real workloads. Not reachable from this network yet. |
+| This Mac — Apple M3, 8 core, 16 GB | `mps` | Development and everyday analysis |
+| Windows laptop — i7-10610U, Intel UHD | `cpu` | Correctness test bed. Works, just slow. |
+
+Rough YOLOv8n cost at 1 frame/second on a 5-minute clip: seconds on the 3070 Ti,
+10-20s on the M3, 1-2 minutes on the laptop. All acceptable; only the laptop is
+slow enough to notice.
+
+**One base requirements file** covers every host: the default PyPI torch wheel
+gives MPS on macOS and CPU on Windows. CUDA is a documented upgrade step on the
+desktop only, installing torch from NVIDIA's index. No per-platform requirements
+files, no code differences.
+
+## Python environment
+
+System Python is unusable here: the Mac has only 3.14 (too new for torch and
+opencv wheels) and the Windows laptop defaults to 3.13. Pin **Python 3.12** in a
+dedicated venv per host, kept out of git.
+
+| Host | Provisioning |
+|---|---|
+| Windows | 3.12 already installed: `py -3.12 -m venv .venv` |
+| Mac | `brew install python@3.12`, then `python3.12 -m venv .venv` |
+
+Same version everywhere means one pinned requirements file is meaningful rather
+than aspirational.
 
 ---
 
