@@ -36,6 +36,17 @@ DEFAULT_MAX_FRAMES = 300
 # Filters out single-frame false positives without losing brief real events.
 MIN_FRAME_SHARE = 0.05
 
+# Classes that indicate a road scene. 'person' is deliberately excluded: people
+# appear in road footage and in everything else, so it carries no signal here.
+ROAD_CLASSES = frozenset({
+    'car', 'truck', 'bus', 'motorcycle', 'bicycle', 'traffic light', 'stop sign',
+})
+
+# A road object must be present in at least this share of sampled frames. A car
+# glimpsed once is a parked car in the background; a car in most frames is the
+# road ahead.
+DASHCAM_ROAD_SHARE = 0.5
+
 
 def resolve_device() -> str:
     """Pick the best available accelerator. GPU is a bonus, never a requirement."""
@@ -173,8 +184,77 @@ def _empty_result(model_name: str, device: str, confidence: float, sampled: int)
     }
 
 
+def orientation_of(metadata: dict) -> str:
+    width = metadata.get('width') or 0
+    height = metadata.get('height') or 0
+
+    if width <= 0 or height <= 0:
+        return 'unknown'
+    if width > height:
+        return 'landscape'
+    if height > width:
+        return 'portrait'
+    return 'square'
+
+
+def classify_footage(metadata: dict, detection: dict) -> dict:
+    """Does this look like dashcam footage?
+
+    A heuristic, and reported as one: the signals it was derived from are
+    returned alongside the verdict so a human can disagree with it. Two
+    independent pieces of evidence, both cheap and already computed:
+
+    - road objects present across most of the video. A mounted camera pointed
+      at a road sees vehicles and traffic furniture continuously.
+    - landscape orientation. Dashcams are fixed and wide; portrait video is
+      almost always a phone held by a person.
+
+    Both must hold. Either alone is too easy to trip: a passenger filming out
+    of a window is landscape with cars in it, and a phone in a car mount is
+    portrait footage of a road. Requiring both keeps false positives low at
+    the cost of missing unusual-but-real dashcam setups, which is the right
+    trade for something that might drive moderation.
+    """
+    counts = detection.get('counts') or {}
+    sampled = max(1, detection.get('frames_sampled') or 0)
+
+    road_shares = {
+        label: counts[label] / sampled
+        for label in counts
+        if label in ROAD_CLASSES
+    }
+    strongest = max(road_shares.values(), default=0.0)
+    orientation = orientation_of(metadata)
+
+    has_road_scene = strongest >= DASHCAM_ROAD_SHARE
+    is_landscape = orientation == 'landscape'
+
+    if has_road_scene and is_landscape:
+        reason = 'road objects across most frames, landscape orientation'
+    elif not road_shares:
+        reason = 'no road objects detected'
+    elif not has_road_scene:
+        reason = 'road objects present but only intermittently'
+    else:
+        reason = f'road objects present but orientation is {orientation}'
+
+    return {
+        'looks_like_dashcam': has_road_scene and is_landscape,
+        'reason': reason,
+        'orientation': orientation,
+        'road_classes_detected': sorted(road_shares),
+        'strongest_road_class_share': round(strongest, 3),
+    }
+
+
 def summarize(metadata: dict, detection: dict) -> str:
-    """A factual sentence built only from what was actually detected."""
+    """A factual sentence built only from what was actually detected.
+
+    Deliberately says "clip", not "dashcam clip". Whether the footage is from a
+    dashcam is a conclusion, not an observation -- and calling a portrait video
+    of a teddy bear a dashcam clip is exactly the kind of unfounded claim this
+    analyzer exists to avoid. See classify_footage for the actual signal.
+    """
     size = f"{metadata['width']}x{metadata['height']}"
     duration = metadata.get('duration_seconds') or 0
     minutes, seconds = divmod(int(duration), 60)
@@ -182,7 +262,7 @@ def summarize(metadata: dict, detection: dict) -> str:
 
     counts = detection.get('counts') or {}
     if not counts:
-        return (f'{size} dashcam clip, {length}. No recognisable objects were '
+        return (f'{size} clip, {length}. No recognisable objects were '
                 f'detected in the sampled frames.')
 
     def phrase(label: str) -> str:
@@ -192,5 +272,5 @@ def summarize(metadata: dict, detection: dict) -> str:
 
     leading = [phrase(label) for label in detection['tags'][:4]]
     detected = ', '.join(leading)
-    return (f'{size} dashcam clip, {length}. Detected across '
+    return (f'{size} clip, {length}. Detected across '
             f"{detection['frames_sampled']} sampled frames: {detected}.")
