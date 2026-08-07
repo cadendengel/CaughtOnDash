@@ -196,6 +196,10 @@ namespace CaughtOnDash.Worker.Services
                         state.Status = "Idle";
                         state.Stage = "Idle";
                         state.CurrentJob = "None";
+                        // Clear the bar too. Without this it keeps the last
+                        // job's value, so an idle worker sat at whatever
+                        // percentage the previous job stopped reporting at.
+                        state.Progress = 0;
                         state.CanCancelJob = false;
                         break;
 

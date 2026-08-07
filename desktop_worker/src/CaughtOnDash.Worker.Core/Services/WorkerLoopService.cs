@@ -256,7 +256,15 @@ namespace CaughtOnDash.Worker.Services
                 ReportProgress(job, stage, 95, cancellationToken);
 
                 var success = await _apiClient.CompleteJob(job.JobId, _config.WorkerId, result, cancellationToken);
-                if (!success)
+                if (success)
+                {
+                    // Close the bar out. The backend already records 100 as part
+                    // of completing the job, so this is only for the local UI --
+                    // which otherwise showed a job finishing at 95%.
+                    stage = "complete";
+                    ReportProgress(job, stage, 100, cancellationToken);
+                }
+                else
                 {
                     await _apiClient.FailJob(job.JobId, _config.WorkerId, "Failed to submit analysis results", stage, cancellationToken);
                 }
