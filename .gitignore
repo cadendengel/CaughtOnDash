@@ -21,6 +21,9 @@ backend/staticfiles/
 backend/db.sqlite3
 *.sqlite3
 *.sqlite
+# WAL journal sidecars, created by the local sqlite settings
+*.sqlite3-wal
+*.sqlite3-shm
 
 # Local config and environment files
 .env

@@ -98,6 +98,24 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
+            'OPTIONS': {
+                # The desktop worker reports progress while the browser is also
+                # reading, and SQLite serialises writers. Without these, a job
+                # that reports progress every few percent produces a steady
+                # trickle of "database is locked" 500s locally. WAL lets readers
+                # continue during a write, and the timeout waits for a busy
+                # writer instead of failing instantly.
+                #
+                # Local development only; production uses Postgres.
+                'timeout': 20,
+                'init_command': 'PRAGMA journal_mode=WAL;',
+                # IMMEDIATE takes the write lock at BEGIN. The default defers it,
+                # so a transaction that reads and then writes must upgrade its
+                # lock mid-flight -- and an upgrade that loses the race fails
+                # instantly with SQLITE_BUSY, which 'timeout' cannot wait out.
+                # Every worker write (claim, progress, complete) has that shape.
+                'transaction_mode': 'IMMEDIATE',
+            },
         }
     }
 
