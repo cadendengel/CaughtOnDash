@@ -176,20 +176,6 @@
   margin-top: 2px;
 }
 
-.empty-feed-card,
-.feed-card,
-.post-video-card {
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: var(--shadow);
-}
-
-.empty-feed-card,
-.post-video-card {
-  padding: 26px;
-}
-
 .empty-feed-card h3,
 .post-video-card h3 {
   margin-top: 10px;
@@ -263,48 +249,6 @@
 .feed-list {
   display: grid;
   gap: 14px;
-}
-
-.feed-card {
-  overflow: hidden;
-  padding: 20px;
-}
-
-.feed-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  padding-bottom: 2px;
-}
-
-.author-block {
-  display: grid;
-  gap: 2px;
-}
-
-.author-name {
-  font-weight: 700;
-  color: var(--text-h);
-}
-
-.author-handle {
-  font-size: 0.8rem;
-  font-weight: 500;
-  letter-spacing: 0.015em;
-  color: var(--muted);
-}
-
-.feed-card .timestamp {
-  color: var(--muted);
-}
-
-.feed-card h2 {
-  margin-top: 8px;
-  color: #0f172a;
-  font-size: clamp(1.55rem, 2.8vw, 2.2rem);
-  line-height: 1.08;
-  font-weight: 800;
 }
 
 .detail-author-block {
@@ -732,15 +676,6 @@
   .auth-widget,
   .hero-card {
     padding: 24px;
-  }
-
-  .feed-card {
-    padding: 18px;
-  }
-
-  .feed-card-head {
-    gap: 12px;
-    flex-direction: column;
   }
 
   .video-meta,

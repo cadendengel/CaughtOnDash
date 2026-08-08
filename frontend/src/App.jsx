@@ -30,6 +30,17 @@ const isStaleProcessing = (post) => {
   return Date.now() - lastSeen > STALE_PROCESSING_MS
 }
 
+// Shared card chrome. One definition rather than three: this was a grouped
+// CSS rule covering feed cards, empty-state cards and the upload form, so
+// migrating any one of them alone would have duplicated it and let the three
+// drift apart.
+const CARD = 'rounded-3xl border border-ink/10 bg-white/[0.86] shadow-card'
+
+// The author line, shared by the feed card, the admin card and the detail
+// page. Same reasoning: three consumers, one definition.
+const AUTHOR_NAME = 'font-bold text-ink'
+const AUTHOR_HANDLE = 'text-[0.8rem] font-medium tracking-[0.015em] text-muted'
+
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const { getToken } = useAuth()
@@ -1588,16 +1599,16 @@ function App() {
   }
 
   const renderPostCard = (post) => (
-    <article key={post.id} className="feed-card">
-      <div className="feed-card-head">
-        <div className="author-block">
-          <span className="author-name">{getDisplayName(post)}</span>
-          <span className="author-handle">@{getHandle(post)}</span>
+    <article key={post.id} className={`${CARD} overflow-hidden p-5 max-[640px]:p-[18px]`}>
+      <div className="flex items-start justify-between gap-2.5 pb-0.5 max-[640px]:flex-col max-[640px]:gap-3">
+        <div className="grid gap-0.5">
+          <span className={AUTHOR_NAME}>{getDisplayName(post)}</span>
+          <span className={AUTHOR_HANDLE}>@{getHandle(post)}</span>
         </div>
-        <span className="timestamp">{formatTimestamp(post.created_at)}</span>
+        <span className="text-muted">{formatTimestamp(post.created_at)}</span>
       </div>
 
-      <h2>{post.title}</h2>
+      <h2 className="mt-2 text-[clamp(1.55rem,2.8vw,2.2rem)] font-extrabold leading-[1.08] text-ink">{post.title}</h2>
 
       {renderTagPills(post.id, post.tags || [])}
       {renderAnalysisStatus(post)}
@@ -1915,7 +1926,7 @@ function App() {
       {renderModerationPanel()}
 
       {posts.length === 0 ? (
-        <div className="empty-feed-card">
+        <div className={`${CARD} empty-feed-card p-[26px]`}>
           <p className="eyebrow">Nothing to moderate</p>
           <h3>No posts available</h3>
           <p>When content appears, it will show here with delete controls.</p>
@@ -1923,16 +1934,16 @@ function App() {
       ) : (
         <div className="admin-list">
           {posts.map((post) => (
-            <article key={post.id} className="feed-card admin-card">
-              <div className="feed-card-head">
-                <div className="author-block">
-                  <span className="author-name">{getDisplayName(post)}</span>
-                  <span className="author-handle">@{getHandle(post)}</span>
+            <article key={post.id} className={`${CARD} admin-card overflow-hidden p-5 max-[640px]:p-[18px]`}>
+              <div className="flex items-start justify-between gap-2.5 pb-0.5 max-[640px]:flex-col max-[640px]:gap-3">
+                <div className="grid gap-0.5">
+                  <span className={AUTHOR_NAME}>{getDisplayName(post)}</span>
+                  <span className={AUTHOR_HANDLE}>@{getHandle(post)}</span>
                 </div>
-                <span className="timestamp">{formatTimestamp(post.created_at)}</span>
+                <span className="text-muted">{formatTimestamp(post.created_at)}</span>
               </div>
 
-              <h2>{post.title}</h2>
+              <h2 className="mt-2 text-[clamp(1.55rem,2.8vw,2.2rem)] font-extrabold leading-[1.08] text-ink">{post.title}</h2>
 
               {renderTagPills(post.id, adminTagEditsByPostId[post.id] || post.tags || [], { editable: true })}
 
@@ -2030,7 +2041,7 @@ function App() {
       ) : null}
 
       {!searchHasSearched && !searchLoading ? (
-        <div className="empty-feed-card search-empty-card">
+        <div className={`${CARD} empty-feed-card search-empty-card p-[26px]`}>
           <p className="eyebrow">Start here</p>
           <h3>Search the video catalog</h3>
           <p>
@@ -2042,7 +2053,7 @@ function App() {
       {searchLoading ? <p className="comments-empty">Searching…</p> : null}
 
       {searchHasSearched && !searchLoading && searchResults.length === 0 && !searchError ? (
-        <div className="empty-feed-card search-empty-card">
+        <div className={`${CARD} empty-feed-card search-empty-card p-[26px]`}>
           <p className="eyebrow">No matches</p>
           <h3>Nothing matched your search</h3>
           <p>Try fewer words or search by a tag name instead.</p>
@@ -2136,7 +2147,7 @@ function App() {
       </div>
 
       {posts.length === 0 ? (
-        <div className="empty-feed-card">
+        <div className={`${CARD} empty-feed-card p-[26px]`}>
           <p className="eyebrow">No posts yet</p>
           <h3>Your feed is empty</h3>
           <p>
@@ -2189,9 +2200,9 @@ function App() {
     return (
       <section className="page-content video-detail-page">
         <div className="page-heading">
-          <div className="author-block detail-author-block">
-            <span className="author-name">{getDisplayName(video)}</span>
-            <span className="author-handle">@{getHandle(video)}</span>
+          <div className="grid gap-0.5 detail-author-block">
+            <span className={AUTHOR_NAME}>{getDisplayName(video)}</span>
+            <span className={AUTHOR_HANDLE}>@{getHandle(video)}</span>
           </div>
           <h2>{video.title}</h2>
         </div>
@@ -2305,7 +2316,7 @@ function App() {
         <p>Upload a dashcam clip and add details for the feed.</p>
       </div>
 
-      <form className="post-video-card upload-form" onSubmit={handleUploadSubmit}>
+      <form className={`${CARD} post-video-card upload-form p-[26px]`} onSubmit={handleUploadSubmit}>
         <label>
           <span>Title</span>
           <input
