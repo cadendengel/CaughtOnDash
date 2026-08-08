@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 import dj_database_url
 from corsheaders.defaults import default_headers
 
-from caughtondash.env import get_allowed_hosts, get_bool, get_secret_key
+from caughtondash.env import get_allowed_hosts, get_bool, get_int, get_secret_key
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
@@ -84,11 +84,26 @@ ASGI_APPLICATION = 'caughtondash.asgi.application'
 # otherwise fall back to local sqlite3 for development.
 DATABASE_URL = os.getenv('DATABASE_URL')
 if DATABASE_URL:
+    # conn_max_age=0: close the connection at the end of each request.
+    #
+    # Persistent connections made sense under gunicorn, where one worker with a
+    # few threads held a few connections. Under daphne every sync ORM call runs
+    # in asgiref's thread pool -- up to min(32, cpu+4) threads -- and each
+    # thread keeps its own connection alive for the full conn_max_age. Against
+    # Supabase's session pooler, which allows 15 clients, that exhausts the pool
+    # and every request then fails with EMAXCONNSESSION.
+    #
+    # There is also nothing to gain here: the session pooler *is* the connection
+    # pool, so holding Django-side connections open duplicates it while
+    # competing for the same 15 slots.
+    #
+    # ASGI_THREADS caps the pool as a second line of defence, so the worst case
+    # is bounded even if something re-enables persistent connections later.
     DATABASES = {
         'default': dj_database_url.parse(
             DATABASE_URL,
             engine='django.db.backends.postgresql',
-            conn_max_age=600,  # Persistent connection pool: 10 minutes
+            conn_max_age=get_int('DB_CONN_MAX_AGE', 0),
         )
     }
     # Enforce SSL for RDS (sslmode=require by default in DATABASE_URL)

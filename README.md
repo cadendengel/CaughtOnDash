@@ -41,6 +41,15 @@ Backend:
 - `CLERK_SECRET_KEY` — used by `sync_profiles_from_clerk`.
 - `REQUIRE_CLERK_JWT` — when true, a verified token is the only accepted
   identity and the `X-Clerk-User-Id` header is ignored.
+- `DB_CONN_MAX_AGE` — seconds to keep a database connection open, default `0`
+  (close after each request). Leave it at 0 behind a connection pooler: the
+  pooler is the pool, and under ASGI every thread that touches the ORM holds
+  its own connection, so a non-zero value can exhaust the pooler's client
+  limit and fail every request with EMAXCONNSESSION. Raise it only on a direct
+  connection.
+- `ASGI_THREADS` — size of the thread pool running synchronous ORM calls,
+  default `8`. Each busy thread can hold a database connection, so this
+  effectively caps concurrent connections.
 
 Optional transport security (applied only when `DEBUG` is off):
 - `SECURE_SSL_REDIRECT` — defaults to `False`.
