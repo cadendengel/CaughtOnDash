@@ -78,6 +78,54 @@ class UploadEnqueuesAnalysisTests(TestCase):
         # Nothing is analyzed until someone approves it.
         self.assertIsNone(get_next_pending_job())
 
+    def test_a_poster_frame_sent_with_the_upload_is_stored(self):
+        # The browser captures this, because approval happens before analysis:
+        # the analyzer cannot supply the thumbnail the decision needs.
+        video_id = self._create_video_record()
+
+        with patch('apps.videos.views.upload_bytes_to_supabase') as upload:
+            upload.side_effect = [
+                'https://cdn.example.com/clip.mp4',
+                'https://cdn.example.com/poster.jpg',
+            ]
+            response = self.client.post('/api/videos/upload/', {
+                'video_id': video_id,
+                'file': SimpleUploadedFile('dash.mp4', b'bytes', content_type='video/mp4'),
+                'thumbnail': SimpleUploadedFile('poster.jpg', b'jpegbytes', content_type='image/jpeg'),
+            })
+
+        self.assertEqual(response.status_code, 200)
+        video = Video.objects.get(id=video_id)
+        self.assertEqual(video.thumbnail_url, 'https://cdn.example.com/poster.jpg')
+
+    def test_an_upload_without_a_poster_still_succeeds(self):
+        video_id = self._create_video_record()
+        self._upload_file(video_id)
+
+        video = Video.objects.get(id=video_id)
+        self.assertEqual(video.status, 'ready')
+        self.assertEqual(video.thumbnail_url, '')
+
+    def test_a_failed_poster_upload_does_not_fail_the_video(self):
+        # The video is the point; the thumbnail is a convenience.
+        video_id = self._create_video_record()
+
+        with patch('apps.videos.views.upload_bytes_to_supabase') as upload:
+            upload.side_effect = [
+                'https://cdn.example.com/clip.mp4',
+                RuntimeError('storage rejected the image'),
+            ]
+            response = self.client.post('/api/videos/upload/', {
+                'video_id': video_id,
+                'file': SimpleUploadedFile('dash.mp4', b'bytes', content_type='video/mp4'),
+                'thumbnail': SimpleUploadedFile('poster.jpg', b'jpegbytes', content_type='image/jpeg'),
+            })
+
+        self.assertEqual(response.status_code, 200)
+        video = Video.objects.get(id=video_id)
+        self.assertEqual(video.status, 'ready')
+        self.assertEqual(video.thumbnail_url, '')
+
     def test_upload_opens_a_first_analysis_run(self):
         video_id = self._create_video_record()
         self._upload_file(video_id)

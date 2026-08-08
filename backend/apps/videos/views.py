@@ -324,9 +324,27 @@ def upload_file_view(request):
     except Exception as exc:
         return JsonResponse({'detail': f'Upload failed: {exc}'}, status=500)
 
+    # A poster frame captured in the browser, if one came with the upload.
+    # Analysis cannot supply this: approval happens first, and you cannot
+    # approve what you cannot see. Failing to store it must not fail the
+    # upload -- the video is the point, the thumbnail is a convenience.
+    thumbnail_url = ''
+    thumbnail = request.FILES.get('thumbnail')
+    if thumbnail is not None:
+        try:
+            thumbnail_url = upload_bytes_to_supabase(
+                f"{video.id}/poster.jpg",
+                thumbnail.read(),
+                thumbnail.content_type or 'image/jpeg',
+            )
+        except Exception as exc:
+            thumbnail_url = ''
+            print(f'Thumbnail upload failed for {video.id}: {exc}')
+
     # Mark ready and put the video up for review. It is not queued for analysis
     # here: nothing is analyzed until someone approves it, so analysis capacity
     # is spent deliberately rather than on everything uploaded.
+    video.thumbnail_url = thumbnail_url
     video.playback_url = public_url
     video.status = 'ready'
     video.approval_status = 'pending_review'
@@ -334,8 +352,8 @@ def upload_file_view(request):
     video.analysis_stage = 'queued'
     video.analysis_requested_at = timezone.now()
     video.save(update_fields=[
-        'playback_url', 'status', 'approval_status', 'analysis_status',
-        'analysis_stage', 'analysis_requested_at', 'updated_at',
+        'playback_url', 'thumbnail_url', 'status', 'approval_status',
+        'analysis_status', 'analysis_stage', 'analysis_requested_at', 'updated_at',
     ])
     open_analysis_run(video, video.owner_clerk_user_id)
 

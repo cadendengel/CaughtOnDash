@@ -5,6 +5,16 @@
         Background="#F5F5F5"
         FontFamily="Segoe UI"
         FontSize="12">
+
+    <Window.Resources>
+        <!-- Buttons shipped with the text against the edges; give them room. -->
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="MinWidth" Value="70"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+    </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
