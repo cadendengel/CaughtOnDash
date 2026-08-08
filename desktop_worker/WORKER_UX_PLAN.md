@@ -108,9 +108,9 @@ still exists alongside it.
 Ordering lives server-side deliberately: with three hosts, "the queue" should
 mean one thing rather than three, and a local-only order dies on restart.
 
-### Worker UI
+### 2c — the queue table
 
-Three columns, window grown to ~1300x750 from 900x650:
+Three columns, window grown to 1320x800 from 900x650:
 
 ```
 ┌──────────────┬───────────────────┬──────────────┐
@@ -122,6 +122,28 @@ Three columns, window grown to ~1300x750 from 900x650:
 
 The app's whole job is watching a queue drain, so the queue should be visible
 at the same time as the log rather than behind a tab.
+
+**Avalonia host: done.** Checkbox rows, select all/clear, Preview (opens the
+video in a browser), Up/Down reordering that writes server-side priority,
+Reject, and Start Batch. Ticks survive the ten-second refresh, because a poll
+that silently cleared your selection would make choosing a large batch
+impossible. The grid's highlighted row and the ticked rows are deliberately
+different things: Preview acts on what you are looking at, batches act on what
+you have ticked.
+
+The worker no longer auto-starts. With an approval gate, starting it before
+anything is approved just polls an empty queue; Start Batch approves and starts
+in one action.
+
+**WPF host: not yet.** It drives WorkerLoopService directly through
+MainViewModel rather than using WorkerSession, so it has no queue events to
+bind to. Wiring the table there means migrating it onto WorkerSession first --
+which is what Core exists for, but it cannot be compiled on macOS, so it needs
+to be done against a Windows build rather than blind.
+
+**Still to do in 2c:** poster-frame capture at upload, so the table shows a
+thumbnail rather than only a title. Until then Preview is how you see a video
+before approving it.
 
 ### Frontend
 
