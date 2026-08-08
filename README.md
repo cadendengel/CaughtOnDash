@@ -69,9 +69,25 @@ daphne -b 0.0.0.0 -p $PORT caughtondash.asgi:application
 ```
 
 On Render this is the service's start command, set in the dashboard rather than
-in this repo. Replacing gunicorn with the above is the change; leaving gunicorn
-in place keeps HTTP working and silently disables live updates, which the
-frontend treats as "no push" rather than an error.
+in this repo -- Render ignores Procfiles, so the dashboard is the source of
+truth and the repo can only document it. Production is on daphne; confirm with
+`x-render-origin-server` on any response.
+
+Reverting to gunicorn, or any other WSGI server, keeps HTTP working and
+silently disables live updates. Nothing errors: the frontend treats a socket
+that will not open as "no push" and the worker falls back to its HTTP
+heartbeat, so the only symptom is that live status stops being live.
+
+To check the endpoint itself, force HTTP/1.1 -- WebSocket upgrade headers are
+meaningless over HTTP/2, so a default curl reports 404 whatever the server is:
+
+```
+curl -i -N --http1.1 -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+  https://caughtondash.onrender.com/ws/analysis/
+```
+
+`101 Switching Protocols` means live.
 
 The worker also heartbeats over `/ws/worker/`, authenticated with
 `WORKER_API_TOKEN`. It falls back to the HTTP heartbeat automatically, so a

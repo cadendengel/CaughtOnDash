@@ -165,10 +165,64 @@ This also gives the website thumbnails it never had: `thumbnail_url` was on the
 model from the start but nothing ever wrote it, so feed videos showed a black
 rectangle until played. They now have a poster.
 
-**Not done: the thumbnail column in the worker table.** Binding a URL to an
-image needs an async loader and cache, and the type differs per framework
-(Avalonia Bitmap vs WPF BitmapImage), so it cannot live in the shared core
-without dragging a UI dependency in. Preview covers the need meanwhile.
+**Thumbnail column: done.** `ThumbnailCache` in the shared core fetches and
+caches bytes; each host decodes them into its own image type. Stopping at bytes
+is what keeps a UI dependency out of the core -- `QueueRow.Thumbnail` is typed
+`object` for the same reason, and both frameworks' `Image.Source` bindings
+accept it.
+
+The caching matters more than the fetching. The queue refreshes every ten
+seconds and rebuilds every row, so an uncached column would re-fetch each
+thumbnail six times a minute for as long as the window is open. Tasks are
+cached rather than results, so the rows that all ask at once share one request.
+Failures are cached too -- a 404 thumbnail would otherwise retry forever.
+
+Verified on the running Avalonia app against real images: three fetched exactly
+once each across several refresh cycles, a 404 URL fetched once and not
+retried, and both the broken URL and a video with no thumbnail falling back to
+the grey placeholder.
+
+Adding the column exposed two layout problems it also caused: the Title
+truncated to "Thumb …", and Start Batch was clipped off the edge of a 570px
+column. The button row is now a WrapPanel so it can never clip regardless of
+width, the three panels were rebalanced (the status panel had dead space the
+queue did not), and the window's default width went 1320 -> 1440. Squeezing the
+fixed columns instead just moved the truncation from the data to the headers.
+
+### 2e — Reordering the review list — DONE
+
+Up/Down now works on both tabs, so a batch can be arranged before it is
+approved. Priority is stored per video regardless of approval state and
+`decide_approval` does not reset it, so the order set on the review tab
+survives the decision.
+
+Enabling the buttons was the small part. The real work was that reordering
+either tab alone was already wrong: the backend numbers priorities descending
+from the length of the list it is sent, so sending one tab's rows renumbers
+them into the *other* tab's band. A batch of 3 approved alongside 5 queued
+videos got priorities 3,2,1 and interleaved with work that was already there --
+approving quietly meant "jump the queue". Both reorder and Start Batch now send
+one order spanning both tabs: queued first, review behind it.
+
+That logic lives in `QueueOrdering` in the shared core rather than in each host,
+because getting it wrong is invisible -- the rows look right and the queue runs
+in the wrong order minutes later. Seven tests cover it, including a video that
+appears in both snapshots because another host approved it mid-refresh; it is
+placed in the queued band, since that is where it now is, and never listed
+twice (two priorities would mean the later write silently undid the order).
+
+**The WPF host can be compile-verified on macOS after all**, which removes a
+standing gap in this plan:
+
+```
+dotnet build src/worker/CaughtOnDash.Worker.csproj -p:EnableWindowsTargeting=true -t:Compile
+```
+
+XAML markup compilation runs too. A full build stops only at copying
+`appsettings.json`, which is gitignored and lives on the Windows machine, so
+`-t:Compile` is the useful target. This does not replace looking at the window
+-- layout and DataGrid behaviour still need a real Windows run -- but it does
+mean host changes no longer ship unbuilt.
 
 ### 2d — Frontend — DONE
 

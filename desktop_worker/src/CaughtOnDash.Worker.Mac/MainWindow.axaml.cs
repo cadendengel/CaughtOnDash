@@ -5,6 +5,7 @@ using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CaughtOnDash.Worker.Services;
 
@@ -17,6 +18,7 @@ namespace CaughtOnDash.Worker.Mac
         private readonly WorkerSession _session;
         private readonly ObservableCollection<QueueRow> _rows = new();
         private QueueSnapshot _snapshot = new();
+        private readonly ThumbnailCache _thumbnails = new();
         private DispatcherTimer? _queuePollTimer;
         private bool _showingReviewQueue = true;
 
@@ -112,7 +114,9 @@ namespace CaughtOnDash.Worker.Mac
             _rows.Clear();
             foreach (var entry in entries)
             {
-                _rows.Add(new QueueRow(entry) { IsSelected = selected.Contains(entry.VideoId) });
+                var row = new QueueRow(entry) { IsSelected = selected.Contains(entry.VideoId) };
+                _rows.Add(row);
+                _ = LoadThumbnail(row);
             }
 
             QueueHeading.Text = _showingReviewQueue ? "Review Queue" : "Run Queue";
@@ -120,15 +124,47 @@ namespace CaughtOnDash.Worker.Mac
                 ? (_showingReviewQueue ? "Nothing awaiting review" : "Queue empty")
                 : $"{_rows.Count} video{(_rows.Count == 1 ? "" : "s")}";
 
-            // Reordering only means something for work that is already approved;
-            // the review list is ordered by the batch you pick.
-            MoveUpButton.IsEnabled = !_showingReviewQueue;
-            MoveDownButton.IsEnabled = !_showingReviewQueue;
+            // Reordering works on both tabs: arrange the review list, tick a
+            // batch, and Start Batch runs it in that order. Priority is stored
+            // per video regardless of approval state, and approving does not
+            // reset it, so the order you set here survives the decision.
+            MoveUpButton.IsEnabled = true;
+            MoveDownButton.IsEnabled = true;
             StartBatchButton.IsEnabled = _showingReviewQueue;
             RejectButton.IsEnabled = _showingReviewQueue;
 
             ReviewTabButton.FontWeight = _showingReviewQueue ? FontWeight.Bold : FontWeight.Normal;
             QueuedTabButton.FontWeight = _showingReviewQueue ? FontWeight.Normal : FontWeight.Bold;
+        }
+
+        /// <summary>
+        /// Fill in a row's poster frame once it arrives.
+        /// </summary>
+        /// <remarks>
+        /// Fire-and-forget on purpose: the table must render immediately and
+        /// fill in as images land, not wait on the network. The cache means the
+        /// ten-second refresh re-decodes rather than re-downloads, and a failure
+        /// leaves the placeholder in place.
+        /// </remarks>
+        private async System.Threading.Tasks.Task LoadThumbnail(QueueRow row)
+        {
+            var bytes = await _thumbnails.GetAsync(row.Entry.ThumbnailUrl);
+            if (bytes == null)
+            {
+                return;
+            }
+
+            try
+            {
+                using var stream = new System.IO.MemoryStream(bytes);
+                var bitmap = new Bitmap(stream);
+                Dispatcher.UIThread.Post(() => row.Thumbnail = bitmap);
+            }
+            catch (Exception)
+            {
+                // Not an image, or one Avalonia cannot decode. The placeholder
+                // stands; a broken thumbnail must not disturb the queue.
+            }
         }
 
         private void ShowReviewQueue()
@@ -252,12 +288,17 @@ namespace CaughtOnDash.Worker.Mac
                 _rows.Add(row);
             }
 
+            await _session.ReorderAsync(GlobalOrder(order));
+        }
+
+        /// <summary>Shared with the WPF host so the two cannot disagree.</summary>
+        private List<Guid> GlobalOrder(IReadOnlyList<QueueRow> reordered)
+        {
             var ids = new List<Guid>();
-            foreach (var row in order)
-            {
-                ids.Add(row.Entry.VideoId);
-            }
-            await _session.ReorderAsync(ids);
+            foreach (var row in reordered) ids.Add(row.Entry.VideoId);
+
+            return QueueOrdering.GlobalOrder(
+                _snapshot.Queued, _snapshot.AwaitingReview, ids, _showingReviewQueue);
         }
 
         private async void StartBatch_Click(object? sender, RoutedEventArgs e)
