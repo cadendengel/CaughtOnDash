@@ -413,21 +413,18 @@ function App() {
     return TAG_VARIANT.user
   }
 
-  const getAnalysisStatusColor = (status) => {
-    switch (status) {
-      case 'complete':
-        return '#10b981' // green
-      case 'processing':
-        return '#f59e0b' // amber
-      case 'failed':
-        return '#ef4444' // red
-      case 'cancelled':
-        return '#6b7280' // gray
-      case 'pending':
-      default:
-        return '#9ca3af' // gray
-    }
+  // Status colours as classes rather than inline hex, so they sit in the same
+  // system as the rest of the palette. The dot and the progress fill share an
+  // entry, which is what keeps them from disagreeing.
+  const STATUS_TONE = {
+    complete: 'bg-emerald-500',
+    processing: 'bg-amber-500',
+    failed: 'bg-red-500',
+    cancelled: 'bg-slate-500',
+    pending: 'bg-slate-400',
   }
+
+  const statusTone = (status) => STATUS_TONE[status] || STATUS_TONE.pending
 
   // Jump the detail player to a detected moment.
   //
@@ -577,32 +574,38 @@ function App() {
     )
   }
 
+  // One row shape, three callers. This was three near-identical copies built
+  // from inline styles, which is how #666 and #999 -- two greys that exist
+  // nowhere else -- survived the palette cleanup.
+  const renderStatusRow = (tone, label, note = null, progress = null) => (
+    <div className="mt-2">
+      <div className="flex items-center gap-2">
+        <span className={`inline-block size-2 rounded-full ${tone}`} />
+        <span className="text-[0.9rem] text-muted">{label}</span>
+        {note ? <span className="text-[0.85rem] text-muted">({note})</span> : null}
+      </div>
+      {progress !== null ? (
+        <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+          {/* Width is data, so it stays inline; the colour is not. */}
+          <div
+            className={`h-full transition-[width] duration-300 ${tone}`}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+
   const renderAnalysisStatus = (post) => {
     // Approval comes first in the pipeline, so it comes first in the label.
     // Showing "Cancelled" or "Pending 0%" for a video nobody has looked at yet
     // describes the machinery rather than the situation.
     if (post.approval_status === 'pending_review') {
-      return (
-        <div className="analysis-status-container" style={{ marginTop: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ display: 'inline-block', width: '8px', height: '8px',
-                           borderRadius: '50%', backgroundColor: '#9ca3af' }} />
-            <span style={{ fontSize: '0.9rem', color: '#666' }}>Pending review</span>
-          </div>
-        </div>
-      )
+      return renderStatusRow(STATUS_TONE.pending, 'Pending review')
     }
 
     if (post.approval_status === 'rejected') {
-      return (
-        <div className="analysis-status-container" style={{ marginTop: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ display: 'inline-block', width: '8px', height: '8px',
-                           borderRadius: '50%', backgroundColor: '#6b7280' }} />
-            <span style={{ fontSize: '0.9rem', color: '#666' }}>Not selected for analysis</span>
-          </div>
-        </div>
-      )
+      return renderStatusRow(STATUS_TONE.cancelled, 'Not selected for analysis')
     }
 
     if (!post.analysis_status) {
@@ -612,46 +615,15 @@ function App() {
     const status = post.analysis_status
     const stage = post.analysis_stage || 'queued'
     const progress = post.analysis_progress || 0
-    const color = getAnalysisStatusColor(status)
+    const isProcessing = status === 'processing'
 
-    let statusLabel = status.charAt(0).toUpperCase() + status.slice(1)
-    if (status === 'processing') {
-      statusLabel = `Processing: ${progress}%`
-    }
-
-    return (
-      <div className="analysis-status-container" style={{ marginTop: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span
-            style={{
-              display: 'inline-block',
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: color,
-            }}
-          />
-          <span style={{ fontSize: '0.9rem', color: '#666' }}>{statusLabel}</span>
-          {status === 'processing' && stage && (
-            <span style={{ fontSize: '0.85rem', color: '#999' }}>({stage})</span>
-          )}
-        </div>
-        {status === 'processing' && (
-          <div style={{ marginTop: '6px', width: '100%', height: '4px', backgroundColor: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
-            <div
-              style={{
-                height: '100%',
-                width: `${progress}%`,
-                backgroundColor: color,
-                transition: 'width 0.3s ease',
-              }}
-            />
-          </div>
-        )}
-      </div>
+    return renderStatusRow(
+      statusTone(status),
+      isProcessing ? `Processing: ${progress}%` : status.charAt(0).toUpperCase() + status.slice(1),
+      isProcessing && stage ? stage : null,
+      isProcessing ? progress : null,
     )
   }
-
 
   const clerkEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || ''
   const clerkFullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || user?.fullName || ''
@@ -1933,7 +1905,7 @@ const MODERATION_ACCENT = {
   // Nav buttons: one class string rather than four copies that drift apart.
   const navButtonClass = (page) =>
     [
-      'rounded-full border px-4 py-2 cursor-pointer transition-transform duration-150',
+      'whitespace-nowrap rounded-full border px-4 py-2 cursor-pointer transition-transform duration-150',
       'hover:-translate-y-px',
       activePage === page
         ? 'border-transparent bg-gradient-to-br from-ink to-brand text-white'
@@ -2548,7 +2520,7 @@ const MODERATION_ACCENT = {
           </h1>
         </div>
 
-        <nav className="inline-flex items-center gap-2 max-[860px]:order-3" aria-label="Main navigation">
+        <nav className="inline-flex flex-wrap items-center gap-2 max-[860px]:order-3" aria-label="Main navigation">
           <button type="button" className={navButtonClass('feed')} onClick={() => setActivePage('feed')}>
             Feed
           </button>
