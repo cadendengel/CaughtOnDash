@@ -59,15 +59,34 @@ Two features that were worth separating, both wanted:
 **Selection and reorder** — the worker shows the approved queue and takes jobs
 in an order you control.
 
-### Backend
+### 2a — Approval and history (backend) — DONE
 
-- [ ] New analysis state for "awaiting approval" so a video can be `ready`
-      without being claimable
+- [x] `approval_status` on Video so a video can be `ready` without being
+      claimable. `get_next_pending_job` requires `approved`
+- [x] `AnalysisRun` model recording every attempt
+- [x] Approve / reject endpoint, owner-or-admin
+- [x] Re-analysis returns the video to `pending_review` rather than queueing it
+- [x] Migration backfilling existing videos as approved, with a synthetic run
+      for anything already analyzed
+
+A run is opened when analysis is *requested*, not when it finishes, so
+attempts that were never approved or that failed are still history. Each run
+keeps its own summary, tags and metadata, which is what makes "back for the
+3rd review, here is what run 2 concluded" possible.
+
+Existing videos are backfilled as approved deliberately: they predate the gate,
+and retroactively gating them would strand already-analyzed work.
+
+Cancelled jobs also return to `pending_review` — a job was approved once, but
+re-running it is a fresh decision.
+
+### 2b — Queue listing and priority
+
 - [ ] `analysis_priority` field. Ordering becomes priority, then
       `analysis_requested_at`, then `created_at`
 - [ ] `GET /api/videos/worker/jobs/` — list the claimable queue. Only
       `jobs/next` exists today, which is why the worker cannot show a queue
-- [ ] Approve / reject endpoints, owner-or-admin
+- [ ] `GET` the review queue (awaiting approval) for the desktop table
 - [ ] Reorder endpoint writing priority
 
 Ordering lives server-side deliberately: with three hosts, "the queue" should

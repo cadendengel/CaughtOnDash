@@ -16,6 +16,7 @@ class WorkerServiceTests(TestCase):
             owner_clerk_user_id="local-test-user",
             title="Local worker smoke test",
             status="ready",
+            approval_status="approved",
             analysis_status="pending",
             analysis_requested_at=timezone.now(),
         )
@@ -71,6 +72,7 @@ class WorkerHttpApiTests(TestCase):
             owner_clerk_user_id='local-test-user',
             title='HTTP worker smoke test',
             status='ready',
+            approval_status='approved',
             analysis_status='pending',
             analysis_requested_at=timezone.now(),
         )

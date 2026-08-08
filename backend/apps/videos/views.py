@@ -30,7 +30,7 @@ from apps.store import (
     response_envelope,
 )
 from apps.storage import upload_bytes_to_supabase
-from apps.videos.worker_services import request_analysis
+from apps.videos.worker_services import decide_approval, open_analysis_run, request_analysis
 
 
 def _method_not_allowed(*allowed_methods: str) -> JsonResponse:
@@ -213,6 +213,9 @@ def _serialize_video_row(row: dict | Video, *, include_defaults: bool = True, li
                 'analysis_completed_at': row.get('analysis_completed_at').isoformat() if row.get('analysis_completed_at') and hasattr(row.get('analysis_completed_at'), 'isoformat') else None,
                 'analysis_failed_at': row.get('analysis_failed_at').isoformat() if row.get('analysis_failed_at') and hasattr(row.get('analysis_failed_at'), 'isoformat') else None,
                 'analysis_error': row.get('analysis_error', '') or '',
+                'approval_status': row.get('approval_status', 'pending_review') or 'pending_review',
+                'approval_decided_by': row.get('approval_decided_by', '') or '',
+                'approval_decided_at': row.get('approval_decided_at').isoformat() if row.get('approval_decided_at') and hasattr(row.get('approval_decided_at'), 'isoformat') else None,
                 'worker_id': row.get('worker_id'),
                 'worker_name': row.get('worker_name', '') or '',
                 'worker_claimed_at': row.get('worker_claimed_at').isoformat() if row.get('worker_claimed_at') and hasattr(row.get('worker_claimed_at'), 'isoformat') else None,
@@ -321,20 +324,20 @@ def upload_file_view(request):
     except Exception as exc:
         return JsonResponse({'detail': f'Upload failed: {exc}'}, status=500)
 
-    # Update video record with playback_url, mark ready, and queue it for
-    # analysis. The video was already implicitly claimable (analysis_status
-    # defaults to 'pending'), but analysis_requested_at was never populated --
-    # leaving the worker's ordering column permanently NULL. Setting it here
-    # makes the enqueue explicit and gives the queue a real FIFO key.
+    # Mark ready and put the video up for review. It is not queued for analysis
+    # here: nothing is analyzed until someone approves it, so analysis capacity
+    # is spent deliberately rather than on everything uploaded.
     video.playback_url = public_url
     video.status = 'ready'
-    video.analysis_status = 'pending'
+    video.approval_status = 'pending_review'
+    video.analysis_status = 'cancelled'
     video.analysis_stage = 'queued'
     video.analysis_requested_at = timezone.now()
     video.save(update_fields=[
-        'playback_url', 'status', 'analysis_status', 'analysis_stage',
-        'analysis_requested_at', 'updated_at',
+        'playback_url', 'status', 'approval_status', 'analysis_status',
+        'analysis_stage', 'analysis_requested_at', 'updated_at',
     ])
+    open_analysis_run(video, video.owner_clerk_user_id)
 
     return JsonResponse(response_envelope('video-uploaded', {'video': video.to_dict()}), status=200)
     
@@ -416,6 +419,9 @@ def video_detail_view(request, video_id):
         'analysis_completed_at',
         'analysis_failed_at',
         'analysis_error',
+        'approval_status',
+        'approval_decided_by',
+        'approval_decided_at',
         'worker_id',
         'worker_name',
         'worker_claimed_at',
@@ -902,12 +908,44 @@ def video_request_analysis_view(request, video_id):
     if not (_is_owner(caller, video.owner_clerk_user_id) or AdminUser.is_admin_for(caller)):
         return JsonResponse({'detail': 'You do not have permission to analyze this video.'}, status=403)
 
-    result = request_analysis(video_uuid)
+    result = request_analysis(video_uuid, requested_by=caller)
     if not result['success']:
         return JsonResponse({'detail': result['error']}, status=409)
 
     video.refresh_from_db()
     return JsonResponse(response_envelope('video-analysis-requested', {'video': video.to_dict()}), status=200)
+
+
+@csrf_exempt
+def video_approval_view(request, video_id):
+    # POST /api/videos/<video_id>/approval/ - approve or reject for analysis.
+    if request.method != 'POST':
+        return _method_not_allowed('POST')
+
+    try:
+        video_uuid = UUID(str(video_id))
+    except ValueError:
+        return JsonResponse({'detail': 'Invalid video_id format.'}, status=400)
+
+    try:
+        video = Video.objects.get(id=video_uuid, deleted_at__isnull=True)
+    except Video.DoesNotExist:
+        return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    caller = resolve_current_clerk_user_id(request)
+    if not (_is_owner(caller, video.owner_clerk_user_id) or AdminUser.is_admin_for(caller)):
+        return JsonResponse({'detail': 'You do not have permission to review this video.'}, status=403)
+
+    payload = parse_json_request(request)
+    if 'approve' not in payload or not isinstance(payload.get('approve'), bool):
+        return JsonResponse({'detail': 'approve must be provided as a boolean.'}, status=400)
+
+    result = decide_approval(video_uuid, approve=payload['approve'], decided_by=caller)
+    if not result['success']:
+        return JsonResponse({'detail': result['error']}, status=409)
+
+    video.refresh_from_db()
+    return JsonResponse(response_envelope('video-approval', {'video': video.to_dict()}), status=200)
 
 
 def video_update_delete_view(request, video_id):

@@ -16,8 +16,13 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.accounts.models import AdminUser
-from apps.videos.models import Video
-from apps.videos.worker_services import admin_retry_job, get_next_pending_job
+from apps.videos.models import AnalysisRun, Video
+from apps.videos.worker_services import (
+    admin_retry_job,
+    decide_approval,
+    get_next_pending_job,
+    open_analysis_run,
+)
 
 
 def _ready_video(title, *, requested_at=None, created_offset_minutes=0, **kwargs):
@@ -25,6 +30,7 @@ def _ready_video(title, *, requested_at=None, created_offset_minutes=0, **kwargs
         owner_clerk_user_id='user_owner',
         title=title,
         status='ready',
+        approval_status='approved',
         analysis_status='pending',
         analysis_requested_at=requested_at,
         **kwargs,
@@ -58,21 +64,52 @@ class UploadEnqueuesAnalysisTests(TestCase):
         self._create_video_record()
         self.assertIsNone(get_next_pending_job())
 
-    def test_completed_upload_is_queued_with_a_request_timestamp(self):
+    def test_completed_upload_goes_up_for_review_not_into_the_queue(self):
         video_id = self._create_video_record()
         before = timezone.now()
         self.assertEqual(self._upload_file(video_id).status_code, 200)
 
         video = Video.objects.get(id=video_id)
         self.assertEqual(video.status, 'ready')
-        self.assertEqual(video.analysis_status, 'pending')
-        self.assertEqual(video.analysis_stage, 'queued')
+        self.assertEqual(video.approval_status, 'pending_review')
         self.assertIsNotNone(video.analysis_requested_at)
         self.assertGreaterEqual(video.analysis_requested_at, before)
+
+        # Nothing is analyzed until someone approves it.
+        self.assertIsNone(get_next_pending_job())
+
+    def test_upload_opens_a_first_analysis_run(self):
+        video_id = self._create_video_record()
+        self._upload_file(video_id)
+
+        runs = AnalysisRun.objects.filter(video_id=video_id)
+        self.assertEqual(runs.count(), 1)
+        self.assertEqual(runs.first().attempt_number, 1)
+        self.assertEqual(runs.first().status, 'awaiting_approval')
+
+    def test_approving_puts_the_upload_in_the_queue(self):
+        video_id = self._create_video_record()
+        self._upload_file(video_id)
+
+        result = decide_approval(video_id, approve=True, decided_by='user_owner')
+        self.assertTrue(result['success'])
 
         job = get_next_pending_job()
         self.assertIsNotNone(job)
         self.assertEqual(str(job.id), video_id)
+
+    def test_rejecting_keeps_it_out_of_the_queue(self):
+        video_id = self._create_video_record()
+        self._upload_file(video_id)
+
+        decide_approval(video_id, approve=False, decided_by='user_owner')
+
+        self.assertIsNone(get_next_pending_job())
+        video = Video.objects.get(id=video_id)
+        self.assertEqual(video.approval_status, 'rejected')
+        # Rejection blocks analysis only. The video stays visible.
+        self.assertIsNone(video.deleted_at)
+        self.assertEqual(video.visibility, 'public')
 
     def test_failed_storage_upload_does_not_queue_anything(self):
         video_id = self._create_video_record()
@@ -147,15 +184,28 @@ class OwnerRequestAnalysisTests(TestCase):
         headers = {'HTTP_X_CLERK_USER_ID': clerk_user_id} if clerk_user_id else {}
         return self.client.post(f'/api/videos/{self.video.id}/analyze/', **headers)
 
-    def test_owner_can_requeue_a_completed_analysis(self):
+    def test_reanalysis_returns_the_video_for_review(self):
         response = self._post('user_owner')
         self.assertEqual(response.status_code, 200)
 
         self.video.refresh_from_db()
-        self.assertEqual(self.video.analysis_status, 'pending')
-        self.assertEqual(self.video.analysis_stage, 'queued')
+        self.assertEqual(self.video.approval_status, 'pending_review')
         self.assertEqual(self.video.analysis_progress, 0)
-        self.assertEqual(get_next_pending_job().id, self.video.id)
+        # Requesting is not queueing: it needs approving again first.
+        self.assertIsNone(get_next_pending_job())
+
+    def test_reanalysis_opens_a_new_attempt(self):
+        # The fixture builds the video directly, so give it the first run an
+        # upload would have created -- otherwise this proves nothing about
+        # incrementing.
+        open_analysis_run(self.video, 'user_owner')
+
+        self._post('user_owner')
+
+        runs = AnalysisRun.objects.filter(video=self.video).order_by('attempt_number')
+        self.assertEqual([r.attempt_number for r in runs], [1, 2])
+        self.assertEqual(runs.last().status, 'awaiting_approval')
+        self.assertEqual(runs.last().requested_by, 'user_owner')
 
     def test_previous_results_survive_until_the_rerun_overwrites_them(self):
         self._post('user_owner')
@@ -204,9 +254,8 @@ class OwnerRequestAnalysisTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         self.video.refresh_from_db()
-        self.assertEqual(self.video.analysis_status, 'pending')
+        self.assertEqual(self.video.approval_status, 'pending_review')
         self.assertIsNone(self.video.worker_id)
-        self.assertEqual(get_next_pending_job().id, self.video.id)
 
     def test_can_requeue_a_processing_job_with_no_worker_timestamps(self):
         Video.objects.filter(id=self.video.id).update(
@@ -214,13 +263,13 @@ class OwnerRequestAnalysisTests(TestCase):
             worker_claimed_at=None, analysis_started_at=None)
         self.assertEqual(self._post('user_owner').status_code, 200)
         self.video.refresh_from_db()
-        self.assertEqual(self.video.analysis_status, 'pending')
+        self.assertEqual(self.video.approval_status, 'pending_review')
 
-    def test_cannot_requeue_something_already_queued(self):
-        Video.objects.filter(id=self.video.id).update(analysis_status='pending')
+    def test_cannot_request_something_already_awaiting_review(self):
+        Video.objects.filter(id=self.video.id).update(approval_status='pending_review')
         response = self._post('user_owner')
         self.assertEqual(response.status_code, 409)
-        self.assertIn('already queued', response.json()['detail'])
+        self.assertIn('already waiting for review', response.json()['detail'])
 
     def test_failed_analysis_can_be_requeued(self):
         Video.objects.filter(id=self.video.id).update(analysis_status='failed',

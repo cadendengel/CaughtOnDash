@@ -38,6 +38,11 @@ class Video(models.Model):
         ("failed", "Failed"),
         ("cancelled", "Cancelled"),
     )
+    APPROVAL_STATUS_CHOICES = (
+        ("pending_review", "Pending Review"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+    )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner_clerk_user_id = models.CharField(
@@ -144,6 +149,27 @@ class Video(models.Model):
         default="",
         help_text="Error message if analysis failed",
     )
+    # Approval gate. A video is only claimable once someone has approved it, so
+    # analysis capacity is spent deliberately rather than on everything uploaded.
+    # Rejection blocks analysis only -- the video stays visible in the feed.
+    approval_status = models.CharField(
+        max_length=20,
+        choices=APPROVAL_STATUS_CHOICES,
+        default="pending_review",
+        db_index=True,
+        help_text="Whether this video has been approved for analysis",
+    )
+    approval_decided_by = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Clerk user ID of whoever approved or rejected",
+    )
+    approval_decided_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the approval decision was made",
+    )
     # Worker assignment fields
     worker_id = models.CharField(
         max_length=255,
@@ -239,6 +265,10 @@ class Video(models.Model):
             "analysis_completed_at": self.analysis_completed_at.isoformat() if self.analysis_completed_at else None,
             "analysis_failed_at": self.analysis_failed_at.isoformat() if self.analysis_failed_at else None,
             "analysis_error": self.analysis_error,
+            # Approval gate
+            "approval_status": self.approval_status,
+            "approval_decided_by": self.approval_decided_by,
+            "approval_decided_at": self.approval_decided_at.isoformat() if self.approval_decided_at else None,
             # Worker info
             "worker_id": self.worker_id,
             "worker_name": self.worker_name,
@@ -253,6 +283,113 @@ class Video(models.Model):
 
     def set_tags(self, tags, default_source='user'):
         self.tags = normalize_video_tags(tags, default_source=default_source)
+
+
+class AnalysisRun(models.Model):
+    """One attempt at analyzing a video, from request through to outcome.
+
+    Video keeps the latest results denormalised in its ai_* fields so the feed
+    stays a single query. This is the history behind them: who asked, who
+    approved, which worker ran it, and what it produced -- so a video coming
+    back for review can be shown as "3rd attempt" alongside what the previous
+    runs concluded.
+
+    A run is created when analysis is *requested*, not when it completes, so an
+    attempt that was never approved or that failed is still recorded.
+    """
+
+    RUN_STATUS_CHOICES = (
+        ("awaiting_approval", "Awaiting Approval"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+        ("processing", "Processing"),
+        ("complete", "Complete"),
+        ("failed", "Failed"),
+        ("cancelled", "Cancelled"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    video = models.ForeignKey(
+        Video,
+        on_delete=models.CASCADE,
+        related_name="analysis_runs",
+        help_text="The video this attempt belongs to",
+    )
+    attempt_number = models.PositiveIntegerField(
+        help_text="1 for the first request, incrementing per re-analysis",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=RUN_STATUS_CHOICES,
+        default="awaiting_approval",
+        db_index=True,
+    )
+
+    requested_by = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Clerk user ID that requested this analysis, blank if automatic",
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    decided_by = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Clerk user ID that approved or rejected this attempt",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    worker_id = models.CharField(max_length=255, blank=True, default="")
+    worker_name = models.CharField(max_length=255, blank=True, default="")
+
+    # What this attempt produced. Kept per-run so two attempts can be compared,
+    # which is the useful thing when re-reviewing a video.
+    summary = models.TextField(blank=True, default="")
+    tags = models.JSONField(default=list, blank=True)
+    events = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-requested_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["video", "attempt_number"],
+                name="unique_attempt_number_per_video",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["video", "-requested_at"]),
+            models.Index(fields=["status"]),
+        ]
+
+    def __str__(self):
+        return f"Run {self.attempt_number} of {self.video_id} ({self.status})"
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "video_id": str(self.video_id),
+            "attempt_number": self.attempt_number,
+            "status": self.status,
+            "requested_by": self.requested_by,
+            "requested_at": self.requested_at.isoformat(),
+            "decided_by": self.decided_by,
+            "decided_at": self.decided_at.isoformat() if self.decided_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "worker_id": self.worker_id,
+            "worker_name": self.worker_name,
+            "summary": self.summary,
+            "tags": self.tags,
+            "events": self.events,
+            "metadata": self.metadata,
+            "error": self.error,
+        }
 
 
 class Worker(models.Model):
