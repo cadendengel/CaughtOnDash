@@ -1813,6 +1813,14 @@ function App() {
     )
   }
 
+// Moderation group accents. Stuck jobs raise no error anywhere else in the
+// system, so their count gets a colour that says "look here".
+const MODERATION_ACCENT = {
+  awaiting_review: 'bg-[#eef1f5] text-[#465262]',
+  failed: 'bg-bad-soft text-[#9b2c2c]',
+  stuck: 'bg-[#fdf0e3] text-[#8a4b12]',
+}
+
   const MODERATION_GROUPS = [
     {
       key: 'awaiting_review',
@@ -1844,10 +1852,10 @@ function App() {
     ].join(' ')
 
   const renderModerationRow = (entry, groupKey) => (
-    <li key={entry.video_id} className="moderation-row">
-      <div className="moderation-row-main">
-        <span className="moderation-row-title">{entry.title || 'Untitled'}</span>
-        <span className="moderation-row-meta">
+    <li key={entry.video_id} className="flex flex-wrap items-center justify-between gap-3.5 rounded-lg border border-[#eef1f5] bg-[#fafbfc] px-3 py-2.5">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="font-semibold text-[#1f2933]">{entry.title || 'Untitled'}</span>
+        <span className="text-[0.83rem] text-muted">
           {entry.duration_display || entry.duration_seconds ? `${entry.duration_display || `${entry.duration_seconds}s`} · ` : ''}
           {entry.attempt_number > 1
             ? `attempt ${entry.attempt_number}`
@@ -1855,10 +1863,10 @@ function App() {
           {entry.previous_attempts > 0 ? ` · ${entry.previous_attempts} before` : ''}
         </span>
         {entry.last_result ? (
-          <span className="moderation-row-history">{entry.last_result}</span>
+          <span className="text-[0.83rem] text-muted">{entry.last_result}</span>
         ) : null}
       </div>
-      <div className="moderation-row-actions">
+      <div className="flex flex-wrap items-center gap-2">
         {entry.video_url ? (
           <a className={GHOST_BTN} href={entry.video_url} target="_blank" rel="noreferrer">
             Preview
@@ -1911,8 +1919,8 @@ function App() {
   const renderModerationPanel = () => {
     if (moderationError) {
       return (
-        <div className="moderation-panel">
-          <p className="moderation-error">{moderationError}</p>
+        <div className="mb-[22px] rounded-[10px] border border-line bg-surface px-5 py-[18px]">
+          <p className="m-0 text-[0.9rem] text-[#9b2c2c]">{moderationError}</p>
         </div>
       )
     }
@@ -1923,9 +1931,9 @@ function App() {
 
     if ((moderation.counts?.total || 0) === 0) {
       return (
-        <div className="moderation-panel">
-          <h3 className="moderation-heading">Nothing needs attention</h3>
-          <p className="moderation-blurb">
+        <div className="mb-[22px] rounded-[10px] border border-line bg-surface px-5 py-[18px]">
+          <h3 className="m-0 mb-1 text-[1.05rem]">Nothing needs attention</h3>
+          <p className="mt-1 mb-2.5 text-[0.85rem] text-muted">
             No videos are awaiting review, failed, or stuck.
           </p>
         </div>
@@ -1933,10 +1941,10 @@ function App() {
     }
 
     return (
-      <div className="moderation-panel">
-        <h3 className="moderation-heading">
+      <div className="mb-[22px] rounded-[10px] border border-line bg-surface px-5 py-[18px]">
+        <h3 className="m-0 mb-1 flex items-center gap-2.5 text-[1.05rem]">
           Needs attention
-          <span className="moderation-total">{moderation.counts.total}</span>
+          <span className="rounded-full bg-brand px-2.5 py-px text-[0.8rem] text-white">{moderation.counts.total}</span>
         </h3>
         {MODERATION_GROUPS.map((group) => {
           const entries = moderation.groups?.[group.key] || []
@@ -1944,13 +1952,13 @@ function App() {
             return null
           }
           return (
-            <div key={group.key} className={`moderation-group ${group.key}`}>
-              <h4 className="moderation-group-heading">
+            <div key={group.key} className="mt-4 border-t border-[#eef1f5] pt-3.5 first:mt-0 first:border-t-0 first:pt-0">
+              <h4 className="m-0 flex items-center gap-2 text-[0.95rem]">
                 {group.title}
-                <span className="moderation-count">{entries.length}</span>
+                <span className={`rounded-full px-[7px] text-[0.78rem] ${MODERATION_ACCENT[group.key] || MODERATION_ACCENT.awaiting_review}`}>{entries.length}</span>
               </h4>
-              <p className="moderation-blurb">{group.blurb}</p>
-              <ul className="moderation-list">
+              <p className="mt-1 mb-2.5 text-[0.85rem] text-muted">{group.blurb}</p>
+              <ul className="m-0 flex list-none flex-col gap-2 p-0">
                 {entries.map((entry) => renderModerationRow(entry, group.key))}
               </ul>
             </div>
