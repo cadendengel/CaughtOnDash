@@ -151,9 +151,24 @@ on every request; and `localhost` resolves to IPv6 first on Windows, which
 fails against a Django server bound to 127.0.0.1. The worker config now uses
 the explicit address.
 
-**Still to do in 2c:** poster-frame capture at upload, so the table shows a
-thumbnail rather than only a title. Until then Preview is how you see a video
-before approving it.
+**Poster frames: captured and stored.** The browser grabs a frame during the
+same decode it already did to read duration, and sends it with the video in one
+multipart request. Analysis cannot supply this: approval happens before
+analysis, so the thumbnail the decision needs has to exist beforehand.
+
+A frame is taken a second in, or at the midpoint of a very short clip, because
+most videos open on black. Capture failures are swallowed -- the video is the
+point, the thumbnail is a convenience -- and there is a timeout, because some
+containers never fire onseeked and an upload must not hang on a nicety.
+
+This also gives the website thumbnails it never had: `thumbnail_url` was on the
+model from the start but nothing ever wrote it, so feed videos showed a black
+rectangle until played. They now have a poster.
+
+**Not done: the thumbnail column in the worker table.** Binding a URL to an
+image needs an async loader and cache, and the type differs per framework
+(Avalonia Bitmap vs WPF BitmapImage), so it cannot live in the shared core
+without dragging a UI dependency in. Preview covers the need meanwhile.
 
 ### Frontend
 
