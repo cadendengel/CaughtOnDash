@@ -139,7 +139,19 @@ namespace CaughtOnDash.Worker.ViewModels
             // reset it, so the order set here survives the decision.
             _mainWindow.MoveUpButton.IsEnabled = true;
             _mainWindow.MoveDownButton.IsEnabled = true;
-            _mainWindow.StartBatchButton.IsEnabled = _showingReviewQueue;
+            // Start Batch works on both tabs. It was review-only on the
+            // reasoning that approving is a no-op for already-approved videos
+            // and the Status panel's Start button covers the queue -- which is
+            // true of the implementation and useless to the person looking at
+            // a list of queued videos with no way to say "run these". The
+            // control that starts them lived in another panel under another
+            // name. Approving an approved video is idempotent, so this is
+            // safe; on the queued tab it means "run these next".
+            _mainWindow.StartBatchButton.IsEnabled = true;
+
+            // Reject stays review-only: rejecting is a decision about whether
+            // a video should be analyzed at all, which has already been made
+            // for anything in the run queue.
             _mainWindow.RejectButton.IsEnabled = _showingReviewQueue;
 
             _mainWindow.ReviewTabButton.FontWeight =
