@@ -170,10 +170,19 @@ image needs an async loader and cache, and the type differs per framework
 (Avalonia Bitmap vs WPF BitmapImage), so it cannot live in the shared core
 without dragging a UI dependency in. Preview covers the need meanwhile.
 
-### Frontend
+### 2d — Frontend — DONE
 
-- [ ] Approve / reject controls for owners and admins
-- [ ] Show "awaiting approval" distinctly from "queued"
+- [x] Approve / reject controls for owners and admins
+- [x] Show "awaiting approval" distinctly from "queued"
+
+Approval is reported before analysis, because it comes first in the pipeline:
+a video nobody has looked at reads "Pending review" rather than "Cancelled" or
+"Pending 0%", which described the machinery instead of the situation. A
+rejected video reads "Not selected for analysis" and stays in the feed.
+
+The controls appear on the feed card and the detail view for the owner and for
+admins, matching what the backend will accept, so the buttons never invite a
+request that would 403.
 
 ---
 
