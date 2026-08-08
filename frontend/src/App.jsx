@@ -211,6 +211,33 @@ function App() {
   }
 
   const renderAnalysisStatus = (post) => {
+    // Approval comes first in the pipeline, so it comes first in the label.
+    // Showing "Cancelled" or "Pending 0%" for a video nobody has looked at yet
+    // describes the machinery rather than the situation.
+    if (post.approval_status === 'pending_review') {
+      return (
+        <div className="analysis-status-container" style={{ marginTop: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ display: 'inline-block', width: '8px', height: '8px',
+                           borderRadius: '50%', backgroundColor: '#9ca3af' }} />
+            <span style={{ fontSize: '0.9rem', color: '#666' }}>Pending review</span>
+          </div>
+        </div>
+      )
+    }
+
+    if (post.approval_status === 'rejected') {
+      return (
+        <div className="analysis-status-container" style={{ marginTop: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ display: 'inline-block', width: '8px', height: '8px',
+                           borderRadius: '50%', backgroundColor: '#6b7280' }} />
+            <span style={{ fontSize: '0.9rem', color: '#666' }}>Not selected for analysis</span>
+          </div>
+        </div>
+      )
+    }
+
     if (!post.analysis_status) {
       return null
     }
@@ -964,6 +991,69 @@ function App() {
     return REQUEUEABLE_ANALYSIS_STATUSES.includes(post.analysis_status) || isStaleProcessing(post)
   }
 
+  // Reviewing is offered to the owner and to admins, matching the backend.
+  const canReview = (post) => {
+    if (!post || !user?.id) {
+      return false
+    }
+
+    if (post.approval_status !== 'pending_review') {
+      return false
+    }
+
+    return post.owner_clerk_user_id === user.id || isAdmin
+  }
+
+  const decideApproval = async (videoId, approve) => {
+    if (!videoId || analysisRequestLoadingByPostId[videoId]) {
+      return
+    }
+
+    setAnalysisRequestLoadingByPostId((current) => ({ ...current, [videoId]: true }))
+    setAnalysisRequestErrorByPostId((current) => ({ ...current, [videoId]: '' }))
+
+    try {
+      const response = await authFetch(`${API_BASE}/api/videos/${videoId}/approval/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approve }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        setAnalysisRequestErrorByPostId((current) => ({
+          ...current,
+          [videoId]: data.detail || 'Could not record that decision.',
+        }))
+        return
+      }
+
+      const updated = data.video || (data.payload && data.payload.video) || {}
+      const applyDecision = (item) =>
+        item && item.id === videoId
+          ? {
+              ...item,
+              approval_status: updated.approval_status ?? (approve ? 'approved' : 'rejected'),
+              analysis_status: updated.analysis_status ?? item.analysis_status,
+              analysis_stage: updated.analysis_stage ?? item.analysis_stage,
+              analysis_progress: updated.analysis_progress ?? 0,
+            }
+          : item
+
+      setPosts((current) => current.map(applyDecision))
+      setSearchResults((current) => current.map(applyDecision))
+      setCurrentVideo((current) => applyDecision(current))
+    } catch {
+      setAnalysisRequestErrorByPostId((current) => ({
+        ...current,
+        [videoId]: 'Could not reach the server. Please try again.',
+      }))
+    } finally {
+      setAnalysisRequestLoadingByPostId((current) => ({ ...current, [videoId]: false }))
+    }
+  }
+
   const requestAnalysis = async (videoId) => {
     if (!videoId || analysisRequestLoadingByPostId[videoId]) {
       return
@@ -1254,6 +1344,26 @@ function App() {
           >
             {analysisRequestLoadingByPostId[post.id] ? 'Queueing...' : 'Re-analyze'}
           </button>
+        ) : null}
+        {canReview(post) ? (
+          <>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => decideApproval(post.id, true)}
+              disabled={analysisRequestLoadingByPostId[post.id]}
+            >
+              {analysisRequestLoadingByPostId[post.id] ? 'Working...' : 'Approve for analysis'}
+            </button>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => decideApproval(post.id, false)}
+              disabled={analysisRequestLoadingByPostId[post.id]}
+            >
+              Skip
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -1666,6 +1776,26 @@ function App() {
             >
               {analysisRequestLoadingByPostId[video.id] ? 'Queueing...' : 'Re-analyze'}
             </button>
+          ) : null}
+          {canReview(video) ? (
+            <>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => decideApproval(video.id, true)}
+                disabled={analysisRequestLoadingByPostId[video.id]}
+              >
+                {analysisRequestLoadingByPostId[video.id] ? 'Working...' : 'Approve for analysis'}
+              </button>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => decideApproval(video.id, false)}
+                disabled={analysisRequestLoadingByPostId[video.id]}
+              >
+                Skip
+              </button>
+            </>
           ) : null}
         </div>
 
