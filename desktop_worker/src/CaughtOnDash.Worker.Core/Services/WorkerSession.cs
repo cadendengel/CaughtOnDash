@@ -229,7 +229,33 @@ namespace CaughtOnDash.Worker.Services
 
             Log($"Starting batch of {videoIds.Count}...");
 
-            if (videoIds.Count > 1 && !await _apiClient.ReorderQueue(videoIds, cancellationToken))
+            // Send the whole intended running order -- what is already queued,
+            // then this batch behind it -- rather than just the batch.
+            //
+            // Priorities descend from the length of whatever list is sent, so
+            // reordering the batch alone numbers it 3,2,1 in the same space the
+            // queued videos already occupy, and the new work interleaves with
+            // work that was there first. Approving is not a request to jump the
+            // queue.
+            // Read the run queue rather than trusting a cached snapshot: another
+            // host may have approved something since the last refresh, and this
+            // write decides the order everything runs in.
+            List<Guid> order;
+            try
+            {
+                order = QueueOrdering.BatchOrder(
+                    await _apiClient.GetRunQueue(cancellationToken), videoIds);
+            }
+            catch (Exception ex)
+            {
+                // Fall back to ordering the batch alone. Worse than ideal -- it
+                // can interleave with queued work -- but better than not running.
+                Log($"Could not read the run queue, ordering the batch only: {ex.Message}",
+                    Logger.LogLevel.Warning);
+                order = new List<Guid>(videoIds);
+            }
+
+            if (order.Count > 1 && !await _apiClient.ReorderQueue(order, cancellationToken))
             {
                 // Not fatal: they will still run, just in the queue's existing order.
                 Log("Could not set the batch order; the videos will run in queue order.",

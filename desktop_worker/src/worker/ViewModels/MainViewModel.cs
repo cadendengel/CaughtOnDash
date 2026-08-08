@@ -129,10 +129,12 @@ namespace CaughtOnDash.Worker.ViewModels
                 ? (_showingReviewQueue ? "Nothing awaiting review" : "Queue empty")
                 : $"{_rows.Count} video{(_rows.Count == 1 ? "" : "s")}";
 
-            // Reordering only means something for work that is already approved;
-            // the review list is ordered by the batch you pick.
-            _mainWindow.MoveUpButton.IsEnabled = !_showingReviewQueue;
-            _mainWindow.MoveDownButton.IsEnabled = !_showingReviewQueue;
+            // Reordering works on both tabs: arrange the review list, tick a
+            // batch, and Start Batch runs it in that order. Priority is stored
+            // per video regardless of approval state, and approving does not
+            // reset it, so the order set here survives the decision.
+            _mainWindow.MoveUpButton.IsEnabled = true;
+            _mainWindow.MoveDownButton.IsEnabled = true;
             _mainWindow.StartBatchButton.IsEnabled = _showingReviewQueue;
             _mainWindow.RejectButton.IsEnabled = _showingReviewQueue;
 
@@ -264,7 +266,12 @@ namespace CaughtOnDash.Worker.ViewModels
             {
                 ids.Add(row.Entry.VideoId);
             }
-            await _session.ReorderAsync(ids);
+
+            // Shared with the Avalonia host so the two cannot disagree: send one
+            // order spanning both tabs, or reordering one renumbers it into the
+            // other's priority band.
+            await _session.ReorderAsync(QueueOrdering.GlobalOrder(
+                _snapshot.Queued, _snapshot.AwaitingReview, ids, _showingReviewQueue));
         }
 
         public async void StartBatch()

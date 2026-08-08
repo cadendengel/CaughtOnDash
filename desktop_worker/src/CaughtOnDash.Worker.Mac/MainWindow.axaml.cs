@@ -120,10 +120,12 @@ namespace CaughtOnDash.Worker.Mac
                 ? (_showingReviewQueue ? "Nothing awaiting review" : "Queue empty")
                 : $"{_rows.Count} video{(_rows.Count == 1 ? "" : "s")}";
 
-            // Reordering only means something for work that is already approved;
-            // the review list is ordered by the batch you pick.
-            MoveUpButton.IsEnabled = !_showingReviewQueue;
-            MoveDownButton.IsEnabled = !_showingReviewQueue;
+            // Reordering works on both tabs: arrange the review list, tick a
+            // batch, and Start Batch runs it in that order. Priority is stored
+            // per video regardless of approval state, and approving does not
+            // reset it, so the order you set here survives the decision.
+            MoveUpButton.IsEnabled = true;
+            MoveDownButton.IsEnabled = true;
             StartBatchButton.IsEnabled = _showingReviewQueue;
             RejectButton.IsEnabled = _showingReviewQueue;
 
@@ -252,12 +254,17 @@ namespace CaughtOnDash.Worker.Mac
                 _rows.Add(row);
             }
 
+            await _session.ReorderAsync(GlobalOrder(order));
+        }
+
+        /// <summary>Shared with the WPF host so the two cannot disagree.</summary>
+        private List<Guid> GlobalOrder(IReadOnlyList<QueueRow> reordered)
+        {
             var ids = new List<Guid>();
-            foreach (var row in order)
-            {
-                ids.Add(row.Entry.VideoId);
-            }
-            await _session.ReorderAsync(ids);
+            foreach (var row in reordered) ids.Add(row.Entry.VideoId);
+
+            return QueueOrdering.GlobalOrder(
+                _snapshot.Queued, _snapshot.AwaitingReview, ids, _showingReviewQueue);
         }
 
         private async void StartBatch_Click(object? sender, RoutedEventArgs e)
