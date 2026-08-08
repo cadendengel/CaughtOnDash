@@ -36,5 +36,37 @@ namespace CaughtOnDash.Worker
         {
             _viewModel?.CancelCurrentJob();
         }
+
+        // ---- queue table ----
+
+        private void RefreshQueueButton_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.RefreshQueues();
+
+        private void ReviewTab_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.ShowReviewQueue();
+
+        private void QueuedTab_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.ShowRunQueue();
+
+        private void SelectAll_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.SelectAll();
+
+        private void ClearSelection_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.ClearSelection();
+
+        private void Preview_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.PreviewSelected();
+
+        private void MoveUp_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.MoveSelectedUp();
+
+        private void MoveDown_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.MoveSelectedDown();
+
+        private void Reject_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.RejectSelected();
+
+        private void StartBatch_Click(object sender, RoutedEventArgs e)
+            => _viewModel?.StartBatch();
     }
 }
