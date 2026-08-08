@@ -123,6 +123,14 @@ const FORM_MESSAGE = 'rounded-2xl px-3.5 py-3 font-semibold'
 const FORM_MESSAGE_ERROR = `${FORM_MESSAGE} bg-red-600/10 text-[#991b1b]`
 const FORM_MESSAGE_SUCCESS = `${FORM_MESSAGE} bg-green-600/10 text-good`
 
+// Tag editing, shared by the admin editor on a feed card and the tag section
+// of the upload form.
+const CHIP_LIST = 'mt-2.5 flex flex-wrap gap-1.5'
+const TAG_FIELD_LABEL = 'text-[0.82rem] font-bold uppercase tracking-[0.16em] text-muted'
+const TAG_ROW = 'flex flex-wrap items-center gap-2.5'
+const TAG_INPUT = 'min-w-0 flex-[1_1_240px] rounded-2xl border border-ink/15 bg-white/90 ' +
+  'px-3 py-2.5 font-normal text-ink'
+
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const { getToken } = useAuth()
@@ -1050,7 +1058,7 @@ function App() {
     const showToggle = editable || tagList.length > 3
 
     return (
-      <div className={editable ? 'tag-strip tag-strip--editable' : 'tag-strip'}>
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         {visibleTags.length > 0 ? (
           visibleTags.map((tag, index) => (
             <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
@@ -1080,29 +1088,29 @@ function App() {
     const draftValue = adminTagDraftsByPostId[videoId] || ''
 
     return (
-      <div className="tag-editor">
-        <div className="tag-editor-head">
-          <span className="tag-editor-label">Edit tags</span>
+      <div className="mt-1.5 grid gap-2.5 rounded-[18px] border border-ink/[0.06] bg-ink/[0.03] p-3">
+        <div className="flex items-center justify-between gap-2.5">
+          <span className={TAG_FIELD_LABEL}>Edit tags</span>
           <button type="button" className={GHOST_BTN} onClick={() => toggleTagExpansion(videoId)}>
             Collapse
           </button>
         </div>
 
-        <div className="tag-editor-chip-list">
+        <div className={CHIP_LIST}>
           {currentTags.map((tag, index) => (
             <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
               {tag.text}
-              <button type="button" className="tag-chip-remove" onClick={() => removeAdminTag(videoId, index)}>
+              <button type="button" className="cursor-pointer border-none bg-transparent p-0 text-base leading-none text-inherit" onClick={() => removeAdminTag(videoId, index)}>
                 ×
               </button>
             </span>
           ))}
         </div>
 
-        <div className="tag-editor-row">
+        <div className={TAG_ROW}>
           <input
             type="text"
-            className="tag-input"
+            className={TAG_INPUT}
             value={draftValue}
             onChange={(event) => updateAdminTagDraft(videoId, event.target.value)}
             onKeyDown={(event) => {
@@ -1118,7 +1126,7 @@ function App() {
           </button>
         </div>
 
-        <div className={`${FORM_ACTIONS} tag-editor-actions`}>
+        <div className={`${FORM_ACTIONS} mt-0`}>
           <button type="button" className="primary-btn" onClick={() => saveAdminTags(videoId)} disabled={adminTagSavingByPostId[videoId]}>
             {adminTagSavingByPostId[videoId] ? 'Saving...' : 'Save tags'}
           </button>
@@ -2442,12 +2450,12 @@ const MODERATION_ACCENT = {
           />
         </label>
 
-          <div className="tag-input-section">
-            <span className="tag-input-label">Tags</span>
-            <div className="tag-editor-row">
+          <div className="mt-2 grid gap-2.5">
+            <span className={TAG_FIELD_LABEL}>Tags</span>
+            <div className={TAG_ROW}>
               <input
                 type="text"
-                className="tag-input"
+                className={TAG_INPUT}
                 value={uploadTagDraft}
                 onChange={(event) => updateUploadTagDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -2464,11 +2472,11 @@ const MODERATION_ACCENT = {
             </div>
 
             {uploadTags.length > 0 ? (
-              <div className="tag-editor-chip-list">
+              <div className={CHIP_LIST}>
                 {uploadTags.map((tag, index) => (
                   <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
                     {tag.text}
-                    <button type="button" className="tag-chip-remove" onClick={() => removeUploadTag(index)}>
+                    <button type="button" className="cursor-pointer border-none bg-transparent p-0 text-base leading-none text-inherit" onClick={() => removeUploadTag(index)}>
                       ×
                     </button>
                   </span>

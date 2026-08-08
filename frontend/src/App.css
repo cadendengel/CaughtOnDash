@@ -138,83 +138,6 @@
   .detail-author-block {
     margin-bottom: 6px;
   }
-
-  .tag-strip,
-  .tag-editor-chip-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 10px;
-  }
-
-  .tag-strip {
-    align-items: center;
-  }
-
-  .tag-editor {
-    display: grid;
-    gap: 10px;
-    margin-top: 6px;
-    padding: 12px;
-    border-radius: 18px;
-    background: rgba(15, 23, 42, 0.03);
-    border: 1px solid rgba(15, 23, 42, 0.06);
-  }
-
-  .tag-editor-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .tag-editor-label,
-  .tag-input-label {
-    font-size: 0.82rem;
-    font-weight: 700;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
-  }
-
-  .tag-editor-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-  }
-
-  .tag-input {
-    flex: 1 1 240px;
-    min-width: 0;
-    border-radius: 16px;
-    border: 1px solid rgba(15, 23, 42, 0.14);
-    background: rgba(255, 255, 255, 0.92);
-    color: var(--text-h);
-    padding: 10px 12px;
-    font: inherit;
-  }
-
-  .tag-chip-remove {
-    border: none;
-    background: transparent;
-    color: inherit;
-    font-size: 1rem;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0;
-  }
-
-  .tag-editor-actions {
-    margin-top: 0;
-  }
-
-  .tag-input-section {
-    display: grid;
-    gap: 10px;
-    margin-top: 8px;
-  }
-
   .feed-caption {
     margin-top: 8px;
     color: var(--muted);
@@ -404,15 +327,6 @@
     .video-meta {
       gap: 8px;
     }
-
-    .tag-editor-row {
-      align-items: stretch;
-    }
-
-    .tag-input {
-      flex-basis: 100%;
-    }
-
     .comments-panel {
       padding: 12px;
     }
