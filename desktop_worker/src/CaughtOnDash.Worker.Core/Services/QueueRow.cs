@@ -18,6 +18,7 @@ namespace CaughtOnDash.Worker.Services
     public class QueueRow : INotifyPropertyChanged
     {
         private bool _isSelected;
+        private object? _thumbnail;
 
         public QueueRow(QueueEntry entry)
         {
@@ -37,6 +38,29 @@ namespace CaughtOnDash.Worker.Services
                 }
 
                 _isSelected = value;
+                OnPropertyChanged();
+            }
+        }
+
+        /// <summary>
+        /// The decoded poster frame, or null until it arrives.
+        /// </summary>
+        /// <remarks>
+        /// Typed as object because the concrete image type differs per host
+        /// (Avalonia Bitmap, WPF BitmapImage) and neither belongs in the shared
+        /// core. Both frameworks' Image.Source bindings accept it.
+        /// </remarks>
+        public object? Thumbnail
+        {
+            get => _thumbnail;
+            set
+            {
+                if (ReferenceEquals(_thumbnail, value))
+                {
+                    return;
+                }
+
+                _thumbnail = value;
                 OnPropertyChanged();
             }
         }

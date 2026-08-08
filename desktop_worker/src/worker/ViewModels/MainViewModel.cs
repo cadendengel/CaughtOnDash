@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CaughtOnDash.Worker.Models;
 using CaughtOnDash.Worker.Services;
@@ -31,6 +32,7 @@ namespace CaughtOnDash.Worker.ViewModels
         private QueueSnapshot _snapshot = new();
         private DispatcherTimer? _queuePollTimer;
         private bool _showingReviewQueue = true;
+        private readonly ThumbnailCache _thumbnails = new();
 
         public MainViewModel(MainWindow mainWindow)
         {
@@ -121,7 +123,9 @@ namespace CaughtOnDash.Worker.ViewModels
             _rows.Clear();
             foreach (var entry in entries)
             {
-                _rows.Add(new QueueRow(entry) { IsSelected = selected.Contains(entry.VideoId) });
+                var row = new QueueRow(entry) { IsSelected = selected.Contains(entry.VideoId) };
+                _rows.Add(row);
+                _ = LoadThumbnail(row);
             }
 
             _mainWindow.QueueHeading.Text = _showingReviewQueue ? "Review Queue" : "Run Queue";
@@ -142,6 +146,44 @@ namespace CaughtOnDash.Worker.ViewModels
                 _showingReviewQueue ? FontWeights.Bold : FontWeights.Normal;
             _mainWindow.QueuedTabButton.FontWeight =
                 _showingReviewQueue ? FontWeights.Normal : FontWeights.Bold;
+        }
+
+        /// <summary>
+        /// Fill in a row's poster frame once it arrives.
+        /// </summary>
+        /// <remarks>
+        /// Fire-and-forget on purpose: the table must render immediately and
+        /// fill in as images land. The bitmap is frozen so it can be handed to
+        /// the UI thread from here -- an unfrozen BitmapImage belongs to the
+        /// thread that created it, and binding it elsewhere throws.
+        /// </remarks>
+        private async Task LoadThumbnail(QueueRow row)
+        {
+            var bytes = await _thumbnails.GetAsync(row.Entry.ThumbnailUrl);
+            if (bytes == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var bitmap = new BitmapImage();
+                using (var stream = new System.IO.MemoryStream(bytes))
+                {
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.StreamSource = stream;
+                    bitmap.EndInit();
+                }
+                bitmap.Freeze();
+
+                _mainWindow.Dispatcher.Invoke(() => row.Thumbnail = bitmap);
+            }
+            catch (Exception)
+            {
+                // Not an image, or one WPF cannot decode. The placeholder
+                // stands; a broken thumbnail must not disturb the queue.
+            }
         }
 
         public void ShowReviewQueue()
