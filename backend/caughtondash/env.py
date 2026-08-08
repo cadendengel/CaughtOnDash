@@ -38,6 +38,26 @@ def get_bool(name: str, default: bool = False, environ: dict | None = None) -> b
     )
 
 
+def get_int(name: str, default: int, environ: dict | None = None) -> int:
+    """An integer setting, refusing a value that is not one.
+
+    Falling back to the default on a typo would hide the mistake: a
+    misconfigured connection lifetime looks like nothing at all until the
+    connection pool runs out under load.
+    """
+    source = environ if environ is not None else os.environ
+    raw = source.get(name)
+    if raw is None or raw.strip() == '':
+        return default
+
+    try:
+        return int(raw.strip())
+    except ValueError:
+        raise ImproperlyConfigured(
+            f'{name} must be an integer, got {raw!r}.'
+        ) from None
+
+
 def get_secret_key(debug: bool, environ: dict | None = None) -> str:
     """Return SECRET_KEY, refusing to run with a known value outside DEBUG."""
     environ = os.environ if environ is None else environ
