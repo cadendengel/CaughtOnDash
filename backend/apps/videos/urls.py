@@ -32,6 +32,7 @@ from .worker_views import (
     fail_job_view,
     cancel_job_view,
     admin_retry_job_view,
+    moderation_overview,
     reset_stale_jobs_view,
 )
 
@@ -93,6 +94,8 @@ urlpatterns = [
     path('worker/jobs/<uuid:job_id>/fail/', fail_job_view, name='worker-job-fail'),
     # POST /api/videos/worker/jobs/<job_id>/cancel/ - cancel a job
     path('worker/jobs/<uuid:job_id>/cancel/', cancel_job_view, name='worker-job-cancel'),
+    # GET /api/videos/admin/moderation/ - everything needing a human decision.
+    path('admin/moderation/', moderation_overview, name='admin-moderation'),
     # POST /api/videos/admin/jobs/<job_id>/retry/ - admin retry a job
     path('admin/jobs/<uuid:job_id>/retry/', admin_retry_job_view, name='admin-job-retry'),
     # POST /api/videos/admin/jobs/reset-stale/ - admin reset stale jobs
