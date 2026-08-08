@@ -4,6 +4,7 @@ import uuid
 
 from django.db import models
 
+from apps.videos.classification import dashcam_classification
 from apps.videos.tagging import normalize_video_tags, serialize_video_tags
 
 
@@ -284,6 +285,9 @@ class Video(models.Model):
             "ai_tags": self.ai_tags,
             "ai_events": self.ai_events,
             "ai_metadata": self.ai_metadata,
+            # Derived, not stored: the raw metadata is large and internal,
+            # while the verdict is the part a viewer needs.
+            "dashcam_classification": dashcam_classification(self.ai_metadata),
         }
 
     def set_tags(self, tags, default_source='user'):

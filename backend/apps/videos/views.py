@@ -22,6 +22,7 @@ except Exception:
 from apps.accounts.models import AdminUser, Profile
 from apps.accounts.auth import admin_required
 from apps.videos.models import Video, VideoComment, VideoCommentLike, VideoLike
+from apps.videos.classification import dashcam_classification
 from apps.videos.tagging import normalize_video_tags, serialize_video_tags
 from apps.store import (
     current_clerk_user_id as resolve_current_clerk_user_id,
@@ -214,6 +215,7 @@ def _serialize_video_row(row: dict | Video, *, include_defaults: bool = True, li
                 'analysis_failed_at': row.get('analysis_failed_at').isoformat() if row.get('analysis_failed_at') and hasattr(row.get('analysis_failed_at'), 'isoformat') else None,
                 'analysis_error': row.get('analysis_error', '') or '',
                 'approval_status': row.get('approval_status', 'pending_review') or 'pending_review',
+                'dashcam_classification': dashcam_classification(row.get('ai_metadata')),
                 'approval_decided_by': row.get('approval_decided_by', '') or '',
                 'approval_decided_at': row.get('approval_decided_at').isoformat() if row.get('approval_decided_at') and hasattr(row.get('approval_decided_at'), 'isoformat') else None,
                 'worker_id': row.get('worker_id'),
