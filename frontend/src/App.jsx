@@ -1666,7 +1666,7 @@ function App() {
 
   if (!isLoaded) {
     return (
-      <main className="screen loading-state">
+      <main className="screen text-ink">
         <p>Loading authentication…</p>
       </main>
     )
@@ -1675,8 +1675,8 @@ function App() {
   if (!isSignedIn) {
     return (
       <main className="screen auth-screen">
-        <section className="auth-panel">
-          <div className="auth-copy">
+        <section className="grid w-[min(1040px,100%)] grid-cols-2 overflow-hidden rounded-[28px] border border-ink/10 bg-white/80 shadow-card backdrop-blur-lg max-[860px]:grid-cols-1">
+          <div className="grid content-center gap-4 bg-[linear-gradient(145deg,rgba(15,23,42,0.94),rgba(30,64,175,0.88))] p-8 text-ink max-[640px]:p-6 [&>h1]:font-heading [&>h1]:text-[clamp(2.2rem,4vw,4.4rem)] [&>h1]:leading-none [&>h1]:tracking-[-0.04em] [&>h1]:text-white [&>p]:max-w-[34rem] [&>p]:text-white/85">
             <span className="eyebrow">CaughtOnDash</span>
             <h1>Sign in to continue</h1>
             <p>
@@ -1685,7 +1685,7 @@ function App() {
             </p>
           </div>
 
-          <div className="auth-widget" aria-label="Sign in form">
+          <div className="auth-widget grid place-items-center bg-white/90 p-8 max-[640px]:p-6" aria-label="Sign in form">
             <SignIn routing="virtual" />
           </div>
         </section>
@@ -2044,9 +2044,9 @@ const MODERATION_ACCENT = {
           <p>When content appears, it will show here with delete controls.</p>
         </div>
       ) : (
-        <div className="admin-list">
+        <div className="grid gap-4">
           {posts.map((post) => (
-            <article key={post.id} className={`${CARD} admin-card overflow-hidden p-5 max-[640px]:p-[18px]`}>
+            <article key={post.id} className={`${CARD} grid gap-3 overflow-hidden p-5 max-[640px]:p-[18px]`}>
               <div className="flex items-start justify-between gap-2.5 pb-0.5 max-[640px]:flex-col max-[640px]:gap-3">
                 <div className="grid gap-0.5">
                   <span className={AUTHOR_NAME}>{getDisplayName(post)}</span>
@@ -2070,13 +2070,13 @@ const MODERATION_ACCENT = {
                 <span>{post.comments_count || 0} comments</span>
               </div>
 
-              <div className={`${ACTION_ROW} admin-actions-row`}>
+              <div className={`${ACTION_ROW} mt-0`}>
                 <button type="button" className={DANGER_BTN} onClick={() => deleteAdminVideo(post.id)}>
                   Delete post
                 </button>
               </div>
 
-              <div className="comments-panel admin-comments-panel">
+              <div className="comments-panel mt-0">
                 {loadingCommentsByPostId[post.id] ? (
                   <p className="comments-empty">Loading comments...</p>
                 ) : null}

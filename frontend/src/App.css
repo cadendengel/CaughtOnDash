@@ -24,71 +24,9 @@
       radial-gradient(circle at 85% 15%, rgba(20, 184, 166, 0.16), transparent 22%),
       linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
   }
-
-  .auth-panel,
-  .hero-card {
-    width: min(1040px, 100%);
-    border: 1px solid rgba(15, 23, 42, 0.1);
-    border-radius: 28px;
-    background: rgba(255, 255, 255, 0.82);
-    box-shadow: var(--shadow);
-    backdrop-filter: blur(18px);
-  }
-
-  .auth-panel {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    overflow: hidden;
-  }
-
-  .auth-copy,
-  .auth-widget,
-  .hero-card {
-    padding: 32px;
-  }
-
-  .auth-copy {
-    display: grid;
-    align-content: center;
-    gap: 16px;
-    color: var(--text-h);
-    background:
-      linear-gradient(145deg, rgba(15, 23, 42, 0.94), rgba(30, 64, 175, 0.88));
-  }
-
-  .auth-copy h1,
-  .hero-card h2,
-  .topbar h1 {
-    font-family: var(--heading);
-    letter-spacing: -0.04em;
-    line-height: 1;
-  }
-
-  .auth-copy h1 {
-    font-size: clamp(2.2rem, 4vw, 4.4rem);
-    color: #fff;
-  }
-
-  .auth-copy p,
-  .hero-text,
-  .eyebrow,
-  .topbar,
-  .stats-grid span,
-  .stats-grid strong {
+  .eyebrow {
     color: inherit;
   }
-
-  .auth-copy p {
-    max-width: 34rem;
-    color: rgba(255, 255, 255, 0.84);
-  }
-
-  .auth-widget {
-    display: grid;
-    place-items: center;
-    background: rgba(255, 255, 255, 0.92);
-  }
-
   .auth-widget .cl-rootBox,
   .auth-widget .cl-card {
     width: 100%;
@@ -138,13 +76,6 @@
   .detail-author-block {
     margin-bottom: 6px;
   }
-  .feed-caption {
-    margin-top: 8px;
-    color: var(--muted);
-    font-size: 1rem;
-    line-height: 1.6;
-  }
-
   .video-meta {
     display: flex;
     flex-wrap: wrap;
@@ -186,25 +117,6 @@
     font-size: 0.85rem;
     color: #b91c1c;
   }
-
-  .admin-list {
-    display: grid;
-    gap: 16px;
-  }
-
-  .admin-card {
-    display: grid;
-    gap: 12px;
-  }
-
-  .admin-actions-row {
-    margin-top: 0;
-  }
-
-  .admin-comments-panel {
-    margin-top: 0;
-  }
-
   .comments-panel {
     margin-top: 14px;
     padding: 14px;
@@ -244,12 +156,6 @@
     font: inherit;
     resize: vertical;
   }
-
-  .hero-card {
-    display: grid;
-    gap: 28px;
-  }
-
   .eyebrow {
     display: inline-flex;
     align-items: center;
@@ -260,68 +166,9 @@
     font-weight: 700;
     color: var(--muted);
   }
-
-  .hero-card h2 {
-    margin-top: 12px;
-    font-size: clamp(2rem, 4vw, 4rem);
-    color: var(--text-h);
-  }
-
-  .hero-text {
-    margin-top: 12px;
-    max-width: 56ch;
-    font-size: 1.05rem;
-    color: var(--text);
-  }
-
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
-  }
-
-  .stats-grid article {
-    padding: 18px;
-    border-radius: 20px;
-    background: rgba(15, 23, 42, 0.04);
-    border: 1px solid rgba(15, 23, 42, 0.06);
-  }
-
-  .stats-grid span {
-    display: block;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    color: var(--muted);
-  }
-
-  .stats-grid strong {
-    display: block;
-    margin-top: 10px;
-    font-size: 1.35rem;
-    color: var(--text-h);
-  }
-
-  .loading-state {
-    color: var(--text-h);
-  }
-
-  @media (max-width: 860px) {
-    .auth-panel {
-      grid-template-columns: 1fr;
-    }
-
-  }
-
   @media (max-width: 640px) {
     .screen {
       padding: 18px;
-    }
-
-    .auth-copy,
-    .auth-widget,
-    .hero-card {
-      padding: 24px;
     }
 
     .video-meta {
