@@ -227,8 +227,9 @@ the proxy in front is not a problem.
 - [x] Frontend subscribes and updates status without a reload
 - [x] Keep HTTP heartbeat and progress endpoints as the fallback path
 - [x] Document the start command
-- [ ] Worker connects and sends progress over the socket, replacing its
-      HTTP heartbeat
+- [x] Worker connects and sends progress over the socket, with HTTP retained
+      as the fallback
+- [x] Shorten the stale grace period now that death is visible sooner
 
 daphne rather than uvicorn: it is Channels' own server, it provides the ASGI
 runserver used locally, and the test utilities import it, so one dependency
@@ -252,6 +253,45 @@ That live test caught a real bug. The first version published from inside
 complete_job *before* the tag merge and the save, so browsers were told a
 finished video had no tags. Every other call site already saved first. There is
 now a test pinning that what gets pushed is what was saved.
+
+### 3b — the worker's heartbeat — DONE
+
+`/ws/worker/` is a second consumer rather than a mode of the first, because it
+inverts both of the browser stream's rules: it is authenticated and it accepts
+writes. Separate endpoints mean no misconfiguration can let a browser reach it.
+
+Auth is the same bearer token the HTTP worker API uses, read from the
+Authorization header. Browsers cannot set headers on a WebSocket; the desktop
+worker is a native client that can, so the token stays out of the URL and
+therefore out of access logs and proxy history. A rejected connection closes
+with 4401 and the worker latches onto HTTP rather than retrying a socket that
+will keep refusing it.
+
+Both transports now go through one `apply_worker_heartbeat`, so they cannot
+drift on what a heartbeat means -- including the scoping that stops a late
+heartbeat reverting a finished job to "Processing: 100% (complete)". Which
+transport delivered it is deliberately not recorded: a worker failing over from
+socket to HTTP mid-job should look continuously alive, not briefly dead.
+
+The worker waits for an ack rather than trusting the write. A socket can be
+open while nothing reads it, and a heartbeat silently going nowhere is exactly
+the failure that once hid the backend rejecting every worker POST.
+
+**The stale window drops from five minutes to two**, and three places that
+disagreed -- two minutes in `claim_job` and `reset_stale_jobs`, five in
+`_is_stale_processing` -- now share one constant. It does not go to zero. A
+dropped connection is not a dead worker: one on a flaky network is still
+decoding frames, and freeing its job the moment the socket closed would hand
+that video to a second worker. Twelve missed heartbeats is the price of not
+doing the work twice. A clean shutdown closes the socket, so an ordinary stop
+marks the worker offline immediately rather than waiting the window out.
+
+Verified against a real daphne server twice over: a Python client for the
+server side (bad and missing tokens refused, three beats acked, each one
+reaching a watching browser, worker marked offline on disconnect with
+last_seen_at left alone), and the actual C# `HeartbeatChannel` for the client
+side, which connected with its header, delivered, rejected a bad token, and
+latched to HTTP.
 
 ---
 
