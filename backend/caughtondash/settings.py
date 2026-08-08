@@ -31,6 +31,10 @@ SECRET_KEY = get_secret_key(DEBUG or RUNNING_TESTS)
 ALLOWED_HOSTS = get_allowed_hosts(DEBUG)
 
 INSTALLED_APPS = [
+    # daphne must precede staticfiles: it replaces runserver with an ASGI one,
+    # so WebSockets work locally without a separate server.
+    'daphne',
+    'channels',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -175,6 +179,17 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.getenv('CORS_ALLOWED_ORIGINS', _default_cors_origins).split(',')
     if origin.strip()
 ]
+
+# WebSocket delivery of analysis state.
+#
+# InMemoryChannelLayer works because this runs as a single process: Render's
+# free tier is one instance and uvicorn defaults to one worker. It breaks
+# silently across processes, so scaling past one worker means moving to Redis.
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
 
 # Clerk server-side secret, used by the sync_profiles_from_clerk management command.
 # Read through settings (not os.getenv directly) so tests can override it.

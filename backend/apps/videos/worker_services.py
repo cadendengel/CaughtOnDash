@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
+from apps.videos.consumers import publish_analysis_state
 from apps.videos.models import AnalysisRun, Video, Worker
 from apps.videos.tagging import normalize_video_tags
 
@@ -245,6 +246,8 @@ def claim_job(job_id: uuid.UUID, worker_id: str, worker_name: str) -> dict:
         run.worker_name = worker_name
         run.save()
 
+    publish_analysis_state(job)
+
     # Update worker status
     update_worker_heartbeat(worker_id, 'processing', job_id)
     
@@ -276,7 +279,9 @@ def update_job_progress(job_id: uuid.UUID, worker_id: str, stage: str, progress:
     job.analysis_progress = progress
     job.worker_last_seen_at = timezone.now()
     job.save()
-    
+
+    publish_analysis_state(job)
+
     return {'success': True}
 
 
@@ -307,6 +312,7 @@ def complete_job(job_id: uuid.UUID, worker_id: str, summary: str, tags: list, ev
     job.ai_events = events or []
     job.ai_metadata = metadata or {}
 
+
     _finish_run(
         job_id, 'complete',
         summary=summary, tags=tags or [], events=events or [], metadata=metadata or {})
@@ -326,6 +332,10 @@ def complete_job(job_id: uuid.UUID, worker_id: str, summary: str, tags: list, ev
         job.duration_seconds = duration
 
     job.save()
+
+    # After the save, so the push carries the merged tags and the final
+    # duration rather than the state part-way through this function.
+    publish_analysis_state(job)
     
     # Update worker to idle
     update_worker_heartbeat(worker_id, 'idle')
@@ -360,6 +370,8 @@ def fail_job(job_id: uuid.UUID, worker_id: str, error: str, stage: str | None = 
     
     job.save()
     
+    publish_analysis_state(job)
+
     _finish_run(job_id, 'failed', error=error)
 
     # Update worker to error state
@@ -475,6 +487,8 @@ def decide_approval(video_id: uuid.UUID, approve: bool, decided_by: str) -> dict
     if not approve:
         run.finished_at = now
     run.save()
+
+    publish_analysis_state(video)
 
     return {
         'success': True,

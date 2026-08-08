@@ -59,6 +59,26 @@ python manage.py test apps.videos
 python manage.py check
 ```
 
+## Serving
+
+The backend must be served over **ASGI**, not WSGI, or WebSockets will not
+connect. Live analysis status depends on it.
+
+```
+daphne -b 0.0.0.0 -p $PORT caughtondash.asgi:application
+```
+
+On Render this is the service's start command, set in the dashboard rather than
+in this repo. Replacing gunicorn with the above is the change; leaving gunicorn
+in place keeps HTTP working and silently disables live updates, which the
+frontend treats as "no push" rather than an error.
+
+**Single process only.** The channel layer is in-memory, so it works because
+one instance runs one worker. Two workers and the layer stops carrying messages
+between them, with no error -- browsers connected to one process simply never
+hear about changes made in the other. Scaling past one worker means moving
+CHANNEL_LAYERS to Redis first.
+
 ## Deployment Notes
 
 - Use the Supabase Session Pooler URL for `DATABASE_URL`.
