@@ -41,6 +41,24 @@ const CARD = 'rounded-3xl border border-ink/10 bg-white/[0.86] shadow-card'
 const AUTHOR_NAME = 'font-bold text-ink'
 const AUTHOR_HANDLE = 'text-[0.8rem] font-medium tracking-[0.015em] text-muted'
 
+// Tag pills. The base is shared; the variant carries the source, which is the
+// only thing that differs and the thing a reader actually needs to tell apart.
+const TAG_PILL = 'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ' +
+  'text-[0.76rem] font-bold tracking-[0.01em]'
+const TAG_VARIANT = {
+  user: 'border-blue-700/20 bg-blue-500/10 text-brand',
+  admin: 'border-red-700/20 bg-red-600/10 text-bad',
+  ai: 'border-green-800/20 bg-green-500/10 text-good',
+  toggle: 'cursor-pointer border-ink/10 bg-ink/5 text-ink',
+}
+
+// The player. aspect-video plus a max height keeps a portrait clip from
+// filling the screen, and object-contain stops it being cropped to fit.
+const VIDEO = 'mt-3.5 aspect-video max-h-[72vh] w-full rounded-[20px] bg-black ' +
+  'object-contain shadow-[0_14px_34px_rgba(15,23,42,0.12)]'
+const VIDEO_PLACEHOLDER = 'mt-3.5 grid min-h-[360px] place-items-center rounded-[20px] ' +
+  'bg-gradient-to-br from-ink/90 to-blue-700/80 font-semibold text-white'
+
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const { getToken } = useAuth()
@@ -288,14 +306,14 @@ function App() {
 
   const getTagColorClass = (source) => {
     if (source === 'admin') {
-      return 'tag-pill--admin'
+      return TAG_VARIANT.admin
     }
 
     if (source === 'ai') {
-      return 'tag-pill--ai'
+      return TAG_VARIANT.ai
     }
 
-    return 'tag-pill--user'
+    return TAG_VARIANT.user
   }
 
   const getAnalysisStatusColor = (status) => {
@@ -966,18 +984,18 @@ function App() {
       <div className={editable ? 'tag-strip tag-strip--editable' : 'tag-strip'}>
         {visibleTags.length > 0 ? (
           visibleTags.map((tag, index) => (
-            <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+            <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
               {tag.text}
             </span>
           ))
         ) : editable ? (
-          <span className="tag-pill tag-pill--toggle">No tags yet</span>
+          <span className={`${TAG_PILL} ${TAG_VARIANT.toggle}`}>No tags yet</span>
         ) : null}
 
         {showToggle ? (
           <button
             type="button"
-            className="tag-pill tag-pill--toggle"
+            className={`${TAG_PILL} ${TAG_VARIANT.toggle}`}
             onClick={() => toggleTagExpansion(videoId)}
             aria-expanded={isExpanded}
           >
@@ -1003,7 +1021,7 @@ function App() {
 
         <div className="tag-editor-chip-list">
           {currentTags.map((tag, index) => (
-            <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+            <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
               {tag.text}
               <button type="button" className="tag-chip-remove" onClick={() => removeAdminTag(videoId, index)}>
                 ×
@@ -1617,7 +1635,7 @@ function App() {
 
       {post.playback_url ? (
         <video
-          className="feed-video"
+          className={VIDEO}
           controls
           playsInline
           preload="metadata"
@@ -1628,7 +1646,7 @@ function App() {
           Your browser does not support the video tag.
         </video>
       ) : (
-        <div className="feed-video-placeholder">
+        <div className={VIDEO_PLACEHOLDER}>
           Video not available yet.
         </div>
       )}
@@ -2217,7 +2235,7 @@ function App() {
             Your browser does not support the video tag.
           </video>
         ) : (
-          <div className="feed-video-placeholder">Video not available yet.</div>
+          <div className={VIDEO_PLACEHOLDER}>Video not available yet.</div>
         )}
 
         {renderDashcamBadge(video)}
@@ -2361,7 +2379,7 @@ function App() {
             {uploadTags.length > 0 ? (
               <div className="tag-editor-chip-list">
                 {uploadTags.map((tag, index) => (
-                  <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+                  <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
                     {tag.text}
                     <button type="button" className="tag-chip-remove" onClick={() => removeUploadTag(index)}>
                       ×
