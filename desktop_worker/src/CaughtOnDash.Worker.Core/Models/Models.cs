@@ -71,6 +71,117 @@ namespace CaughtOnDash.Worker.Models
         public string AnalysisStatus { get; set; } = "pending";
     }
 
+    /// <summary>A row in the review or run queue.</summary>
+    /// <remarks>
+    /// Carries the context needed to decide whether to spend compute on a
+    /// video: how long it is, whether it has been analyzed before, and what
+    /// the last attempt concluded.
+    /// </remarks>
+    public class QueueEntry
+    {
+        [JsonProperty("video_id")]
+        public Guid VideoId { get; set; }
+
+        [JsonProperty("title")]
+        public string Title { get; set; } = "";
+
+        [JsonProperty("description")]
+        public string Description { get; set; } = "";
+
+        [JsonProperty("video_url")]
+        public string VideoUrl { get; set; } = "";
+
+        [JsonProperty("thumbnail_url")]
+        public string ThumbnailUrl { get; set; } = "";
+
+        [JsonProperty("duration_seconds")]
+        public int DurationSeconds { get; set; }
+
+        [JsonProperty("owner_clerk_user_id")]
+        public string OwnerClerkUserId { get; set; } = "";
+
+        [JsonProperty("created_at")]
+        public DateTime CreatedAt { get; set; }
+
+        [JsonProperty("approval_status")]
+        public string ApprovalStatus { get; set; } = "";
+
+        [JsonProperty("analysis_status")]
+        public string AnalysisStatus { get; set; } = "";
+
+        [JsonProperty("analysis_priority")]
+        public int AnalysisPriority { get; set; }
+
+        [JsonProperty("attempt_number")]
+        public int AttemptNumber { get; set; } = 1;
+
+        [JsonProperty("previous_attempts")]
+        public int PreviousAttempts { get; set; }
+
+        [JsonProperty("last_result")]
+        public QueueEntryLastResult? LastResult { get; set; }
+
+        /// <summary>Duration as m:ss, or a dash when it is not known yet.</summary>
+        public string DurationDisplay =>
+            DurationSeconds > 0
+                ? $"{DurationSeconds / 60}:{DurationSeconds % 60:00}"
+                : "--";
+
+        /// <summary>"1st look" / "3rd review", so a returning video stands out.</summary>
+        public string AttemptDisplay => PreviousAttempts == 0
+            ? "1st look"
+            : $"{Ordinal(AttemptNumber)} review";
+
+        /// <summary>What the previous run concluded, for the row's detail line.</summary>
+        public string HistoryDisplay
+        {
+            get
+            {
+                if (LastResult == null)
+                {
+                    return "Never analyzed";
+                }
+
+                if (LastResult.Status == "failed")
+                {
+                    return $"Attempt {LastResult.AttemptNumber} failed: {Truncate(LastResult.Error, 60)}";
+                }
+
+                return $"Attempt {LastResult.AttemptNumber}: {Truncate(LastResult.Summary, 80)}";
+            }
+        }
+
+        private static string Ordinal(int value) => value switch
+        {
+            1 => "1st",
+            2 => "2nd",
+            3 => "3rd",
+            _ => $"{value}th",
+        };
+
+        private static string Truncate(string text, int max) =>
+            string.IsNullOrEmpty(text) ? "" :
+            text.Length <= max ? text : text[..max].TrimEnd() + "...";
+    }
+
+    public class QueueEntryLastResult
+    {
+        [JsonProperty("attempt_number")]
+        public int AttemptNumber { get; set; }
+
+        [JsonProperty("status")]
+        public string Status { get; set; } = "";
+
+        [JsonProperty("summary")]
+        public string Summary { get; set; } = "";
+
+        [JsonProperty("tags")]
+        public List<string> Tags { get; set; } = new();
+
+        [JsonProperty("error")]
+        public string Error { get; set; } = "";
+    }
+
     public class AnalysisResult
     {
         public string Summary { get; set; } = "";

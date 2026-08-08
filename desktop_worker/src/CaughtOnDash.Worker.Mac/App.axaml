@@ -4,5 +4,7 @@
              RequestedThemeVariant="Light">
     <Application.Styles>
         <FluentTheme />
+        <!-- DataGrid brings its own styles and will render unstyled without this. -->
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
     </Application.Styles>
 </Application>
