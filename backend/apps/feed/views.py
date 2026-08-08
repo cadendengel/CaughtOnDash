@@ -89,6 +89,7 @@ def feed_view(request):
             'upload_url': video['upload_url'],
             'playback_url': video['playback_url'],
             'thumbnail_url': video['thumbnail_url'],
+
             'duration_seconds': video['duration_seconds'],
             'views': video.get('views', 0),
             # Tags go through the shared serializer so the feed emits the same

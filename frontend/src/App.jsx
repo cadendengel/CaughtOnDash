@@ -280,27 +280,69 @@ function App() {
     avatar_url: user?.imageUrl || '',
   }
 
-  const getVideoDurationSeconds = (file) => {
+  // Longest edge of the generated poster frame. Big enough for a feed card and
+  // a row in the worker's table, small enough not to slow the upload down.
+  const POSTER_MAX_EDGE = 640
+
+  /// Read duration and grab a poster frame in one decode.
+  //
+  // The browser is the only place a frame can be captured before analysis:
+  // approval happens first, so the analyzer cannot supply the thumbnail that
+  // the approval decision needs. Seeking a little way in avoids the black or
+  // blank frame most videos open on.
+  const readVideoPreview = (file) => {
     return new Promise((resolve) => {
       const videoElement = document.createElement('video')
       const objectUrl = URL.createObjectURL(file)
+      let settled = false
 
-      const cleanup = () => {
+      const finish = (duration, posterBlob) => {
+        if (settled) return
+        settled = true
         URL.revokeObjectURL(objectUrl)
+        resolve({ durationSeconds: duration, poster: posterBlob })
       }
 
-      videoElement.preload = 'metadata'
+      const capture = (duration) => {
+        try {
+          const width = videoElement.videoWidth
+          const height = videoElement.videoHeight
+          if (!width || !height) {
+            finish(duration, null)
+            return
+          }
+
+          const scale = Math.min(1, POSTER_MAX_EDGE / Math.max(width, height))
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(width * scale)
+          canvas.height = Math.round(height * scale)
+          canvas.getContext('2d').drawImage(videoElement, 0, 0, canvas.width, canvas.height)
+
+          // A failed capture must not fail the upload; the poster is a nicety.
+          canvas.toBlob((blob) => finish(duration, blob), 'image/jpeg', 0.8)
+        } catch {
+          finish(duration, null)
+        }
+      }
+
+      videoElement.preload = 'auto'
+      videoElement.muted = true
+      videoElement.playsInline = true
+
       videoElement.onloadedmetadata = () => {
         const duration = Number.isFinite(videoElement.duration)
           ? Math.max(0, Math.round(videoElement.duration))
           : 0
-        cleanup()
-        resolve(duration)
+
+        // A second in, or the midpoint of a very short clip.
+        videoElement.currentTime = Math.min(1, Math.max(0, videoElement.duration / 2 || 0))
+        videoElement.onseeked = () => capture(duration)
+
+        // Some containers never fire onseeked; do not hang the upload on it.
+        window.setTimeout(() => finish(duration, null), 4000)
       }
-      videoElement.onerror = () => {
-        cleanup()
-        resolve(0)
-      }
+
+      videoElement.onerror = () => finish(0, null)
       videoElement.src = objectUrl
     })
   }
@@ -1171,6 +1213,7 @@ function App() {
           controls
           playsInline
           preload="metadata"
+          poster={post.thumbnail_url || undefined}
           onPlay={() => markVideoViewed(post.id)}
         >
           <source src={post.playback_url} type="video/mp4" />
@@ -1461,7 +1504,7 @@ function App() {
 
     setUploading(true)
     try {
-      const durationSeconds = await getVideoDurationSeconds(uploadFile)
+      const { durationSeconds, poster } = await readVideoPreview(uploadFile)
 
       const bootstrapResponse = await authFetch(`${API_BASE}/api/videos/upload-url/`, {
         method: 'POST',
@@ -1488,6 +1531,11 @@ function App() {
       const formData = new FormData()
       formData.append('video_id', video.id)
       formData.append('file', uploadFile)
+      if (poster) {
+        // Sent with the video rather than as a second request: one round trip,
+        // and the thumbnail lands at the same moment the video becomes ready.
+        formData.append('thumbnail', poster, 'poster.jpg')
+      }
 
       const uploadResponse = await authFetch(`${API_BASE}/api/videos/upload/`, {
         method: 'POST',

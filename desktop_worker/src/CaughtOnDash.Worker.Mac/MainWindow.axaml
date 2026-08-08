@@ -6,6 +6,16 @@
         MinHeight="600" MinWidth="1100"
         Background="#F5F5F5"
         FontSize="12">
+
+    <Window.Styles>
+        <!-- Buttons shipped with the text against the edges; give them room. -->
+        <Style Selector="Button">
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="MinWidth" Value="70"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+    </Window.Styles>
+
     <Grid RowDefinitions="Auto,*,Auto">
 
         <!-- Header -->
