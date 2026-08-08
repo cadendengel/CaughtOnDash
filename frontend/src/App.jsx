@@ -2250,7 +2250,7 @@ const MODERATION_ACCENT = {
     }
 
     return (
-      <section className="page-content video-detail-page">
+      <section className="page-content video-detail-page mx-auto mt-6 max-w-[900px] px-4 max-[640px]:px-3">
         <div className="page-heading">
           <div className="grid gap-0.5 detail-author-block">
             <span className={AUTHOR_NAME}>{getDisplayName(video)}</span>
@@ -2264,7 +2264,7 @@ const MODERATION_ACCENT = {
         {renderAnalysisStatus(video)}
 
         {video.playback_url ? (
-          <video className="detail-video" controls preload="metadata">
+          <video className="detail-video w-full max-h-[560px] rounded-3xl bg-black shadow-card max-[640px]:max-h-[360px]" controls preload="metadata">
             <source src={video.playback_url} type="video/mp4" />
             Your browser does not support the video tag.
           </video>
@@ -2276,9 +2276,9 @@ const MODERATION_ACCENT = {
         {renderAiSummary(video)}
         {renderDetectionTimeline(video, seekDetailVideo)}
 
-        <p className="detail-description">{video.description}</p>
+        <p className="mt-4 text-[1.02rem] leading-[1.65] text-body">{video.description}</p>
 
-        <div className="video-meta detail-meta-row">
+        <div className="video-meta mt-3.5">
           <span>{video.duration_seconds ? `${video.duration_seconds}s` : 'Duration unavailable'}</span>
           <span>{video.views} views</span>
           <span>{video.likes_count || 0} likes</span>
@@ -2326,7 +2326,7 @@ const MODERATION_ACCENT = {
           <p className="analysis-request-error">{analysisRequestErrorByPostId[video.id]}</p>
         ) : null}
 
-        <div className="comments-panel detail-comments detail-comments-sheet">
+        <div className="comments-panel mt-3 max-h-[min(58vh,560px)] overflow-auto rounded-3xl bg-white/85 p-4 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-md max-[640px]:max-h-[52vh] max-[640px]:rounded-[20px] max-[640px]:p-3">
           {loadingCommentsByPostId[video.id] ? (
             <p className="comments-empty">Loading comments...</p>
           ) : null}
