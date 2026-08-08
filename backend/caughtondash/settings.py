@@ -106,6 +106,25 @@ if DATABASE_URL:
             conn_max_age=get_int('DB_CONN_MAX_AGE', 0),
         )
     }
+
+    # Settings required by Supabase's transaction pooler (port 6543).
+    #
+    # The session pooler on 5432 caps clients at 15 -- a hard ceiling shared by
+    # the web app, the desktop worker and every browser. Hitting it fails every
+    # request with EMAXCONNSESSION, and no amount of connection hygiene raises
+    # the limit. The transaction pooler has no such cap, but it hands each
+    # statement a different backend, so anything that assumes a persistent
+    # server-side session breaks:
+    #
+    # - prepared statements are cached per session, and psycopg reuses them by
+    #   name; on a different backend that name does not exist
+    # - server-side cursors live in the session that opened them
+    #
+    # Harmless on the session pooler too, so they are unconditional rather than
+    # keyed off the port -- one behaviour regardless of which URL is configured.
+    DATABASES['default'].setdefault('OPTIONS', {})
+    DATABASES['default']['OPTIONS']['prepare_threshold'] = None
+    DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
     # Enforce SSL for RDS (sslmode=require by default in DATABASE_URL)
     # If using AWS RDS Certificate Bundle for verify-full, add below:
     # DATABASES['default']['OPTIONS'] = {

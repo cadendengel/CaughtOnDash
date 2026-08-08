@@ -111,7 +111,14 @@ CHANNEL_LAYERS to Redis first.
 
 ## Deployment Notes
 
-- Use the Supabase Session Pooler URL for `DATABASE_URL`.
+- Use the Supabase **Transaction Pooler** URL for `DATABASE_URL` (port 6543).
+  The Session Pooler on 5432 caps clients at 15 — shared between the web app,
+  the desktop worker and every browser — and exceeding it fails every request
+  with `EMAXCONNSESSION`, including the `migrate` in the build command, which
+  makes the deploy that would fix it impossible. The transaction pooler has no
+  such cap. Prepared statements and server-side cursors are disabled in
+  settings to suit it; both are harmless on the session pooler, so the same
+  settings work with either URL.
 - Keep `SUPABASE_SERVICE_KEY` server-side only.
 - Set `CORS_ALLOWED_ORIGINS` to the deployed frontend origin.
 - Run `python manage.py migrate` on the production backend before serving traffic.
