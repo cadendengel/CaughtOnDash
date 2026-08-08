@@ -59,55 +59,69 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-html {
-  background: var(--bg);
-}
+/* The app's own base rules, layered.
+ *
+ * Tailwind v4 puts utilities in a real cascade layer, and unlayered CSS beats
+ * layered CSS regardless of specificity. Left unlayered, these element rules
+ * silently defeat utilities: `button { font: inherit }` overrode font-semibold
+ * on every button, and `h1,h2,h3,p { margin: 0 }` would override every margin
+ * utility on a heading. Nothing errors -- the class is present in the DOM and
+ * simply does nothing, which is close to impossible to spot by reading.
+ *
+ * Inside @layer base they behave as intended: they still set the defaults, and
+ * a utility still wins when one is applied.
+ */
+@layer base {
+  html {
+    background: var(--bg);
+  }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100svh;
-  background: var(--bg);
-}
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100svh;
+    background: var(--bg);
+  }
 
-* {
-  box-sizing: border-box;
-}
+  * {
+    box-sizing: border-box;
+  }
 
-img,
-svg,
-video,
-canvas {
-  display: block;
-  max-width: 100%;
-}
+  img,
+  svg,
+  video,
+  canvas {
+    display: block;
+    max-width: 100%;
+  }
 
-#root {
-  min-height: 100svh;
-}
+  #root {
+    min-height: 100svh;
+  }
 
-h1,
-h2,
-h3,
-p {
-  margin: 0;
-}
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
 
-code {
-  font-family: var(--mono);
-  background: var(--code-bg);
-  border-radius: 6px;
-  padding: 0.2rem 0.45rem;
-  color: var(--text-h);
-}
+  code {
+    font-family: var(--mono);
+    background: var(--code-bg);
+    border-radius: 6px;
+    padding: 0.2rem 0.45rem;
+    color: var(--text-h);
+  }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
 
-a {
-  color: inherit;
+  a {
+    color: inherit;
+  }
 }

@@ -59,6 +59,27 @@ const VIDEO = 'mt-3.5 aspect-video max-h-[72vh] w-full rounded-[20px] bg-black '
 const VIDEO_PLACEHOLDER = 'mt-3.5 grid min-h-[360px] place-items-center rounded-[20px] ' +
   'bg-gradient-to-br from-ink/90 to-blue-700/80 font-semibold text-white'
 
+// Buttons. The most reused classes in the app -- 17 call sites for the ghost
+// variant alone -- so they are constants rather than repeated strings.
+const GHOST_BTN = 'cursor-pointer rounded-full border border-ink/15 bg-white/80 px-3.5 py-2 ' +
+  'font-semibold text-ink transition-[background,transform,border-color] duration-200 ' +
+  'hover:-translate-y-px hover:bg-white/95 ' +
+  'disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60'
+
+// The lifted shadow previously applied only inside the feed and detail action
+// rows, so an active Like in a comment thread looked flatter than the same
+// control elsewhere. Unified deliberately rather than reproducing the
+// inconsistency.
+const GHOST_BTN_ACTIVE = 'border-transparent bg-gradient-to-br from-ink to-brand text-white ' +
+  'shadow-[0_8px_20px_rgba(29,78,216,0.24)]'
+
+const DANGER_BTN = 'cursor-pointer rounded-full border border-red-700/20 bg-red-600/10 px-3.5 py-2 ' +
+  'font-bold text-bad transition-[background,transform,border-color] duration-200 ' +
+  'hover:-translate-y-px hover:bg-red-600/15 ' +
+  'disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60'
+
+const ACTION_ROW = 'mt-3 flex flex-wrap items-center gap-2.5 max-[640px]:gap-2'
+
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const { getToken } = useAuth()
@@ -1014,7 +1035,7 @@ function App() {
       <div className="tag-editor">
         <div className="tag-editor-head">
           <span className="tag-editor-label">Edit tags</span>
-          <button type="button" className="ghost-btn" onClick={() => toggleTagExpansion(videoId)}>
+          <button type="button" className={GHOST_BTN} onClick={() => toggleTagExpansion(videoId)}>
             Collapse
           </button>
         </div>
@@ -1651,10 +1672,10 @@ function App() {
         </div>
       )}
 
-      <div className="post-actions feed-actions-row">
+      <div className={ACTION_ROW}>
         <button
           type="button"
-          className={post.liked ? 'ghost-btn active' : 'ghost-btn'}
+          className={post.liked ? `${GHOST_BTN} ${GHOST_BTN_ACTIVE}` : GHOST_BTN}
           onClick={() => toggleLike(post.id)}
           disabled={likeLoadingByPostId[post.id]}
           aria-pressed={Boolean(post.liked)}
@@ -1663,18 +1684,18 @@ function App() {
         </button>
         <button
           type="button"
-          className="ghost-btn"
+          className={GHOST_BTN}
           onClick={() => openDetail(post.id)}
         >
           Comment · {post.comments_count || 0}
         </button>
-        <button type="button" className="ghost-btn" onClick={() => shareVideo(post)}>
+        <button type="button" className={GHOST_BTN} onClick={() => shareVideo(post)}>
           {shareStatusByPostId[post.id] === 'shared' ? 'Copied' : 'Share'}
         </button>
         {canRequestAnalysis(post) ? (
           <button
             type="button"
-            className="ghost-btn"
+            className={GHOST_BTN}
             onClick={() => requestAnalysis(post.id)}
             disabled={analysisRequestLoadingByPostId[post.id]}
           >
@@ -1685,7 +1706,7 @@ function App() {
           <>
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               onClick={() => decideApproval(post.id, true)}
               disabled={analysisRequestLoadingByPostId[post.id]}
             >
@@ -1693,7 +1714,7 @@ function App() {
             </button>
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               onClick={() => decideApproval(post.id, false)}
               disabled={analysisRequestLoadingByPostId[post.id]}
             >
@@ -1728,7 +1749,7 @@ function App() {
         <div className="comment-actions">
           <button
             type="button"
-            className={comment.liked ? 'ghost-btn active' : 'ghost-btn'}
+            className={comment.liked ? `${GHOST_BTN} ${GHOST_BTN_ACTIVE}` : GHOST_BTN}
             onClick={() => toggleCommentLike(videoId, comment.id)}
             disabled={commentLikeLoadingByCommentId[comment.id]}
             aria-pressed={Boolean(comment.liked)}
@@ -1739,7 +1760,7 @@ function App() {
           {!isReply ? (
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               onClick={() => openReplyComposer(comment.id, handle)}
             >
               Reply
@@ -1747,7 +1768,7 @@ function App() {
           ) : null}
 
           {showAdminActions && isAdmin ? (
-            <button type="button" className="danger-btn" onClick={() => deleteAdminComment(videoId, comment.id)}>
+            <button type="button" className={DANGER_BTN} onClick={() => deleteAdminComment(videoId, comment.id)}>
               Delete
             </button>
           ) : null}
@@ -1834,7 +1855,7 @@ function App() {
       </div>
       <div className="moderation-row-actions">
         {entry.video_url ? (
-          <a className="ghost-btn" href={entry.video_url} target="_blank" rel="noreferrer">
+          <a className={GHOST_BTN} href={entry.video_url} target="_blank" rel="noreferrer">
             Preview
           </a>
         ) : null}
@@ -1842,7 +1863,7 @@ function App() {
           <>
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               disabled={analysisRequestLoadingByPostId[entry.video_id]}
               onClick={async () => {
                 await decideApproval(entry.video_id, true)
@@ -1853,7 +1874,7 @@ function App() {
             </button>
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               disabled={analysisRequestLoadingByPostId[entry.video_id]}
               onClick={async () => {
                 await decideApproval(entry.video_id, false)
@@ -1866,7 +1887,7 @@ function App() {
         ) : (
           <button
             type="button"
-            className="ghost-btn"
+            className={GHOST_BTN}
             disabled={analysisRequestLoadingByPostId[entry.video_id]}
             onClick={() => retryAnalysis(entry.video_id)}
           >
@@ -1976,8 +1997,8 @@ function App() {
                 <span>{post.comments_count || 0} comments</span>
               </div>
 
-              <div className="post-actions admin-actions-row">
-                <button type="button" className="danger-btn" onClick={() => deleteAdminVideo(post.id)}>
+              <div className={`${ACTION_ROW} admin-actions-row`}>
+                <button type="button" className={DANGER_BTN} onClick={() => deleteAdminVideo(post.id)}>
                   Delete post
                 </button>
               </div>
@@ -2036,7 +2057,7 @@ function App() {
           </button>
           <button
             type="button"
-            className="ghost-btn"
+            className={GHOST_BTN}
             onClick={() => {
               setSearchQuery('')
               setSearchResults([])
@@ -2252,14 +2273,14 @@ function App() {
           <span>{video.shares_count || 0} shares</span>
         </div>
 
-        <div className="post-actions detail-actions-row">
+        <div className={ACTION_ROW}>
           <button type="button" className="secondary-btn" onClick={closeDetail}>
             Back to Feed
           </button>
           {canRequestAnalysis(video) ? (
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               onClick={() => requestAnalysis(video.id)}
               disabled={analysisRequestLoadingByPostId[video.id]}
             >
@@ -2270,7 +2291,7 @@ function App() {
             <>
               <button
                 type="button"
-                className="ghost-btn"
+                className={GHOST_BTN}
                 onClick={() => decideApproval(video.id, true)}
                 disabled={analysisRequestLoadingByPostId[video.id]}
               >
@@ -2278,7 +2299,7 @@ function App() {
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className={GHOST_BTN}
                 onClick={() => decideApproval(video.id, false)}
                 disabled={analysisRequestLoadingByPostId[video.id]}
               >
