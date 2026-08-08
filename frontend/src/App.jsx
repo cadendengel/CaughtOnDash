@@ -2073,30 +2073,31 @@ const MODERATION_ACCENT = {
   }
 
   const renderSearchPage = () => (
-    <section className="page-content search-page">
+    <section className="page-content gap-[18px]">
       <div className="page-heading">
         <h2>Search</h2>
         <p>Find clips by title, description, or tags.</p>
       </div>
 
-      <form className="search-panel" onSubmit={handleSearchSubmit}>
-        <label className="search-input-group">
+      <form className="grid gap-3.5 rounded-[22px] border border-ink/10 bg-white/85 p-[18px] shadow-card" onSubmit={handleSearchSubmit}>
+        <label className="grid gap-2 font-semibold text-ink [&>span]:text-[0.94rem]">
           <span>Search videos</span>
-          <div className="search-input-row">
+          <div className="flex flex-wrap gap-2.5">
             <input
               type="text"
+              className="min-w-0 flex-[1_1_280px] rounded-2xl border border-ink/15 bg-white/95 px-3.5 py-3 font-normal text-ink"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="freeway merge, near miss, brake check..."
             />
-            <button type="submit" className="primary-btn" disabled={searchLoading}>
+            <button type="submit" className="primary-btn mt-0" disabled={searchLoading}>
               {searchLoading ? 'Searching...' : 'Search'}
             </button>
           </div>
         </label>
 
-        <div className="search-panel-actions">
-          <button type="button" className="secondary-btn" onClick={() => loadSearchResults(searchQuery)} disabled={searchLoading}>
+        <div className="flex flex-wrap gap-2.5">
+          <button type="button" className="secondary-btn mt-0" onClick={() => loadSearchResults(searchQuery)} disabled={searchLoading}>
             Refresh results
           </button>
           <button
@@ -2117,14 +2118,14 @@ const MODERATION_ACCENT = {
       {searchError ? <p className="form-message error">{searchError}</p> : null}
 
       {searchHasSearched && !searchLoading && !searchError ? (
-        <div className="search-summary">
+        <div className="flex flex-wrap items-center gap-2 text-[0.94rem] text-muted">
           <span>{searchResults.length} result{searchResults.length === 1 ? '' : 's'}</span>
           {searchQuery.trim() ? <span>for “{searchQuery.trim()}”</span> : null}
         </div>
       ) : null}
 
       {!searchHasSearched && !searchLoading ? (
-        <div className={`${CARD} empty-feed-card search-empty-card p-[26px]`}>
+        <div className={`${CARD} empty-feed-card mt-0.5 p-[26px]`}>
           <p className="eyebrow">Start here</p>
           <h3>Search the video catalog</h3>
           <p>
@@ -2136,7 +2137,7 @@ const MODERATION_ACCENT = {
       {searchLoading ? <p className="comments-empty">Searching…</p> : null}
 
       {searchHasSearched && !searchLoading && searchResults.length === 0 && !searchError ? (
-        <div className={`${CARD} empty-feed-card search-empty-card p-[26px]`}>
+        <div className={`${CARD} empty-feed-card mt-0.5 p-[26px]`}>
           <p className="eyebrow">No matches</p>
           <h3>Nothing matched your search</h3>
           <p>Try fewer words or search by a tag name instead.</p>
