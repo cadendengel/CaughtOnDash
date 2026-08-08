@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { SignIn, UserButton, useAuth, useUser } from '@clerk/react'
-import './App.css'
-import './VideoDetail.css'
 
 // Re-analysis is only offered on your own videos, and only from a state the
 // backend will accept, so the button mirrors its rules rather than inviting a
@@ -130,6 +128,33 @@ const TAG_FIELD_LABEL = 'text-[0.82rem] font-bold uppercase tracking-[0.16em] te
 const TAG_ROW = 'flex flex-wrap items-center gap-2.5'
 const TAG_INPUT = 'min-w-0 flex-[1_1_240px] rounded-2xl border border-ink/15 bg-white/90 ' +
   'px-3 py-2.5 font-normal text-ink'
+
+const SCREEN = 'grid min-h-svh place-items-center p-8 max-[640px]:p-[18px]'
+const PAGE_CONTENT = 'grid w-[min(1040px,100%)] gap-4'
+const PAGE_HEADING = '[&>h2]:font-heading [&>h2]:text-[clamp(1.8rem,3vw,2.8rem)] ' +
+  '[&>h2]:tracking-[-0.03em] [&>h2]:text-ink [&>p]:mt-1.5 [&>p]:text-muted'
+const EYEBROW = 'inline-flex items-center gap-2 text-[0.72rem] font-bold uppercase ' +
+  'tracking-[0.24em] text-muted'
+
+// Empty-state and upload cards style their own heading and copy.
+const CARD_COPY = '[&>h3]:mt-2.5 [&>h3]:font-heading [&>h3]:text-2xl [&>h3]:text-ink ' +
+  '[&>p]:mt-2.5 [&>p]:max-w-[60ch] [&>p]:text-body'
+
+const VIDEO_META = 'mt-3 flex flex-wrap gap-2.5 max-[640px]:gap-2 ' +
+  '[&>span]:rounded-full [&>span]:bg-ink/[0.06] [&>span]:px-2.5 [&>span]:py-[5px] ' +
+  '[&>span]:text-[0.86rem] [&>span]:text-ink'
+
+const BTN_BASE = 'mt-4 cursor-pointer rounded-full px-4 py-[9px] font-semibold'
+const PRIMARY_BTN = BTN_BASE + ' border-none bg-gradient-to-br from-ink to-brand text-white'
+const SECONDARY_BTN = BTN_BASE + ' border border-ink/15 bg-white/70 text-ink'
+
+const COMMENT_INPUT = 'w-full resize-y rounded-2xl border border-ink/15 bg-white/90 ' +
+  'px-3.5 py-3 font-normal text-ink'
+
+const COMMENTS_PANEL = 'grid gap-3 border-t border-ink/[0.08] bg-ink/[0.02]'
+const COMMENTS_EMPTY = 'text-[0.82rem] text-muted'
+const COMMENT_FORM = 'grid gap-2.5'
+const ANALYSIS_ERROR = 'mt-2 text-[0.85rem] text-bad'
 
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
@@ -1121,13 +1146,13 @@ function App() {
             }}
             placeholder="Add an admin tag"
           />
-          <button type="button" className="secondary-btn" onClick={() => addAdminTag(videoId)}>
+          <button type="button" className={SECONDARY_BTN} onClick={() => addAdminTag(videoId)}>
             Add
           </button>
         </div>
 
         <div className={`${FORM_ACTIONS} mt-0`}>
-          <button type="button" className="primary-btn" onClick={() => saveAdminTags(videoId)} disabled={adminTagSavingByPostId[videoId]}>
+          <button type="button" className={PRIMARY_BTN} onClick={() => saveAdminTags(videoId)} disabled={adminTagSavingByPostId[videoId]}>
             {adminTagSavingByPostId[videoId] ? 'Saving...' : 'Save tags'}
           </button>
         </div>
@@ -1666,7 +1691,7 @@ function App() {
 
   if (!isLoaded) {
     return (
-      <main className="screen text-ink">
+      <main className={`${SCREEN} text-ink`}>
         <p>Loading authentication…</p>
       </main>
     )
@@ -1674,10 +1699,10 @@ function App() {
 
   if (!isSignedIn) {
     return (
-      <main className="screen auth-screen">
+      <main className={`${SCREEN} app-canvas`}>
         <section className="grid w-[min(1040px,100%)] grid-cols-2 overflow-hidden rounded-[28px] border border-ink/10 bg-white/80 shadow-card backdrop-blur-lg max-[860px]:grid-cols-1">
           <div className="grid content-center gap-4 bg-[linear-gradient(145deg,rgba(15,23,42,0.94),rgba(30,64,175,0.88))] p-8 text-ink max-[640px]:p-6 [&>h1]:font-heading [&>h1]:text-[clamp(2.2rem,4vw,4.4rem)] [&>h1]:leading-none [&>h1]:tracking-[-0.04em] [&>h1]:text-white [&>p]:max-w-[34rem] [&>p]:text-white/85">
-            <span className="eyebrow">CaughtOnDash</span>
+            <span className={EYEBROW}>CaughtOnDash</span>
             <h1>Sign in to continue</h1>
             <p>
               Use your Clerk account to get into the dashboard and continue
@@ -1685,7 +1710,7 @@ function App() {
             </p>
           </div>
 
-          <div className="auth-widget grid place-items-center bg-white/90 p-8 max-[640px]:p-6" aria-label="Sign in form">
+          <div className="grid place-items-center bg-white/90 p-8 max-[640px]:p-6 [&_.cl-rootBox]:w-full [&_.cl-rootBox]:max-w-[420px] [&_.cl-card]:w-full [&_.cl-card]:max-w-[420px]" aria-label="Sign in form">
             <SignIn routing="virtual" />
           </div>
         </section>
@@ -1781,7 +1806,7 @@ function App() {
       </div>
 
       {analysisRequestErrorByPostId[post.id] ? (
-        <p className="analysis-request-error">{analysisRequestErrorByPostId[post.id]}</p>
+        <p className={ANALYSIS_ERROR}>{analysisRequestErrorByPostId[post.id]}</p>
       ) : null}
     </article>
   )
@@ -1840,9 +1865,9 @@ function App() {
         </div>
 
         {!isReply && replyComposerOpenByCommentId[comment.id] ? (
-          <form className="comment-form reply-form" onSubmit={(event) => handleReplySubmit(videoId, comment, event)}>
+          <form className={`${COMMENT_FORM} mt-2.5`} onSubmit={(event) => handleReplySubmit(videoId, comment, event)}>
             <textarea
-              className="comment-input"
+              className={COMMENT_INPUT}
               value={replyDraftsByCommentId[comment.id] || ''}
               onChange={(event) =>
                 setReplyDraftsByCommentId((current) => ({
@@ -1853,11 +1878,11 @@ function App() {
               rows="2"
               placeholder={`Reply to @${handle}`}
             />
-            <div className={`${FORM_ACTIONS} reply-actions-row`}>
-              <button type="submit" className="primary-btn" disabled={replyLoadingByCommentId[comment.id]}>
+            <div className="mt-0 flex flex-wrap gap-2">
+              <button type="submit" className={`${PRIMARY_BTN} mt-0 justify-self-start`} disabled={replyLoadingByCommentId[comment.id]}>
                 {replyLoadingByCommentId[comment.id] ? 'Posting...' : 'Reply'}
               </button>
-              <button type="button" className="secondary-btn" onClick={() => closeReplyComposer(comment.id)}>
+              <button type="button" className={SECONDARY_BTN} onClick={() => closeReplyComposer(comment.id)}>
                 Cancel
               </button>
             </div>
@@ -1865,7 +1890,7 @@ function App() {
         ) : null}
 
         {!isReply && Array.isArray(comment.replies) && comment.replies.length > 0 ? (
-          <div className="comment-replies">
+          <div className="mt-3 grid gap-2.5">
             {comment.replies.map((reply) => renderCommentNode(reply, videoId, depth + 1, showAdminActions))}
           </div>
         ) : null}
@@ -2029,8 +2054,8 @@ const MODERATION_ACCENT = {
   }
 
   const renderAdminPage = () => (
-    <section className="page-content admin-page">
-      <div className="page-heading">
+    <section className={PAGE_CONTENT}>
+      <div className={PAGE_HEADING}>
         <h2>Admin</h2>
         <p>Admin-only moderation tools for posts, comments, and replies.</p>
       </div>
@@ -2038,8 +2063,8 @@ const MODERATION_ACCENT = {
       {renderModerationPanel()}
 
       {posts.length === 0 ? (
-        <div className={`${CARD} empty-feed-card p-[26px]`}>
-          <p className="eyebrow">Nothing to moderate</p>
+        <div className={`${CARD} p-[26px] ${CARD_COPY}`}>
+          <p className={EYEBROW}>Nothing to moderate</p>
           <h3>No posts available</h3>
           <p>When content appears, it will show here with delete controls.</p>
         </div>
@@ -2063,7 +2088,7 @@ const MODERATION_ACCENT = {
 
               {renderAnalysisStatus(post)}
 
-              <div className="video-meta">
+              <div className={VIDEO_META}>
                 <span>{post.duration_seconds ? `${post.duration_seconds}s` : 'Duration unavailable'}</span>
                 <span>{post.views || 0} views</span>
                 <span>{post.likes_count || 0} likes</span>
@@ -2076,16 +2101,16 @@ const MODERATION_ACCENT = {
                 </button>
               </div>
 
-              <div className="comments-panel mt-0">
+              <div className={`${COMMENTS_PANEL} mt-0 rounded-[18px] p-3.5 max-[640px]:p-3`}>
                 {loadingCommentsByPostId[post.id] ? (
-                  <p className="comments-empty">Loading comments...</p>
+                  <p className={COMMENTS_EMPTY}>Loading comments...</p>
                 ) : null}
 
                 {!loadingCommentsByPostId[post.id] && (commentsByPostId[post.id] || []).length === 0 ? (
-                  <p className="comments-empty">No comments yet.</p>
+                  <p className={COMMENTS_EMPTY}>No comments yet.</p>
                 ) : null}
 
-                <div className="comments-list">
+                <div className="grid gap-2.5">
                   {(commentsByPostId[post.id] || []).map((comment) => renderCommentNode(comment, post.id, 0, true))}
                 </div>
               </div>
@@ -2102,8 +2127,8 @@ const MODERATION_ACCENT = {
   }
 
   const renderSearchPage = () => (
-    <section className="page-content gap-[18px]">
-      <div className="page-heading">
+    <section className={`${PAGE_CONTENT} gap-[18px]`}>
+      <div className={PAGE_HEADING}>
         <h2>Search</h2>
         <p>Find clips by title, description, or tags.</p>
       </div>
@@ -2119,14 +2144,14 @@ const MODERATION_ACCENT = {
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="freeway merge, near miss, brake check..."
             />
-            <button type="submit" className="primary-btn mt-0" disabled={searchLoading}>
+            <button type="submit" className={`${PRIMARY_BTN} mt-0`} disabled={searchLoading}>
               {searchLoading ? 'Searching...' : 'Search'}
             </button>
           </div>
         </label>
 
         <div className="flex flex-wrap gap-2.5">
-          <button type="button" className="secondary-btn mt-0" onClick={() => loadSearchResults(searchQuery)} disabled={searchLoading}>
+          <button type="button" className={`${SECONDARY_BTN} mt-0`} onClick={() => loadSearchResults(searchQuery)} disabled={searchLoading}>
             Refresh results
           </button>
           <button
@@ -2154,8 +2179,8 @@ const MODERATION_ACCENT = {
       ) : null}
 
       {!searchHasSearched && !searchLoading ? (
-        <div className={`${CARD} empty-feed-card mt-0.5 p-[26px]`}>
-          <p className="eyebrow">Start here</p>
+        <div className={`${CARD} mt-0.5 p-[26px] ${CARD_COPY}`}>
+          <p className={EYEBROW}>Start here</p>
           <h3>Search the video catalog</h3>
           <p>
             Try a title, a common driving phrase, or a tag to find matching clips.
@@ -2163,17 +2188,17 @@ const MODERATION_ACCENT = {
         </div>
       ) : null}
 
-      {searchLoading ? <p className="comments-empty">Searching…</p> : null}
+      {searchLoading ? <p className={COMMENTS_EMPTY}>Searching…</p> : null}
 
       {searchHasSearched && !searchLoading && searchResults.length === 0 && !searchError ? (
-        <div className={`${CARD} empty-feed-card mt-0.5 p-[26px]`}>
-          <p className="eyebrow">No matches</p>
+        <div className={`${CARD} mt-0.5 p-[26px] ${CARD_COPY}`}>
+          <p className={EYEBROW}>No matches</p>
           <h3>Nothing matched your search</h3>
           <p>Try fewer words or search by a tag name instead.</p>
         </div>
       ) : null}
 
-      {searchResults.length > 0 ? <div className="feed-list">{searchResults.map(renderPostCard)}</div> : null}
+      {searchResults.length > 0 ? <div className="grid gap-3.5">{searchResults.map(renderPostCard)}</div> : null}
     </section>
   )
 
@@ -2253,15 +2278,15 @@ const MODERATION_ACCENT = {
   }
 
   const renderFeedPage = () => (
-    <section className="page-content">
-      <div className="page-heading">
+    <section className={PAGE_CONTENT}>
+      <div className={PAGE_HEADING}>
         <h2>Feed</h2>
         <p>Latest dashcam uploads and incidents from the community.</p>
       </div>
 
       {posts.length === 0 ? (
-        <div className={`${CARD} empty-feed-card p-[26px]`}>
-          <p className="eyebrow">No posts yet</p>
+        <div className={`${CARD} p-[26px] ${CARD_COPY}`}>
+          <p className={EYEBROW}>No posts yet</p>
           <h3>Your feed is empty</h3>
           <p>
             New dashcam videos will appear here once users start posting.
@@ -2269,14 +2294,14 @@ const MODERATION_ACCENT = {
           </p>
           <button
             type="button"
-            className="primary-btn"
+            className={PRIMARY_BTN}
             onClick={() => setActivePage('post-video')}
           >
             Go to Post Video
           </button>
         </div>
       ) : (
-        <div className="feed-list">{posts.map(renderPostCard)}</div>
+        <div className="grid gap-3.5">{posts.map(renderPostCard)}</div>
       )}
     </section>
   )
@@ -2285,8 +2310,8 @@ const MODERATION_ACCENT = {
     const video = currentVideo
     if (detailLoading) {
       return (
-        <section className="page-content">
-          <div className="page-heading">
+        <section className={PAGE_CONTENT}>
+          <div className={PAGE_HEADING}>
             <h2>Loading…</h2>
           </div>
           <p>Loading video details…</p>
@@ -2296,13 +2321,13 @@ const MODERATION_ACCENT = {
 
     if (!video) {
       return (
-        <section className="page-content">
-          <div className="page-heading">
+        <section className={PAGE_CONTENT}>
+          <div className={PAGE_HEADING}>
             <h2>Video not found</h2>
           </div>
           <p>The requested video could not be loaded.</p>
           <div className={FORM_ACTIONS}>
-            <button type="button" className="secondary-btn" onClick={() => setActivePage('feed')}>
+            <button type="button" className={SECONDARY_BTN} onClick={() => setActivePage('feed')}>
               Back to Feed
             </button>
           </div>
@@ -2311,9 +2336,9 @@ const MODERATION_ACCENT = {
     }
 
     return (
-      <section className="page-content video-detail-page mx-auto mt-6 max-w-[900px] px-4 max-[640px]:px-3">
-        <div className="page-heading">
-          <div className="grid gap-0.5 detail-author-block">
+      <section className={`${PAGE_CONTENT} video-detail-page mx-auto mt-6 max-w-[900px] px-4 max-[640px]:px-3`}>
+        <div className={PAGE_HEADING}>
+          <div className="grid gap-0.5 mb-1.5">
             <span className={AUTHOR_NAME}>{getDisplayName(video)}</span>
             <span className={AUTHOR_HANDLE}>@{getHandle(video)}</span>
           </div>
@@ -2339,7 +2364,7 @@ const MODERATION_ACCENT = {
 
         <p className="mt-4 text-[1.02rem] leading-[1.65] text-body">{video.description}</p>
 
-        <div className="video-meta mt-3.5">
+        <div className={`${VIDEO_META} mt-3.5`}>
           <span>{video.duration_seconds ? `${video.duration_seconds}s` : 'Duration unavailable'}</span>
           <span>{video.views} views</span>
           <span>{video.likes_count || 0} likes</span>
@@ -2348,7 +2373,7 @@ const MODERATION_ACCENT = {
         </div>
 
         <div className={ACTION_ROW}>
-          <button type="button" className="secondary-btn" onClick={closeDetail}>
+          <button type="button" className={SECONDARY_BTN} onClick={closeDetail}>
             Back to Feed
           </button>
           {canRequestAnalysis(video) ? (
@@ -2384,25 +2409,25 @@ const MODERATION_ACCENT = {
         </div>
 
         {analysisRequestErrorByPostId[video.id] ? (
-          <p className="analysis-request-error">{analysisRequestErrorByPostId[video.id]}</p>
+          <p className={ANALYSIS_ERROR}>{analysisRequestErrorByPostId[video.id]}</p>
         ) : null}
 
-        <div className="comments-panel mt-3 max-h-[min(58vh,560px)] overflow-auto rounded-3xl bg-white/85 p-4 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-md max-[640px]:max-h-[52vh] max-[640px]:rounded-[20px] max-[640px]:p-3">
+        <div className={`${COMMENTS_PANEL} mt-3 rounded-3xl p-4 max-h-[min(58vh,560px)] overflow-auto bg-white/85 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-md max-[640px]:max-h-[52vh] max-[640px]:rounded-[20px] max-[640px]:p-3`}>
           {loadingCommentsByPostId[video.id] ? (
-            <p className="comments-empty">Loading comments...</p>
+            <p className={`${COMMENTS_EMPTY} py-3 text-[#777]`}>Loading comments...</p>
           ) : null}
 
           {!loadingCommentsByPostId[video.id] && (commentsByPostId[video.id] || []).length === 0 ? (
-            <p className="comments-empty">No comments yet. Be the first to reply.</p>
+            <p className={`${COMMENTS_EMPTY} py-3 text-[#777]`}>No comments yet. Be the first to reply.</p>
           ) : null}
 
-          <div className="comments-list">
+          <div className="grid gap-2.5">
             {(commentsByPostId[video.id] || []).map((comment) => renderCommentNode(comment, video.id))}
           </div>
 
-          <form className="comment-form" onSubmit={(event) => handleCommentSubmit(video.id, event)}>
+          <form className={COMMENT_FORM} onSubmit={(event) => handleCommentSubmit(video.id, event)}>
             <textarea
-              className="comment-input"
+              className={COMMENT_INPUT}
               value={commentDraftsByPostId[video.id] || ''}
               onChange={(event) =>
                 setCommentDraftsByPostId((current) => ({
@@ -2413,7 +2438,7 @@ const MODERATION_ACCENT = {
               rows="3"
               placeholder="Add a comment..."
             />
-            <button type="submit" className="primary-btn" disabled={commentLoadingByPostId[video.id]}>
+            <button type="submit" className={PRIMARY_BTN} disabled={commentLoadingByPostId[video.id]}>
               {commentLoadingByPostId[video.id] ? 'Posting...' : 'Post comment'}
             </button>
           </form>
@@ -2423,13 +2448,13 @@ const MODERATION_ACCENT = {
   }
 
   const renderPostVideoPage = () => (
-    <section className="page-content">
-      <div className="page-heading">
+    <section className={PAGE_CONTENT}>
+      <div className={PAGE_HEADING}>
         <h2>Post Video</h2>
         <p>Upload a dashcam clip and add details for the feed.</p>
       </div>
 
-      <form className={`${CARD} post-video-card grid gap-4 p-[26px] ${UPLOAD_FIELDS}`} onSubmit={handleUploadSubmit}>
+      <form className={`${CARD} grid gap-4 p-[26px] ${UPLOAD_FIELDS}`} onSubmit={handleUploadSubmit}>
         <label>
           <span>Title</span>
           <input
@@ -2466,7 +2491,7 @@ const MODERATION_ACCENT = {
                 }}
                 placeholder="Add a tag and press Enter"
               />
-              <button type="button" className="secondary-btn" onClick={addUploadTag}>
+              <button type="button" className={SECONDARY_BTN} onClick={addUploadTag}>
                 Add
               </button>
             </div>
@@ -2498,10 +2523,10 @@ const MODERATION_ACCENT = {
         {uploadSuccess ? <p className={FORM_MESSAGE_SUCCESS}>{uploadSuccess}</p> : null}
 
         <div className={FORM_ACTIONS}>
-          <button type="submit" className="primary-btn" disabled={uploading}>
+          <button type="submit" className={PRIMARY_BTN} disabled={uploading}>
             {uploading ? 'Uploading...' : 'Upload'}
           </button>
-          <button type="button" className="secondary-btn" onClick={() => setActivePage('feed')}>
+          <button type="button" className={SECONDARY_BTN} onClick={() => setActivePage('feed')}>
             Back to Feed
           </button>
         </div>
@@ -2510,10 +2535,10 @@ const MODERATION_ACCENT = {
   )
 
   return (
-    <main className="screen app-shell">
+    <main className={`${SCREEN} app-canvas items-start`}>
       <header className="mb-[18px] flex w-[min(1040px,100%)] items-center justify-between rounded-[18px] max-[860px]:grid max-[860px]:justify-items-start max-[860px]:gap-4 border border-ink/10 bg-white/70 px-[18px] py-3.5 backdrop-blur-md">
         <div>
-          <span className="eyebrow">CaughtOnDash</span>
+          <span className={EYEBROW}>CaughtOnDash</span>
           <h1 className="mt-1 font-heading text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-[-0.03em] text-ink">
             Community
           </h1>

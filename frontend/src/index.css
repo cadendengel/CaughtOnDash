@@ -59,6 +59,17 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* The page canvas. A three-layer gradient is unreadable as an arbitrary
+ * value, so it becomes a named utility instead -- same cascade position as
+ * any other utility, without a stylesheet left behind to hold one rule.
+ */
+@utility app-canvas {
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 28%),
+    radial-gradient(circle at 85% 15%, rgba(20, 184, 166, 0.16), transparent 22%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+}
+
 /* The app's own base rules, layered.
  *
  * Tailwind v4 puts utilities in a real cascade layer, and unlayered CSS beats
