@@ -23,6 +23,8 @@ namespace CaughtOnDash.Worker.Services
         private readonly WorkerConfig _config;
 
         private WorkerLoopService? _loop;
+        private int _lastReviewCount = -1;
+        private int _lastQueuedCount = -1;
 
         public event Action<WorkerSessionState>? StateChanged;
         public event Action<WorkerLogEntry>? LogAppended;
@@ -187,6 +189,16 @@ namespace CaughtOnDash.Worker.Services
             {
                 var review = await _apiClient.GetReviewQueue(cancellationToken);
                 var run = await _apiClient.GetRunQueue(cancellationToken);
+
+                // Only on a change: this polls every ten seconds, and a log line
+                // per poll would bury everything else.
+                if (review.Count != _lastReviewCount || run.Count != _lastQueuedCount)
+                {
+                    _lastReviewCount = review.Count;
+                    _lastQueuedCount = run.Count;
+                    Log($"Queue: {review.Count} awaiting review, {run.Count} approved");
+                }
+
                 QueueChanged?.Invoke(new QueueSnapshot { AwaitingReview = review, Queued = run });
             }
             catch (Exception ex)

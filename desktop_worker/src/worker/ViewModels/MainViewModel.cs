@@ -1,229 +1,364 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CaughtOnDash.Worker.Models;
 using CaughtOnDash.Worker.Services;
 
 namespace CaughtOnDash.Worker.ViewModels
 {
+    /// <summary>
+    /// Drives the WPF window from the shared WorkerSession.
+    /// </summary>
+    /// <remarks>
+    /// This used to own a WorkerLoopService directly and duplicate the state
+    /// handling the Avalonia host already had in WorkerSession. Everything
+    /// meaningful now lives in Core, so the two hosts cannot drift: this class
+    /// only renders state and forwards clicks.
+    /// </remarks>
     public class MainViewModel
     {
+        private const int MaxLogRows = 100;
+
         private readonly MainWindow _mainWindow;
-        private readonly AppConfigService _configService;
-        private readonly WorkerApiClient _apiClient;
-        private readonly LocalVideoStorageService _storageService;
-        private readonly PlaceholderAnalyzer _analyzer;
-        private WorkerLoopService? _workerLoopService;
-        private WorkerConfig _config;
+        private readonly WorkerSession _session;
+        private readonly ObservableCollection<QueueRow> _rows = new();
+
+        private QueueSnapshot _snapshot = new();
+        private DispatcherTimer? _queuePollTimer;
+        private bool _showingReviewQueue = true;
 
         public MainViewModel(MainWindow mainWindow)
         {
             _mainWindow = mainWindow;
-            _configService = new AppConfigService();
-            _apiClient = new WorkerApiClient();
-            _storageService = new LocalVideoStorageService();
-            _analyzer = new PlaceholderAnalyzer();
-            _config = _configService.LoadConfig();
 
-            InitializeUI();
-        }
+            _session = new WorkerSession();
+            _session.StateChanged += OnStateChanged;
+            _session.LogAppended += OnLogAppended;
+            _session.QueueChanged += OnQueueChanged;
 
-        private void InitializeUI()
-        {
-            if (_config.IsConfigured)
-            {
-                _apiClient.Initialize(_config.BackendUrl, _config.ApiToken);
-                _mainWindow.BackendUrlDisplay.Text = _config.BackendUrl;
-                AddLog($"Loaded backend config: {_config.BackendUrl}");
-                _mainWindow.StatusText.Text = "Stopped";
-                _mainWindow.StatusText.Foreground = Brushes.Gray;
-                _mainWindow.StartButton.IsEnabled = true;
-                _mainWindow.StopButton.IsEnabled = false;
-            }
-            else
-            {
-                _mainWindow.BackendUrlDisplay.Text = "Missing config";
-                _mainWindow.StatusText.Text = "Missing config";
-                _mainWindow.StatusText.Foreground = Brushes.Red;
-                _mainWindow.StartButton.IsEnabled = false;
-                _mainWindow.StopButton.IsEnabled = false;
-                AddLog("Worker config is missing backend URL or API token.", Logger.LogLevel.Error);
-            }
+            _mainWindow.QueueGrid.ItemsSource = _rows;
+            RebuildRows();
+            Render(_session.State);
 
             AddLog("Application started");
-        }
 
-        public async System.Threading.Tasks.Task StartAutomaticallyAsync()
-        {
-            if (!_config.IsConfigured)
+            if (!_session.IsConfigured)
             {
-                AddLog("Cannot auto-connect worker because config is incomplete.", Logger.LogLevel.Error);
-                _mainWindow.StatusText.Text = "Missing config";
-                _mainWindow.StatusText.Foreground = Brushes.Red;
+                AddLog("Worker config is missing backend URL or API token.", Logger.LogLevel.Error);
                 return;
             }
 
-            _apiClient.Initialize(_config.BackendUrl, _config.ApiToken);
-            _mainWindow.BackendUrlDisplay.Text = _config.BackendUrl;
-
-            AddLog($"Auto-connected to backend: {_config.BackendUrl}");
-            _mainWindow.StatusText.Text = "Stopped";
-            _mainWindow.StatusText.Foreground = Brushes.Gray;
-            _mainWindow.StartButton.IsEnabled = true;
-            _mainWindow.StopButton.IsEnabled = false;
-
-            await StartWorker();
+            _ = _session.RefreshQueuesAsync();
+            StartQueuePolling();
         }
 
-        public async System.Threading.Tasks.Task StartWorker()
+        /// <summary>
+        /// Keep the queue roughly current without hammering the backend.
+        /// </summary>
+        /// <remarks>
+        /// Ten seconds is a compromise: uploads arrive rarely, but a batch you
+        /// just started should visibly drain. Phase 3 replaces this with pushed
+        /// updates.
+        /// </remarks>
+        private void StartQueuePolling()
         {
-            if (!_config.IsConfigured)
-            {
-                AddLog("Worker not configured. Check appsettings.json.", Logger.LogLevel.Error);
-                return;
-            }
-
-            if (_workerLoopService != null && _workerLoopService.IsRunning)
-            {
-                AddLog("Worker is already running.");
-                return;
-            }
-
-            try
-            {
-                _workerLoopService = new WorkerLoopService(_config, _apiClient, _analyzer, _storageService);
-                _workerLoopService.OnStatusUpdate += HandleWorkerStatusUpdate;
-
-                _mainWindow.StartButton.IsEnabled = false;
-                _mainWindow.StopButton.IsEnabled = true;
-
-                AddLog("Starting worker...");
-                await _workerLoopService.StartAsync();
-            }
-            catch (Exception ex)
-            {
-                AddLog($"Failed to start worker: {ex.Message}", Logger.LogLevel.Error);
-                _mainWindow.StartButton.IsEnabled = true;
-                _mainWindow.StopButton.IsEnabled = false;
-            }
+            _queuePollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            _queuePollTimer.Tick += (_, _) => _ = _session.RefreshQueuesAsync();
+            _queuePollTimer.Start();
         }
 
-        public async void StopWorker()
-        {
-            try
-            {
-                AddLog("Stopping worker...");
-                if (_workerLoopService != null)
-                {
-                    await _workerLoopService.StopAsync();
-                }
+        // ---- worker controls ----
 
-                _mainWindow.StartButton.IsEnabled = true;
-                _mainWindow.StopButton.IsEnabled = false;
-                _mainWindow.StatusText.Text = "Stopped";
-                _mainWindow.StatusText.Foreground = Brushes.Red;
-                _mainWindow.CancelJobButton.IsEnabled = false;
+        public Task StartWorker() => _session.StartAsync();
 
-                AddLog("Worker stopped");
-            }
-            catch (Exception ex)
-            {
-                AddLog($"Error stopping worker: {ex.Message}", Logger.LogLevel.Error);
-            }
-        }
+        public async void StopWorker() => await _session.StopAsync();
 
-        public async void CancelCurrentJob()
-        {
-            try
-            {
-                if (_workerLoopService != null)
-                {
-                    AddLog("Cancelling current job...");
-                    await _workerLoopService.CancelCurrentJobAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                AddLog($"Error cancelling job: {ex.Message}", Logger.LogLevel.Error);
-            }
-        }
+        public async void CancelCurrentJob() => await _session.CancelCurrentJobAsync();
 
-        private void HandleWorkerStatusUpdate(WorkerLoopEvent evt)
+        /// <summary>
+        /// Kept for the window's startup call. It no longer starts the worker:
+        /// with an approval gate, starting before anything is approved just
+        /// polls an empty queue.
+        /// </summary>
+        public Task StartAutomaticallyAsync() => _session.RefreshQueuesAsync();
+
+        // ---- queue ----
+
+        private void OnQueueChanged(QueueSnapshot snapshot)
         {
             _mainWindow.Dispatcher.Invoke(() =>
             {
-                switch (evt.Status)
-                {
-                    case "idle":
-                        _mainWindow.StatusText.Text = "Idle";
-                        _mainWindow.StatusText.Foreground = Brushes.Gray;
-                        _mainWindow.StageText.Text = "Idle";
-                        _mainWindow.CurrentJobText.Text = "None";
-                        _mainWindow.CancelJobButton.IsEnabled = false;
-                        break;
-
-                    case "processing":
-                        _mainWindow.StatusText.Text = "Processing";
-                        _mainWindow.StatusText.Foreground = Brushes.Blue;
-                        if (evt.JobTitle != null)
-                        {
-                            _mainWindow.CurrentJobText.Text = evt.JobTitle;
-                        }
-                        if (evt.Stage != null)
-                        {
-                            _mainWindow.StageText.Text = evt.Stage;
-                        }
-                        _mainWindow.ProgressBar.Value = evt.Progress;
-                        _mainWindow.ProgressText.Text = $"{evt.Progress}%";
-                        _mainWindow.CancelJobButton.IsEnabled = true;
-                        break;
-
-                    case "error":
-                        _mainWindow.StatusText.Text = "Error";
-                        _mainWindow.StatusText.Foreground = Brushes.Red;
-                        break;
-
-                    case "stopped":
-                        _mainWindow.StatusText.Text = "Stopped";
-                        _mainWindow.StatusText.Foreground = Brushes.Red;
-                        _mainWindow.ProgressBar.Value = 0;
-                        _mainWindow.ProgressText.Text = "0%";
-                        break;
-                }
-
-                // Show the progress card only while a job is actually running.
-                // A bar sitting at 0% reads as stuck; nothing there reads as
-                // nothing running.
-                var isProcessing = evt.Status == "processing";
-                _mainWindow.ProcessingPanel.Visibility = isProcessing ? Visibility.Visible : Visibility.Collapsed;
-                _mainWindow.IdlePanel.Visibility = isProcessing ? Visibility.Collapsed : Visibility.Visible;
-                if (!isProcessing)
-                {
-                    _mainWindow.IdleText.Text = evt.Status == "stopped" ? "Worker stopped." : "Waiting for a job.";
-                }
-
-                _mainWindow.LastHeartbeatText.Text = DateTime.Now.ToString("HH:mm:ss");
-                AddLog(evt.Message);
+                _snapshot = snapshot;
+                RebuildRows();
             });
         }
 
-        private void AddLog(string message, Logger.LogLevel level = Logger.LogLevel.Info)
+        /// <summary>
+        /// Repopulate the table, preserving ticks across a refresh.
+        /// </summary>
+        /// <remarks>
+        /// A poll every ten seconds that silently cleared your selection would
+        /// make choosing a large batch impossible.
+        /// </remarks>
+        private void RebuildRows()
         {
-            Logger.Log(message, level);
+            var selected = new HashSet<Guid>();
+            foreach (var row in _rows)
+            {
+                if (row.IsSelected)
+                {
+                    selected.Add(row.Entry.VideoId);
+                }
+            }
 
+            var entries = _showingReviewQueue ? _snapshot.AwaitingReview : _snapshot.Queued;
+
+            _rows.Clear();
+            foreach (var entry in entries)
+            {
+                _rows.Add(new QueueRow(entry) { IsSelected = selected.Contains(entry.VideoId) });
+            }
+
+            _mainWindow.QueueHeading.Text = _showingReviewQueue ? "Review Queue" : "Run Queue";
+            _mainWindow.QueueCountText.Text = _rows.Count == 0
+                ? (_showingReviewQueue ? "Nothing awaiting review" : "Queue empty")
+                : $"{_rows.Count} video{(_rows.Count == 1 ? "" : "s")}";
+
+            // Reordering only means something for work that is already approved;
+            // the review list is ordered by the batch you pick.
+            _mainWindow.MoveUpButton.IsEnabled = !_showingReviewQueue;
+            _mainWindow.MoveDownButton.IsEnabled = !_showingReviewQueue;
+            _mainWindow.StartBatchButton.IsEnabled = _showingReviewQueue;
+            _mainWindow.RejectButton.IsEnabled = _showingReviewQueue;
+
+            _mainWindow.ReviewTabButton.FontWeight =
+                _showingReviewQueue ? FontWeights.Bold : FontWeights.Normal;
+            _mainWindow.QueuedTabButton.FontWeight =
+                _showingReviewQueue ? FontWeights.Normal : FontWeights.Bold;
+        }
+
+        public void ShowReviewQueue()
+        {
+            _showingReviewQueue = true;
+            RebuildRows();
+        }
+
+        public void ShowRunQueue()
+        {
+            _showingReviewQueue = false;
+            RebuildRows();
+        }
+
+        public async void RefreshQueues() => await _session.RefreshQueuesAsync();
+
+        public void SelectAll()
+        {
+            foreach (var row in _rows)
+            {
+                row.IsSelected = true;
+            }
+        }
+
+        public void ClearSelection()
+        {
+            foreach (var row in _rows)
+            {
+                row.IsSelected = false;
+            }
+        }
+
+        private List<Guid> SelectedIds()
+        {
+            var ids = new List<Guid>();
+            foreach (var row in _rows)
+            {
+                if (row.IsSelected)
+                {
+                    ids.Add(row.Entry.VideoId);
+                }
+            }
+            return ids;
+        }
+
+        /// <summary>Open the highlighted video so it can be judged before approving.</summary>
+        public void PreviewSelected()
+        {
+            var row = _mainWindow.QueueGrid.SelectedItem as QueueRow
+                      ?? (_rows.Count > 0 ? _rows[0] : null);
+
+            if (row == null || string.IsNullOrWhiteSpace(row.Entry.VideoUrl))
+            {
+                AddLog("Nothing to preview -- that video has no playback URL.", Logger.LogLevel.Warning);
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(row.Entry.VideoUrl) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                AddLog($"Could not open the video: {ex.Message}", Logger.LogLevel.Error);
+            }
+        }
+
+        public async void MoveSelectedUp() => await Move(-1);
+
+        public async void MoveSelectedDown() => await Move(1);
+
+        /// <summary>
+        /// Move the ticked rows one place, then send the whole order to the
+        /// backend -- priority lives server-side so every host agrees on it.
+        /// </summary>
+        private async Task Move(int direction)
+        {
+            var order = new List<QueueRow>(_rows);
+            var indexes = new List<int>();
+            for (var i = 0; i < order.Count; i++)
+            {
+                if (order[i].IsSelected)
+                {
+                    indexes.Add(i);
+                }
+            }
+
+            if (indexes.Count == 0)
+            {
+                AddLog("Tick a row first.", Logger.LogLevel.Warning);
+                return;
+            }
+
+            // Walk from the edge the rows are moving toward, so a block of
+            // adjacent selections shifts together instead of collapsing.
+            if (direction < 0)
+            {
+                foreach (var index in indexes)
+                {
+                    if (index == 0) break;
+                    (order[index - 1], order[index]) = (order[index], order[index - 1]);
+                }
+            }
+            else
+            {
+                indexes.Reverse();
+                foreach (var index in indexes)
+                {
+                    if (index >= order.Count - 1) break;
+                    (order[index + 1], order[index]) = (order[index], order[index + 1]);
+                }
+            }
+
+            _rows.Clear();
+            foreach (var row in order)
+            {
+                _rows.Add(row);
+            }
+
+            var ids = new List<Guid>();
+            foreach (var row in order)
+            {
+                ids.Add(row.Entry.VideoId);
+            }
+            await _session.ReorderAsync(ids);
+        }
+
+        public async void StartBatch()
+        {
+            var ids = SelectedIds();
+            if (ids.Count == 0)
+            {
+                AddLog("Tick the videos you want to run first.", Logger.LogLevel.Warning);
+                return;
+            }
+
+            _mainWindow.StartBatchButton.IsEnabled = false;
+            try
+            {
+                await _session.StartBatchAsync(ids);
+            }
+            finally
+            {
+                _mainWindow.StartBatchButton.IsEnabled = _showingReviewQueue;
+            }
+        }
+
+        public async void RejectSelected()
+        {
+            var ids = SelectedIds();
+            if (ids.Count == 0)
+            {
+                AddLog("Tick the videos you want to reject first.", Logger.LogLevel.Warning);
+                return;
+            }
+
+            await _session.RejectAsync(ids);
+        }
+
+        // ---- status ----
+
+        private void OnStateChanged(WorkerSessionState state)
+            => _mainWindow.Dispatcher.Invoke(() => Render(state));
+
+        private void Render(WorkerSessionState state)
+        {
+            _mainWindow.StatusText.Text = state.Status;
+            _mainWindow.StatusText.Foreground = state.Status switch
+            {
+                "Processing" => Brushes.RoyalBlue,
+                "Idle" => Brushes.Gray,
+                "Error" => Brushes.Red,
+                "Missing config" => Brushes.Red,
+                _ => Brushes.Gray,
+            };
+
+            _mainWindow.BackendUrlDisplay.Text = state.BackendUrl;
+            _mainWindow.LastHeartbeatText.Text = state.LastHeartbeatDisplay;
+            _mainWindow.CurrentJobText.Text = state.CurrentJob;
+            _mainWindow.StageText.Text = state.Stage;
+            _mainWindow.ProgressBar.Value = state.Progress;
+            _mainWindow.ProgressText.Text = state.ProgressDisplay;
+
+            _mainWindow.JobDetailsText.Text = state.CurrentJob == "None"
+                ? "No active job"
+                : $"{state.CurrentJob}\nStage: {state.Stage}\nProgress: {state.ProgressDisplay}";
+
+            // Show the progress card only while a job is actually running. A bar
+            // sitting at 0% reads as stuck; nothing there reads as nothing running.
+            var isProcessing = state.Status == "Processing";
+            _mainWindow.ProcessingPanel.Visibility = isProcessing ? Visibility.Visible : Visibility.Collapsed;
+            _mainWindow.IdlePanel.Visibility = isProcessing ? Visibility.Collapsed : Visibility.Visible;
+            _mainWindow.IdleText.Text = state.IsConfigured
+                ? state.CanStop ? "Waiting for a job." : "Worker stopped."
+                : "Worker is not configured.";
+
+            _mainWindow.StartButton.IsEnabled = state.CanStart;
+            _mainWindow.StopButton.IsEnabled = state.CanStop;
+            _mainWindow.CancelJobButton.IsEnabled = state.CanCancelJob;
+        }
+
+        private void AddLog(string message, Logger.LogLevel level = Logger.LogLevel.Info)
+            => _session.Log(message, level);
+
+        private void OnLogAppended(WorkerLogEntry entry)
+        {
             _mainWindow.Dispatcher.Invoke(() =>
             {
                 var item = new System.Windows.Controls.ListBoxItem
                 {
                     Content = new System.Windows.Controls.TextBlock
                     {
-                        Text = $"[{DateTime.Now:HH:mm:ss}] {message}",
-                        TextWrapping = System.Windows.TextWrapping.Wrap,
-                        Foreground = level switch
+                        Text = entry.Display,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = entry.Level switch
                         {
                             Logger.LogLevel.Error => Brushes.Red,
                             Logger.LogLevel.Warning => Brushes.Orange,
-                            _ => Brushes.Black
+                            _ => Brushes.Black,
                         }
                     }
                 };
@@ -231,8 +366,7 @@ namespace CaughtOnDash.Worker.ViewModels
                 _mainWindow.LogListBox.Items.Add(item);
                 _mainWindow.LogListBox.ScrollIntoView(item);
 
-                // Keep only last 100 logs
-                while (_mainWindow.LogListBox.Items.Count > 100)
+                while (_mainWindow.LogListBox.Items.Count > MaxLogRows)
                 {
                     _mainWindow.LogListBox.Items.RemoveAt(0);
                 }

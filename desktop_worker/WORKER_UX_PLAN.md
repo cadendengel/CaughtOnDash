@@ -135,11 +135,21 @@ The worker no longer auto-starts. With an approval gate, starting it before
 anything is approved just polls an empty queue; Start Batch approves and starts
 in one action.
 
-**WPF host: not yet.** It drives WorkerLoopService directly through
-MainViewModel rather than using WorkerSession, so it has no queue events to
-bind to. Wiring the table there means migrating it onto WorkerSession first --
-which is what Core exists for, but it cannot be compiled on macOS, so it needs
-to be done against a Windows build rather than blind.
+**WPF host: done.** MainViewModel now drives the shared WorkerSession instead
+of owning a WorkerLoopService and duplicating its state handling, so the two
+hosts render the same logic and cannot drift.
+
+Verified on the Windows machine over SSH: builds clean, launches, and logs
+"Queue: 3 awaiting review, 0 approved" against a real backend. What is *not*
+verified is how it looks -- the window cannot be seen from here, and WPF's
+DataGrid differs from Avalonia's in column sizing and checkbox commit
+behaviour. Worth one look before trusting it.
+
+Two environment notes found while testing there: the Windows backend had never
+had `pip install -r requirements.txt` re-run after PyJWT was added, so it 500d
+on every request; and `localhost` resolves to IPv6 first on Windows, which
+fails against a Django server bound to 127.0.0.1. The worker config now uses
+the explicit address.
 
 **Still to do in 2c:** poster-frame capture at upload, so the table shows a
 thumbnail rather than only a title. Until then Preview is how you see a video
