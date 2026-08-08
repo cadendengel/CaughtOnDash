@@ -1,3 +1,40 @@
+@import "tailwindcss";
+
+/* Tailwind's theme, pointed at the palette this app already uses.
+ *
+ * The revamp is a polish, not a repaint: utilities must reproduce the current
+ * colours rather than introduce Tailwind's defaults alongside them. Defining
+ * them here means the hand-written CSS below and any utility class resolve to
+ * the same value while the two coexist during the migration.
+ */
+@theme {
+  --color-ink: #0f172a;
+  --color-body: #334155;
+  --color-muted: #64748b;
+  --color-canvas: #eef4ff;
+  --color-surface: #ffffff;
+  --color-line: #e3e8ee;
+
+  --color-brand: #1d4ed8;
+  --color-brand-soft: #eef2ff;
+
+  --color-good: #166534;
+  --color-good-soft: #eef7f0;
+  --color-warn: #8a4b12;
+  --color-warn-soft: #fdf6e7;
+  --color-bad: #b91c1c;
+  --color-bad-soft: #fdecec;
+
+  --font-sans: 'Trebuchet MS', 'Segoe UI', system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
+  --font-heading: 'Avenir Next', 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+
+  --radius-card: 14px;
+  --shadow-card: rgba(15, 23, 42, 0.12) 0 20px 48px -20px,
+    rgba(15, 23, 42, 0.08) 0 8px 18px -12px;
+}
+
 :root {
   --text: #334155;
   --text-h: #0f172a;

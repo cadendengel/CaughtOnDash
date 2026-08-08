@@ -1778,6 +1778,16 @@ function App() {
     },
   ]
 
+  // Nav buttons: one class string rather than four copies that drift apart.
+  const navButtonClass = (page) =>
+    [
+      'rounded-full border px-3.5 py-2 cursor-pointer transition-transform duration-150',
+      'hover:-translate-y-px',
+      activePage === page
+        ? 'border-transparent bg-gradient-to-br from-ink to-brand text-white'
+        : 'border-ink/15 bg-white/65 text-ink',
+    ].join(' ')
+
   const renderModerationRow = (entry, groupKey) => (
     <li key={entry.video_id} className="moderation-row">
       <div className="moderation-row-main">
@@ -2377,46 +2387,32 @@ function App() {
 
   return (
     <main className="screen app-shell">
-      <header className="navbar">
-        <div className="brand-block">
+      <header className="mb-[18px] flex w-[min(1040px,100%)] items-center justify-between rounded-[18px] max-[860px]:grid max-[860px]:justify-items-start max-[860px]:gap-4 border border-ink/10 bg-white/70 px-[18px] py-3.5 backdrop-blur-md">
+        <div>
           <span className="eyebrow">CaughtOnDash</span>
-          <h1>Community</h1>
+          <h1 className="mt-1 font-heading text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-[-0.03em] text-ink">
+            Community
+          </h1>
         </div>
 
-        <nav className="nav-links" aria-label="Main navigation">
-          <button
-            type="button"
-            className={activePage === 'feed' ? 'nav-btn active' : 'nav-btn'}
-            onClick={() => setActivePage('feed')}
-          >
+        <nav className="inline-flex items-center gap-2.5 max-[860px]:order-3" aria-label="Main navigation">
+          <button type="button" className={navButtonClass('feed')} onClick={() => setActivePage('feed')}>
             Feed
           </button>
-          <button
-            type="button"
-            className={activePage === 'search' ? 'nav-btn active' : 'nav-btn'}
-            onClick={() => setActivePage('search')}
-          >
+          <button type="button" className={navButtonClass('search')} onClick={() => setActivePage('search')}>
             Search
           </button>
-          <button
-            type="button"
-            className={activePage === 'post-video' ? 'nav-btn active' : 'nav-btn'}
-            onClick={() => setActivePage('post-video')}
-          >
+          <button type="button" className={navButtonClass('post-video')} onClick={() => setActivePage('post-video')}>
             Post Video
           </button>
           {isAdmin ? (
-            <button
-              type="button"
-              className={activePage === 'admin' ? 'nav-btn active' : 'nav-btn'}
-              onClick={openAdminPanel}
-            >
+            <button type="button" className={navButtonClass('admin')} onClick={openAdminPanel}>
               Admin
             </button>
           ) : null}
         </nav>
 
-        <div className="user-chip">
+        <div className="flex items-center gap-3">
           <UserButton afterSignOutUrl="/" />
           <span>{user?.firstName || user?.emailAddresses?.[0]?.emailAddress}</span>
         </div>
