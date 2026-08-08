@@ -21,6 +21,8 @@ from apps.videos.worker_serializers import (
 from apps.videos.worker_services import (
     claimable_jobs,
     decide_approval,
+    failed_analyses,
+    stuck_analyses,
     reorder_queue,
     review_queue,
     get_or_create_worker,
@@ -134,6 +136,36 @@ def list_review_queue(request):
     """GET /api/videos/worker/jobs/review/ - videos awaiting a decision."""
     entries = _queue_payload(review_queue())
     return JsonResponse({'count': len(entries), 'items': entries})
+
+
+@require_http_methods(["GET"])
+@admin_required
+def moderation_overview(request):
+    """GET /api/videos/admin/moderation/ - everything needing a human decision.
+
+    Three groups, because each needs a different action and conflating them
+    hides the difference:
+
+    - awaiting review: nobody has judged it yet
+    - failed: analysis broke, so there was nothing to judge
+    - stuck: claims to be processing but its worker went quiet, which is the
+      case nobody notices -- the site shows a progress bar that will never
+      move and no error is ever raised
+
+    Reuses the worker queue serializer so a moderator and the desktop app
+    describe the same video the same way, attempt history included.
+    """
+    groups = {
+        'awaiting_review': review_queue(),
+        'failed': failed_analyses(),
+        'stuck': stuck_analyses(),
+    }
+
+    payload = {name: _queue_payload(queryset) for name, queryset in groups.items()}
+    counts = {name: len(entries) for name, entries in payload.items()}
+    counts['total'] = sum(counts.values())
+
+    return JsonResponse({'counts': counts, 'groups': payload})
 
 
 @csrf_exempt

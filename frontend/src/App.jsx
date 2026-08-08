@@ -35,6 +35,8 @@ function App() {
   const { getToken } = useAuth()
   const [activePage, setActivePage] = useState('feed')
   const [isAdmin, setIsAdmin] = useState(false)
+  const [moderation, setModeration] = useState(null)
+  const [moderationError, setModerationError] = useState('')
   const [posts, setPosts] = useState([])
   const [tagsExpandedByPostId, setTagsExpandedByPostId] = useState({})
   const [uploadTags, setUploadTags] = useState([])
@@ -1238,6 +1240,51 @@ function App() {
     return post.owner_clerk_user_id === user.id || isAdmin
   }
 
+  // Everything waiting on a moderator, in three groups.
+  //
+  // Fetched separately from the feed rather than derived from it: the feed is
+  // capped and ordered for reading, while this needs every video in a given
+  // state regardless of age -- a video stuck three weeks ago is exactly the
+  // one worth surfacing.
+  const loadModeration = useCallback(async () => {
+    try {
+      const response = await authFetch(`${API_BASE}/api/videos/admin/moderation/`)
+      if (!response.ok) {
+        setModerationError('Could not load the moderation queue.')
+        return
+      }
+      setModeration(await response.json())
+      setModerationError('')
+    } catch {
+      setModerationError('Could not reach the server.')
+    }
+  }, [authFetch, API_BASE])
+
+  const retryAnalysis = async (videoId) => {
+    if (!videoId || analysisRequestLoadingByPostId[videoId]) {
+      return
+    }
+
+    setAnalysisRequestLoadingByPostId((current) => ({ ...current, [videoId]: true }))
+    try {
+      const response = await authFetch(`${API_BASE}/api/videos/admin/jobs/${videoId}/retry/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (!response.ok) {
+        setModerationError('Could not retry that job.')
+        return
+      }
+      await loadModeration()
+      await loadFeed()
+    } catch {
+      setModerationError('Could not reach the server.')
+    } finally {
+      setAnalysisRequestLoadingByPostId((current) => ({ ...current, [videoId]: false }))
+    }
+  }
+
   const decideApproval = async (videoId, approve) => {
     if (!videoId || analysisRequestLoadingByPostId[videoId]) {
       return
@@ -1487,6 +1534,30 @@ function App() {
     }
   }, [activePage, isAdmin])
 
+  // Load the queue when the admin page opens, and again on each visit rather
+  // than once: what is stuck or awaiting review changes while you are away,
+  // and a stale queue is worse than none -- it says "nothing to do" when
+  // there is.
+  useEffect(() => {
+    if (activePage !== 'admin' || !isAdmin) {
+      return undefined
+    }
+
+    let cancelled = false
+    const run = async () => {
+      if (!cancelled) {
+        await loadModeration()
+      }
+    }
+    run()
+
+    // Leaving the page mid-fetch should not write into state that no longer
+    // matters, and would otherwise resurrect a stale queue on the next visit.
+    return () => {
+      cancelled = true
+    }
+  }, [activePage, isAdmin, loadModeration])
+
   if (!isLoaded) {
     return (
       <main className="screen loading-state">
@@ -1687,12 +1758,151 @@ function App() {
     )
   }
 
+  const MODERATION_GROUPS = [
+    {
+      key: 'awaiting_review',
+      title: 'Awaiting review',
+      blurb: 'Uploaded and waiting for a decision before analysis can run.',
+    },
+    {
+      key: 'failed',
+      title: 'Analysis failed',
+      blurb: 'Analysis broke, so there was never anything to judge.',
+    },
+    {
+      key: 'stuck',
+      title: 'Stuck processing',
+      // The case nobody notices: the site shows a progress bar that will
+      // never move and no error is ever raised.
+      blurb: 'Claims to be processing, but the worker went quiet.',
+    },
+  ]
+
+  const renderModerationRow = (entry, groupKey) => (
+    <li key={entry.video_id} className="moderation-row">
+      <div className="moderation-row-main">
+        <span className="moderation-row-title">{entry.title || 'Untitled'}</span>
+        <span className="moderation-row-meta">
+          {entry.duration_display || entry.duration_seconds ? `${entry.duration_display || `${entry.duration_seconds}s`} · ` : ''}
+          {entry.attempt_number > 1
+            ? `attempt ${entry.attempt_number}`
+            : 'first attempt'}
+          {entry.previous_attempts > 0 ? ` · ${entry.previous_attempts} before` : ''}
+        </span>
+        {entry.last_result ? (
+          <span className="moderation-row-history">{entry.last_result}</span>
+        ) : null}
+      </div>
+      <div className="moderation-row-actions">
+        {entry.video_url ? (
+          <a className="ghost-btn" href={entry.video_url} target="_blank" rel="noreferrer">
+            Preview
+          </a>
+        ) : null}
+        {groupKey === 'awaiting_review' ? (
+          <>
+            <button
+              type="button"
+              className="ghost-btn"
+              disabled={analysisRequestLoadingByPostId[entry.video_id]}
+              onClick={async () => {
+                await decideApproval(entry.video_id, true)
+                await loadModeration()
+              }}
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              className="ghost-btn"
+              disabled={analysisRequestLoadingByPostId[entry.video_id]}
+              onClick={async () => {
+                await decideApproval(entry.video_id, false)
+                await loadModeration()
+              }}
+            >
+              Reject
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="ghost-btn"
+            disabled={analysisRequestLoadingByPostId[entry.video_id]}
+            onClick={() => retryAnalysis(entry.video_id)}
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    </li>
+  )
+
+  // What is waiting on a moderator, above the full post list.
+  //
+  // Grouped rather than merged into one list because each group needs a
+  // different action: awaiting review needs a judgement, failed and stuck
+  // need a retry. A single "needs attention" list would hide that.
+  const renderModerationPanel = () => {
+    if (moderationError) {
+      return (
+        <div className="moderation-panel">
+          <p className="moderation-error">{moderationError}</p>
+        </div>
+      )
+    }
+
+    if (!moderation) {
+      return null
+    }
+
+    if ((moderation.counts?.total || 0) === 0) {
+      return (
+        <div className="moderation-panel">
+          <h3 className="moderation-heading">Nothing needs attention</h3>
+          <p className="moderation-blurb">
+            No videos are awaiting review, failed, or stuck.
+          </p>
+        </div>
+      )
+    }
+
+    return (
+      <div className="moderation-panel">
+        <h3 className="moderation-heading">
+          Needs attention
+          <span className="moderation-total">{moderation.counts.total}</span>
+        </h3>
+        {MODERATION_GROUPS.map((group) => {
+          const entries = moderation.groups?.[group.key] || []
+          if (entries.length === 0) {
+            return null
+          }
+          return (
+            <div key={group.key} className={`moderation-group ${group.key}`}>
+              <h4 className="moderation-group-heading">
+                {group.title}
+                <span className="moderation-count">{entries.length}</span>
+              </h4>
+              <p className="moderation-blurb">{group.blurb}</p>
+              <ul className="moderation-list">
+                {entries.map((entry) => renderModerationRow(entry, group.key))}
+              </ul>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   const renderAdminPage = () => (
     <section className="page-content admin-page">
       <div className="page-heading">
         <h2>Admin</h2>
         <p>Admin-only moderation tools for posts, comments, and replies.</p>
       </div>
+
+      {renderModerationPanel()}
 
       {posts.length === 0 ? (
         <div className="empty-feed-card">

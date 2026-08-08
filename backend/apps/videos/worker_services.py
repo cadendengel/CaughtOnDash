@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import uuid
 
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.videos.consumers import publish_analysis_state
@@ -250,6 +250,40 @@ def reorder_queue(video_ids: list) -> dict:
         video.save(update_fields=['analysis_priority', 'updated_at'])
 
     return {'success': True, 'reordered': total}
+
+
+def failed_analyses():
+    """Videos whose most recent analysis failed.
+
+    Separate from the review queue because they need a different decision: a
+    rejected video was judged, while a failed one was never judged at all --
+    the machinery broke before anyone could look.
+    """
+    return Video.objects.filter(
+        analysis_status='failed',
+        deleted_at__isnull=True,
+    ).order_by('-analysis_failed_at', '-created_at')
+
+
+def stuck_analyses(now=None):
+    """Videos claiming to be processing whose worker has gone quiet.
+
+    These are the ones nobody notices: the site shows a progress bar that will
+    never move, and without surfacing them somewhere a moderator has no reason
+    to look. Uses the same staleness rule as job reclaiming, so what a
+    moderator sees stuck is exactly what the backend considers reclaimable.
+    """
+    now = now or timezone.now()
+    cutoff = now - timedelta(minutes=STALE_PROCESSING_MINUTES)
+
+    return Video.objects.filter(
+        analysis_status='processing',
+        deleted_at__isnull=True,
+    ).filter(
+        Q(worker_last_seen_at__lt=cutoff)
+        | Q(worker_last_seen_at__isnull=True, worker_claimed_at__lt=cutoff)
+        | Q(worker_last_seen_at__isnull=True, worker_claimed_at__isnull=True)
+    ).order_by('worker_claimed_at')
 
 
 def get_next_pending_job() -> Video | None:
