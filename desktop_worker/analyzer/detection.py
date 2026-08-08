@@ -84,6 +84,53 @@ def frame_indices(frame_count: int, fps: float, sample_fps: float, max_frames: i
     return sorted({int(round(i * step)) for i in range(wanted)})
 
 
+def _frame_seconds(index: int, metadata: dict) -> float:
+    """Where a frame sits in the video, in seconds."""
+    fps = metadata.get('fps') or 0.0
+    if fps <= 0:
+        return 0.0
+    return round(index / fps, 2)
+
+
+def build_events(
+    kept: dict[str, int],
+    appearances: dict[str, list[float]],
+    best_confidence: dict[str, float],
+    tags: list[str],
+) -> list[dict]:
+    """One event per detected label, at the moment it was first seen.
+
+    Deliberately first-appearance rather than every sighting. Sampling is
+    sparse -- roughly one frame a second -- so a run of appearances is a series
+    of guesses about what happened between samples, while "a car was on screen
+    at 0:14" is something that was actually observed. One honest marker per
+    label beats a dense timeline that implies continuous tracking.
+
+    This is not incident detection. It says what was visible and when, which is
+    enough to jump to the relevant part of a clip, and claims nothing about
+    whether anything happened.
+    """
+    events = []
+    for label in tags:
+        times = appearances.get(label) or []
+        if not times:
+            continue
+
+        first = min(times)
+        events.append({
+            'timestamp_seconds': first,
+            'label': label,
+            'description': f'{label} first seen',
+            'confidence': round(best_confidence.get(label, 0.0), 3),
+            # How many sampled frames it appeared in, so a viewer can tell a
+            # passing glimpse from a constant presence.
+            'frames_seen': kept.get(label, len(times)),
+            'last_seen_seconds': max(times),
+        })
+
+    return sorted(events, key=lambda event: (event['timestamp_seconds'], event['label']))
+
+
 def detect(
     video_path: str,
     metadata: dict,
@@ -117,6 +164,9 @@ def detect(
     # Highest confidence seen per class, and how many sampled frames it appeared in.
     frames_with_class: dict[str, int] = defaultdict(int)
     best_confidence: dict[str, float] = defaultdict(float)
+    # When each label was actually on screen, in seconds. Recorded per sampled
+    # frame so events can carry real timestamps rather than invented ones.
+    appearances: dict[str, list[float]] = defaultdict(list)
     sampled = 0
 
     try:
@@ -141,6 +191,7 @@ def detect(
 
             for label in seen_in_frame:
                 frames_with_class[label] += 1
+                appearances[label].append(_frame_seconds(index, metadata))
 
             if on_progress is not None:
                 on_progress(int((position + 1) / len(indices) * 100))
@@ -159,6 +210,7 @@ def detect(
 
     return {
         'tags': tags,
+        'events': build_events(kept, appearances, best_confidence, tags),
         'counts': {label: kept[label] for label in tags},
         'confidence': {label: round(best_confidence[label], 3) for label in tags},
         'discarded': sorted(set(frames_with_class) - set(kept)),
@@ -173,6 +225,7 @@ def detect(
 def _empty_result(model_name: str, device: str, confidence: float, sampled: int) -> dict:
     return {
         'tags': [],
+        'events': [],
         'counts': {},
         'confidence': {},
         'discarded': [],

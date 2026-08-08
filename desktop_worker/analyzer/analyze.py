@@ -6,14 +6,15 @@ Usage:
 Protocol -- one JSON object per line on stdout:
 
     {"type": "progress", "stage": "analyzing", "progress": 45}
-    {"type": "result", "summary": "...", "tags": [...], "events": [], "metadata": {...}}
+    {"type": "result", "summary": "...", "tags": [...], "events": [...], "metadata": {...}}
 
 Exactly one `result` line, last. Anything human-readable goes to stderr, which
 the worker surfaces in its activity log. A non-zero exit fails the job and the
 worker reports stderr as the error.
 
 Milestone 2 reports real container metadata only. Object detection arrives in
-milestone 3; `events` stays empty until there is something honest to put in it.
+milestone 3. `events` carries one entry per detected label, at the moment it
+was first seen -- an observation, not an incident.
 """
 
 from __future__ import annotations
@@ -133,6 +134,7 @@ def main(argv: list[str]) -> int:
         return 4
 
     tags: list[str] = []
+    events: list[dict] = []
     summary = describe(metadata)
 
     if not args.no_detect:
@@ -159,9 +161,13 @@ def main(argv: list[str]) -> int:
             )
 
             tags = result['tags']
+            events = result.get('events') or []
             summary = detection.summarize(metadata, result)
+            # tags and events are emitted as their own fields; copying them in
+            # here as well would store each one twice.
             metadata['detection'] = {
-                key: value for key, value in result.items() if key != 'tags'
+                key: value for key, value in result.items()
+                if key not in ('tags', 'events')
             }
             # Reported as a signal with its reasoning, not folded into the tags:
             # it is a judgement about the footage, and a moderator should be able
@@ -185,10 +191,10 @@ def main(argv: list[str]) -> int:
         'type': 'result',
         'summary': summary,
         'tags': tags,
-        # Events stay empty: locating a real incident in time is a different
-        # problem from recognising objects, and inventing timestamps would be
-        # exactly the placeholder behaviour this replaced.
-        'events': [],
+        # One event per detected label, at the moment it was first seen. These
+        # are observations, not incidents: locating a real incident in time is
+        # a different problem, and nothing here claims to have solved it.
+        'events': events,
         'metadata': metadata,
     })
     return 0

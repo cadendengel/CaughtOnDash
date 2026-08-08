@@ -124,3 +124,74 @@
     padding-left: 10px;
   }
 }
+/* --- Analysis results ------------------------------------------------- */
+
+/* The summary is the analyzer's own words, so it reads as a quiet aside
+   rather than as the uploader's description below it. */
+.ai-summary {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid #d0d7de;
+  background: #f6f8fa;
+  border-radius: 0 6px 6px 0;
+  color: #444;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.detection-timeline {
+  margin-top: 14px;
+}
+
+.detection-timeline-heading {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.detection-timeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detection-timeline-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+
+/* A timestamp that seeks the player, so it should look pressable rather than
+   like the plain text beside it. */
+.detection-jump {
+  flex: 0 0 auto;
+  min-width: 52px;
+  padding: 3px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #1a56db;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.detection-jump:hover {
+  background: #eef2ff;
+  border-color: #a5b4fc;
+}
+
+.detection-label {
+  font-weight: 500;
+  color: #222;
+}
+
+.detection-span {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
