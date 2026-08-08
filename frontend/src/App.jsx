@@ -98,6 +98,97 @@ function App() {
     [getToken],
   )
 
+  // Live analysis updates.
+  //
+  // Entirely optional: if the socket cannot open -- an older deployment still
+  // served by WSGI, a network that blocks WebSockets -- the site behaves as it
+  // always has and needs a reload to show new state. Nothing here is allowed to
+  // surface an error to the user over what is a progressive enhancement.
+  useEffect(() => {
+    if (!API_BASE) {
+      return undefined
+    }
+
+    let socket
+    let reconnectTimer
+    let closedByUs = false
+    let backoffMs = 1000
+
+    const applyUpdate = (update) => {
+      const merge = (item) =>
+        item && item.id === update.video_id
+          ? {
+              ...item,
+              approval_status: update.approval_status ?? item.approval_status,
+              analysis_status: update.analysis_status ?? item.analysis_status,
+              analysis_stage: update.analysis_stage ?? item.analysis_stage,
+              analysis_progress: update.analysis_progress ?? item.analysis_progress,
+              ai_summary: update.ai_summary ?? item.ai_summary,
+              ai_tags: update.ai_tags ?? item.ai_tags,
+              tags: update.tags ?? item.tags,
+              duration_seconds: update.duration_seconds ?? item.duration_seconds,
+              thumbnail_url: update.thumbnail_url ?? item.thumbnail_url,
+            }
+          : item
+
+      setPosts((current) => current.map(merge))
+      setSearchResults((current) => current.map(merge))
+      setCurrentVideo((current) => merge(current))
+    }
+
+    const connect = () => {
+      let url
+      try {
+        url = new URL(API_BASE)
+      } catch {
+        return
+      }
+
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      url.pathname = '/ws/analysis/'
+
+      try {
+        socket = new WebSocket(url.toString())
+      } catch {
+        return
+      }
+
+      socket.onmessage = (event) => {
+        try {
+          const update = JSON.parse(event.data)
+          if (update && update.type === 'analysis' && update.video_id) {
+            applyUpdate(update)
+          }
+        } catch {
+          // A message we cannot parse is not worth breaking the page over.
+        }
+      }
+
+      socket.onopen = () => {
+        backoffMs = 1000
+      }
+
+      socket.onclose = () => {
+        if (closedByUs) {
+          return
+        }
+
+        // Back off up to 30s. A deployment without WebSockets would otherwise
+        // reconnect forever at full speed.
+        reconnectTimer = window.setTimeout(connect, backoffMs)
+        backoffMs = Math.min(backoffMs * 2, 30000)
+      }
+    }
+
+    connect()
+
+    return () => {
+      closedByUs = true
+      window.clearTimeout(reconnectTimer)
+      socket?.close()
+    }
+  }, [API_BASE])
+
   const formatTimestamp = (value) => {
     if (!value) {
       return ''

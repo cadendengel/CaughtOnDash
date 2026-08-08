@@ -222,12 +222,36 @@ defaults to one worker. It breaks silently at two workers, so if this ever
 scales, Redis is required. Cloudflare supports WebSockets on the free plan, so
 the proxy in front is not a problem.
 
-- [ ] Add `channels` and an ASGI server; move `asgi.py` to Channels routing
-- [ ] Consumer publishing analysis state per video
-- [ ] Worker connects, sends progress and stage over the socket
-- [ ] Frontend subscribes and updates status without a reload
-- [ ] Keep HTTP heartbeat and progress endpoints as the fallback path
-- [ ] Commit the start command to the repo so it stops being tribal knowledge
+- [x] Add `channels` and an ASGI server; move `asgi.py` to Channels routing
+- [x] Consumer publishing analysis state
+- [x] Frontend subscribes and updates status without a reload
+- [x] Keep HTTP heartbeat and progress endpoints as the fallback path
+- [x] Document the start command
+- [ ] Worker connects and sends progress over the socket, replacing its
+      HTTP heartbeat
+
+daphne rather than uvicorn: it is Channels' own server, it provides the ASGI
+runserver used locally, and the test utilities import it, so one dependency
+covers all three.
+
+The socket is read-only and unauthenticated. Its payload is a subset of what
+the public feed already returns, so it grants nothing the feed does not, and
+treating it as write-only removes any question of what a client may ask for --
+a test pins the payload's field list to keep it that way.
+
+Publishing is best-effort at every call site. A missing channel layer, a
+failing one, or a deployment still on WSGI leaves analysis working and the site
+behaving as it always has. The frontend reconnects with backoff up to 30s so a
+deployment without WebSockets does not retry in a tight loop.
+
+Verified end to end against a real socket: approving over HTTP pushes
+immediately, and a full job streams claimed / downloading 40% / analyzing 70% /
+uploading 95% / complete 100%.
+
+That live test caught a real bug. The first version published from inside
+complete_job *before* the tag merge and the save, so browsers were told a
+finished video had no tags. Every other call site already saved first. There is
+now a test pinning that what gets pushed is what was saved.
 
 ---
 
