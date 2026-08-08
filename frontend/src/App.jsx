@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { SignIn, UserButton, useAuth, useUser } from '@clerk/react'
-import './App.css'
-import './VideoDetail.css'
 
 // Re-analysis is only offered on your own videos, and only from a state the
 // backend will accept, so the button mirrors its rules rather than inviting a
@@ -29,6 +27,134 @@ const isStaleProcessing = (post) => {
 
   return Date.now() - lastSeen > STALE_PROCESSING_MS
 }
+
+// Shared card chrome. One definition rather than three: this was a grouped
+// CSS rule covering feed cards, empty-state cards and the upload form, so
+// migrating any one of them alone would have duplicated it and let the three
+// drift apart.
+const CARD = 'rounded-card border border-ink/10 bg-white/[0.86] shadow-card'
+
+// The author line, shared by the feed card, the admin card and the detail
+// page. Same reasoning: three consumers, one definition.
+const AUTHOR_NAME = 'font-bold text-ink'
+const AUTHOR_HANDLE = 'text-[0.8rem] font-medium tracking-[0.015em] text-muted'
+
+// Tag pills. The base is shared; the variant carries the source, which is the
+// only thing that differs and the thing a reader actually needs to tell apart.
+const TAG_PILL = 'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ' +
+  'text-[0.76rem] font-bold tracking-[0.01em]'
+const TAG_VARIANT = {
+  user: 'border-blue-700/20 bg-blue-500/10 text-brand',
+  admin: 'border-red-700/20 bg-red-600/10 text-bad',
+  ai: 'border-green-800/20 bg-green-500/10 text-good',
+  toggle: 'cursor-pointer border-ink/10 bg-ink/5 text-ink',
+}
+
+// The player. aspect-video plus a max height keeps a portrait clip from
+// filling the screen, and object-contain stops it being cropped to fit.
+const VIDEO = 'mt-4 aspect-video max-h-[72vh] w-full rounded-card bg-black ' +
+  'object-contain shadow-[0_14px_34px_rgba(15,23,42,0.12)]'
+const VIDEO_PLACEHOLDER = 'mt-4 grid min-h-[240px] place-items-center rounded-card ' +
+  'border border-ink/10 bg-ink/[0.04] text-sm font-medium text-muted'
+
+// Buttons. The most reused classes in the app -- 17 call sites for the ghost
+// variant alone -- so they are constants rather than repeated strings.
+const GHOST_BTN = 'cursor-pointer rounded-full border border-ink/15 bg-white/80 px-4 py-2 ' +
+  'font-semibold text-ink transition-[background,transform,border-color] duration-200 ' +
+  'hover:-translate-y-px hover:bg-white/95 ' +
+  'disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60'
+
+// The lifted shadow previously applied only inside the feed and detail action
+// rows, so an active Like in a comment thread looked flatter than the same
+// control elsewhere. Unified deliberately rather than reproducing the
+// inconsistency.
+const GHOST_BTN_ACTIVE = 'border-transparent bg-gradient-to-br from-ink to-brand text-white ' +
+  'shadow-[0_8px_20px_rgba(29,78,216,0.24)]'
+
+const DANGER_BTN = 'cursor-pointer rounded-full border border-red-700/20 bg-red-600/10 px-4 py-2 ' +
+  'font-bold text-bad transition-[background,transform,border-color] duration-200 ' +
+  'hover:-translate-y-px hover:bg-red-600/15 ' +
+  'disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60'
+
+const ACTION_ROW = 'mt-3 flex flex-wrap items-center gap-2 max-[640px]:gap-2'
+
+// Comments render in two places and are deliberately styled differently: the
+// detail thread is compact with the handle beside the name, while the admin
+// list stacks them and sits heavier. That difference used to be emergent --
+// a `.video-detail-page .comment-*` ancestor override -- so the admin styling
+// was whatever happened to be left. It is now an explicit variant.
+const COMMENT_STYLES = {
+  detail: {
+    card: 'mb-2 rounded-panel border border-ink/5 border-t-ink/10 bg-ink/[0.03] px-4 py-3',
+    head: 'flex items-center justify-between gap-2',
+    authorBlock: 'flex items-baseline gap-2',
+    name: 'text-[0.94rem] font-semibold text-ink',
+    handle: 'text-[0.9rem] text-muted',
+  },
+  admin: {
+    card: 'rounded-panel border border-ink/5 bg-ink/[0.03] p-4',
+    head: 'flex items-start justify-between gap-2',
+    authorBlock: 'grid gap-0.5',
+    name: 'text-[0.94rem] font-bold text-ink',
+    handle: 'text-[0.82rem] text-muted',
+  },
+}
+
+// The upload form styles its fields by element rather than by class, so the
+// faithful translation is scoped variants on the form. Classing every input
+// individually would say the same thing five times.
+const UPLOAD_FIELDS =
+  '[&_label]:grid [&_label]:gap-2 [&_label]:font-semibold [&_label]:text-ink ' +
+  '[&_span]:text-[0.94rem] ' +
+  "[&_input[type='text']]:w-full [&_input[type='text']]:rounded-control [&_input[type='text']]:border " +
+  "[&_input[type='text']]:border-ink/15 [&_input[type='text']]:bg-white/90 " +
+  "[&_input[type='text']]:px-4 [&_input[type='text']]:py-3 [&_input[type='text']]:font-normal " +
+  "[&_input[type='file']]:w-full [&_input[type='file']]:rounded-control [&_input[type='file']]:border " +
+  "[&_input[type='file']]:border-ink/15 [&_input[type='file']]:bg-white/90 " +
+  "[&_input[type='file']]:px-4 [&_input[type='file']]:py-3 [&_input[type='file']]:font-normal " +
+  '[&_textarea]:w-full [&_textarea]:resize-y [&_textarea]:rounded-control [&_textarea]:border ' +
+  '[&_textarea]:border-ink/15 [&_textarea]:bg-white/90 [&_textarea]:px-4 [&_textarea]:py-3 ' +
+  '[&_textarea]:font-normal'
+
+const FORM_ACTIONS = 'mt-1 flex flex-wrap gap-3'
+const FORM_MESSAGE = 'rounded-control px-4 py-3 font-semibold'
+const FORM_MESSAGE_ERROR = `${FORM_MESSAGE} bg-red-600/10 text-[#991b1b]`
+const FORM_MESSAGE_SUCCESS = `${FORM_MESSAGE} bg-green-600/10 text-good`
+
+// Tag editing, shared by the admin editor on a feed card and the tag section
+// of the upload form.
+const CHIP_LIST = 'mt-2 flex flex-wrap gap-2'
+const TAG_FIELD_LABEL = 'text-[0.82rem] font-bold uppercase tracking-[0.16em] text-muted'
+const TAG_ROW = 'flex flex-wrap items-center gap-2'
+const TAG_INPUT = 'min-w-0 flex-[1_1_240px] rounded-control border border-ink/15 bg-white/90 ' +
+  'px-3 py-2 font-normal text-ink'
+
+const SCREEN = 'grid min-h-svh place-items-center p-8 max-[640px]:p-5'
+const PAGE_CONTENT = 'grid w-[min(1040px,100%)] gap-4'
+const PAGE_HEADING = '[&>h2]:font-heading [&>h2]:text-[clamp(1.8rem,3vw,2.8rem)] ' +
+  '[&>h2]:tracking-[-0.03em] [&>h2]:text-ink [&>p]:mt-1 [&>p]:text-muted'
+const EYEBROW = 'inline-flex items-center gap-2 text-[0.72rem] font-bold uppercase ' +
+  'tracking-[0.24em] text-muted'
+
+// Empty-state and upload cards style their own heading and copy.
+const CARD_COPY = '[&>h3]:mt-2 [&>h3]:font-heading [&>h3]:text-2xl [&>h3]:text-ink ' +
+  '[&>p]:mt-2 [&>p]:max-w-[60ch] [&>p]:text-body'
+
+const VIDEO_META = 'mt-3 flex flex-wrap gap-2 max-[640px]:gap-2 ' +
+  '[&>span]:rounded-full [&>span]:bg-ink/[0.06] [&>span]:px-2.5 [&>span]:py-1 ' +
+  '[&>span]:text-[0.86rem] [&>span]:text-ink'
+
+const BTN_BASE = 'mt-4 cursor-pointer rounded-full px-4 py-2 font-semibold'
+const PRIMARY_BTN = BTN_BASE + ' border-none bg-gradient-to-br from-ink to-brand text-white'
+const SECONDARY_BTN = BTN_BASE + ' border border-ink/15 bg-white/70 text-ink'
+
+const COMMENT_INPUT = 'w-full resize-y rounded-control border border-ink/15 bg-white/90 ' +
+  'px-4 py-3 font-normal text-ink'
+
+const COMMENTS_PANEL = 'grid gap-3 border-t border-ink/[0.08] bg-ink/[0.02]'
+const COMMENTS_EMPTY = 'text-[0.82rem] text-muted'
+const COMMENT_FORM = 'grid gap-2'
+const ANALYSIS_ERROR = 'mt-2 text-[0.85rem] text-bad'
 
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
@@ -277,31 +403,28 @@ function App() {
 
   const getTagColorClass = (source) => {
     if (source === 'admin') {
-      return 'tag-pill--admin'
+      return TAG_VARIANT.admin
     }
 
     if (source === 'ai') {
-      return 'tag-pill--ai'
+      return TAG_VARIANT.ai
     }
 
-    return 'tag-pill--user'
+    return TAG_VARIANT.user
   }
 
-  const getAnalysisStatusColor = (status) => {
-    switch (status) {
-      case 'complete':
-        return '#10b981' // green
-      case 'processing':
-        return '#f59e0b' // amber
-      case 'failed':
-        return '#ef4444' // red
-      case 'cancelled':
-        return '#6b7280' // gray
-      case 'pending':
-      default:
-        return '#9ca3af' // gray
-    }
+  // Status colours as classes rather than inline hex, so they sit in the same
+  // system as the rest of the palette. The dot and the progress fill share an
+  // entry, which is what keeps them from disagreeing.
+  const STATUS_TONE = {
+    complete: 'bg-emerald-500',
+    processing: 'bg-amber-500',
+    failed: 'bg-red-500',
+    cancelled: 'bg-slate-500',
+    pending: 'bg-slate-400',
   }
+
+  const statusTone = (status) => STATUS_TONE[status] || STATUS_TONE.pending
 
   // Jump the detail player to a detected moment.
   //
@@ -371,14 +494,19 @@ function App() {
     const isDashcam = verdict.looks_like_dashcam
     return (
       <div
-        className={`dashcam-badge ${isDashcam ? 'is-dashcam' : 'not-dashcam'}`}
+        className={[
+          'mt-2 inline-flex flex-wrap items-baseline gap-2 rounded-full border px-2.5 py-1 text-[0.82rem]',
+          isDashcam
+            ? 'border-[#cfe6d6] bg-[#eef7f0] text-[#1e5b34]'
+            : 'border-[#eedfb4] bg-[#fdf6e7] text-[#7a5a12]',
+        ].join(' ')}
         title={verdict.reason ? `Because: ${verdict.reason}` : undefined}
       >
-        <span className="dashcam-badge-label">
+        <span className="font-semibold">
           {isDashcam ? 'Looks like dashcam footage' : 'May not be dashcam footage'}
         </span>
         {verdict.reason ? (
-          <span className="dashcam-badge-reason">{verdict.reason}</span>
+          <span className="opacity-85">{verdict.reason}</span>
         ) : null}
       </div>
     )
@@ -393,7 +521,7 @@ function App() {
     }
 
     return (
-      <p className="ai-summary" title="Generated by automatic analysis">
+      <p className="mt-2 rounded-r-control border-l-[3px] border-[#d0d7de] bg-[#f6f8fa] px-3 py-2 text-[0.9rem] leading-[1.45] text-body" title="Generated by automatic analysis">
         {post.ai_summary}
       </p>
     )
@@ -411,9 +539,9 @@ function App() {
     }
 
     return (
-      <div className="detection-timeline">
-        <h3 className="detection-timeline-heading">What the analysis saw</h3>
-        <ul className="detection-timeline-list">
+      <div className="mt-4">
+        <h3 className="mb-2 text-[0.95rem] font-semibold text-ink">What the analysis saw</h3>
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
           {events.map((event) => {
             const start = Number(event.timestamp_seconds) || 0
             const end = Number(event.last_seen_seconds)
@@ -421,22 +549,22 @@ function App() {
             // object was tracked between the two, which sampling cannot claim.
             const spans = Number.isFinite(end) && end > start
             return (
-              <li key={`${event.label}-${start}`}>
+              <li key={`${event.label}-${start}`} className="flex items-baseline gap-2 text-[0.9rem]">
                 <button
                   type="button"
-                  className="detection-jump"
+                  className="min-w-[52px] shrink-0 cursor-pointer rounded-control border border-[#d0d7de] bg-white px-2 py-1 text-[0.85rem] tabular-nums text-brand hover:border-[#a5b4fc] hover:bg-[#eef2ff]"
                   onClick={() => onSeek(start)}
                   title={`Jump to ${formatClipTime(start)}`}
                 >
                   {formatClipTime(start)}
                 </button>
-                <span className="detection-label">{event.label}</span>
+                <span className="font-medium text-ink">{event.label}</span>
                 {spans ? (
-                  <span className="detection-span">
+                  <span className="text-[0.85rem] text-muted">
                     seen until {formatClipTime(end)}
                   </span>
                 ) : (
-                  <span className="detection-span">single frame</span>
+                  <span className="text-[0.85rem] text-muted">single frame</span>
                 )}
               </li>
             )
@@ -446,32 +574,38 @@ function App() {
     )
   }
 
+  // One row shape, three callers. This was three near-identical copies built
+  // from inline styles, which is how #666 and #999 -- two greys that exist
+  // nowhere else -- survived the palette cleanup.
+  const renderStatusRow = (tone, label, note = null, progress = null) => (
+    <div className="mt-2">
+      <div className="flex items-center gap-2">
+        <span className={`inline-block size-2 rounded-full ${tone}`} />
+        <span className="text-[0.9rem] text-muted">{label}</span>
+        {note ? <span className="text-[0.85rem] text-muted">({note})</span> : null}
+      </div>
+      {progress !== null ? (
+        <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+          {/* Width is data, so it stays inline; the colour is not. */}
+          <div
+            className={`h-full transition-[width] duration-300 ${tone}`}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+
   const renderAnalysisStatus = (post) => {
     // Approval comes first in the pipeline, so it comes first in the label.
     // Showing "Cancelled" or "Pending 0%" for a video nobody has looked at yet
     // describes the machinery rather than the situation.
     if (post.approval_status === 'pending_review') {
-      return (
-        <div className="analysis-status-container" style={{ marginTop: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ display: 'inline-block', width: '8px', height: '8px',
-                           borderRadius: '50%', backgroundColor: '#9ca3af' }} />
-            <span style={{ fontSize: '0.9rem', color: '#666' }}>Pending review</span>
-          </div>
-        </div>
-      )
+      return renderStatusRow(STATUS_TONE.pending, 'Pending review')
     }
 
     if (post.approval_status === 'rejected') {
-      return (
-        <div className="analysis-status-container" style={{ marginTop: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ display: 'inline-block', width: '8px', height: '8px',
-                           borderRadius: '50%', backgroundColor: '#6b7280' }} />
-            <span style={{ fontSize: '0.9rem', color: '#666' }}>Not selected for analysis</span>
-          </div>
-        </div>
-      )
+      return renderStatusRow(STATUS_TONE.cancelled, 'Not selected for analysis')
     }
 
     if (!post.analysis_status) {
@@ -481,46 +615,15 @@ function App() {
     const status = post.analysis_status
     const stage = post.analysis_stage || 'queued'
     const progress = post.analysis_progress || 0
-    const color = getAnalysisStatusColor(status)
+    const isProcessing = status === 'processing'
 
-    let statusLabel = status.charAt(0).toUpperCase() + status.slice(1)
-    if (status === 'processing') {
-      statusLabel = `Processing: ${progress}%`
-    }
-
-    return (
-      <div className="analysis-status-container" style={{ marginTop: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span
-            style={{
-              display: 'inline-block',
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: color,
-            }}
-          />
-          <span style={{ fontSize: '0.9rem', color: '#666' }}>{statusLabel}</span>
-          {status === 'processing' && stage && (
-            <span style={{ fontSize: '0.85rem', color: '#999' }}>({stage})</span>
-          )}
-        </div>
-        {status === 'processing' && (
-          <div style={{ marginTop: '6px', width: '100%', height: '4px', backgroundColor: '#e5e7eb', borderRadius: '2px', overflow: 'hidden' }}>
-            <div
-              style={{
-                height: '100%',
-                width: `${progress}%`,
-                backgroundColor: color,
-                transition: 'width 0.3s ease',
-              }}
-            />
-          </div>
-        )}
-      </div>
+    return renderStatusRow(
+      statusTone(status),
+      isProcessing ? `Processing: ${progress}%` : status.charAt(0).toUpperCase() + status.slice(1),
+      isProcessing && stage ? stage : null,
+      isProcessing ? progress : null,
     )
   }
-
 
   const clerkEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || ''
   const clerkFullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || user?.fullName || ''
@@ -952,21 +1055,21 @@ function App() {
     const showToggle = editable || tagList.length > 3
 
     return (
-      <div className={editable ? 'tag-strip tag-strip--editable' : 'tag-strip'}>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {visibleTags.length > 0 ? (
           visibleTags.map((tag, index) => (
-            <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+            <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
               {tag.text}
             </span>
           ))
         ) : editable ? (
-          <span className="tag-pill tag-pill--toggle">No tags yet</span>
+          <span className={`${TAG_PILL} ${TAG_VARIANT.toggle}`}>No tags yet</span>
         ) : null}
 
         {showToggle ? (
           <button
             type="button"
-            className="tag-pill tag-pill--toggle"
+            className={`${TAG_PILL} ${TAG_VARIANT.toggle}`}
             onClick={() => toggleTagExpansion(videoId)}
             aria-expanded={isExpanded}
           >
@@ -982,29 +1085,29 @@ function App() {
     const draftValue = adminTagDraftsByPostId[videoId] || ''
 
     return (
-      <div className="tag-editor">
-        <div className="tag-editor-head">
-          <span className="tag-editor-label">Edit tags</span>
-          <button type="button" className="ghost-btn" onClick={() => toggleTagExpansion(videoId)}>
+      <div className="mt-1 grid gap-2 rounded-panel border border-ink/[0.06] bg-ink/[0.03] p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className={TAG_FIELD_LABEL}>Edit tags</span>
+          <button type="button" className={GHOST_BTN} onClick={() => toggleTagExpansion(videoId)}>
             Collapse
           </button>
         </div>
 
-        <div className="tag-editor-chip-list">
+        <div className={CHIP_LIST}>
           {currentTags.map((tag, index) => (
-            <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+            <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
               {tag.text}
-              <button type="button" className="tag-chip-remove" onClick={() => removeAdminTag(videoId, index)}>
+              <button type="button" className="cursor-pointer border-none bg-transparent p-0 text-base leading-none text-inherit" onClick={() => removeAdminTag(videoId, index)}>
                 ×
               </button>
             </span>
           ))}
         </div>
 
-        <div className="tag-editor-row">
+        <div className={TAG_ROW}>
           <input
             type="text"
-            className="tag-input"
+            className={TAG_INPUT}
             value={draftValue}
             onChange={(event) => updateAdminTagDraft(videoId, event.target.value)}
             onKeyDown={(event) => {
@@ -1015,13 +1118,13 @@ function App() {
             }}
             placeholder="Add an admin tag"
           />
-          <button type="button" className="secondary-btn" onClick={() => addAdminTag(videoId)}>
+          <button type="button" className={SECONDARY_BTN} onClick={() => addAdminTag(videoId)}>
             Add
           </button>
         </div>
 
-        <div className="form-actions tag-editor-actions">
-          <button type="button" className="primary-btn" onClick={() => saveAdminTags(videoId)} disabled={adminTagSavingByPostId[videoId]}>
+        <div className={`${FORM_ACTIONS} mt-0`}>
+          <button type="button" className={PRIMARY_BTN} onClick={() => saveAdminTags(videoId)} disabled={adminTagSavingByPostId[videoId]}>
             {adminTagSavingByPostId[videoId] ? 'Saving...' : 'Save tags'}
           </button>
         </div>
@@ -1560,7 +1663,7 @@ function App() {
 
   if (!isLoaded) {
     return (
-      <main className="screen loading-state">
+      <main className={`${SCREEN} text-ink`}>
         <p>Loading authentication…</p>
       </main>
     )
@@ -1568,10 +1671,10 @@ function App() {
 
   if (!isSignedIn) {
     return (
-      <main className="screen auth-screen">
-        <section className="auth-panel">
-          <div className="auth-copy">
-            <span className="eyebrow">CaughtOnDash</span>
+      <main className={`${SCREEN} app-canvas`}>
+        <section className="grid w-[min(1040px,100%)] grid-cols-2 overflow-hidden rounded-card border border-ink/10 bg-white/80 shadow-card backdrop-blur-lg max-[860px]:grid-cols-1">
+          <div className="grid content-center gap-4 bg-[linear-gradient(145deg,rgba(15,23,42,0.94),rgba(30,64,175,0.88))] p-8 text-ink max-[640px]:p-6 [&>h1]:font-heading [&>h1]:text-[clamp(2.2rem,4vw,4.4rem)] [&>h1]:leading-none [&>h1]:tracking-[-0.04em] [&>h1]:text-white [&>p]:max-w-[34rem] [&>p]:text-white/85">
+            <span className={EYEBROW}>CaughtOnDash</span>
             <h1>Sign in to continue</h1>
             <p>
               Use your Clerk account to get into the dashboard and continue
@@ -1579,7 +1682,7 @@ function App() {
             </p>
           </div>
 
-          <div className="auth-widget" aria-label="Sign in form">
+          <div className="grid place-items-center bg-white/90 p-8 max-[640px]:p-6 [&_.cl-rootBox]:w-full [&_.cl-rootBox]:max-w-[420px] [&_.cl-card]:w-full [&_.cl-card]:max-w-[420px]" aria-label="Sign in form">
             <SignIn routing="virtual" />
           </div>
         </section>
@@ -1588,25 +1691,23 @@ function App() {
   }
 
   const renderPostCard = (post) => (
-    <article key={post.id} className="feed-card">
-      <div className="feed-card-head">
-        <div className="author-block">
-          <span className="author-name">{getDisplayName(post)}</span>
-          <span className="author-handle">@{getHandle(post)}</span>
+    <article key={post.id} className={`${CARD} overflow-hidden p-5 max-[640px]:p-5`}>
+      <div className="flex items-start justify-between gap-2 pb-0.5 max-[640px]:flex-col max-[640px]:gap-3">
+        <div className="grid gap-0.5">
+          <span className={AUTHOR_NAME}>{getDisplayName(post)}</span>
+          <span className={AUTHOR_HANDLE}>@{getHandle(post)}</span>
         </div>
-        <span className="timestamp">{formatTimestamp(post.created_at)}</span>
+        <span className="text-muted">{formatTimestamp(post.created_at)}</span>
       </div>
 
-      <h2>{post.title}</h2>
+      <h2 className="mt-2 text-[clamp(1.15rem,1.6vw,1.5rem)] font-bold leading-tight text-ink">{post.title}</h2>
 
       {renderTagPills(post.id, post.tags || [])}
       {renderAnalysisStatus(post)}
-      {renderDashcamBadge(post)}
-      {renderAiSummary(post)}
 
       {post.playback_url ? (
         <video
-          className="feed-video"
+          className={VIDEO}
           controls
           playsInline
           preload="metadata"
@@ -1617,15 +1718,21 @@ function App() {
           Your browser does not support the video tag.
         </video>
       ) : (
-        <div className="feed-video-placeholder">
+        <div className={VIDEO_PLACEHOLDER}>
           Video not available yet.
         </div>
       )}
 
-      <div className="post-actions feed-actions-row">
+      {/* Below the video, not above it. These describe the clip, so putting
+          four blocks between the title and the thing they describe pushed the
+          actual content off the first screen. */}
+      {renderDashcamBadge(post)}
+      {renderAiSummary(post)}
+
+      <div className={ACTION_ROW}>
         <button
           type="button"
-          className={post.liked ? 'ghost-btn active' : 'ghost-btn'}
+          className={post.liked ? `${GHOST_BTN} ${GHOST_BTN_ACTIVE}` : GHOST_BTN}
           onClick={() => toggleLike(post.id)}
           disabled={likeLoadingByPostId[post.id]}
           aria-pressed={Boolean(post.liked)}
@@ -1634,18 +1741,18 @@ function App() {
         </button>
         <button
           type="button"
-          className="ghost-btn"
+          className={GHOST_BTN}
           onClick={() => openDetail(post.id)}
         >
           Comment · {post.comments_count || 0}
         </button>
-        <button type="button" className="ghost-btn" onClick={() => shareVideo(post)}>
+        <button type="button" className={GHOST_BTN} onClick={() => shareVideo(post)}>
           {shareStatusByPostId[post.id] === 'shared' ? 'Copied' : 'Share'}
         </button>
         {canRequestAnalysis(post) ? (
           <button
             type="button"
-            className="ghost-btn"
+            className={GHOST_BTN}
             onClick={() => requestAnalysis(post.id)}
             disabled={analysisRequestLoadingByPostId[post.id]}
           >
@@ -1656,7 +1763,7 @@ function App() {
           <>
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               onClick={() => decideApproval(post.id, true)}
               disabled={analysisRequestLoadingByPostId[post.id]}
             >
@@ -1664,7 +1771,7 @@ function App() {
             </button>
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               onClick={() => decideApproval(post.id, false)}
               disabled={analysisRequestLoadingByPostId[post.id]}
             >
@@ -1675,7 +1782,7 @@ function App() {
       </div>
 
       {analysisRequestErrorByPostId[post.id] ? (
-        <p className="analysis-request-error">{analysisRequestErrorByPostId[post.id]}</p>
+        <p className={ANALYSIS_ERROR}>{analysisRequestErrorByPostId[post.id]}</p>
       ) : null}
     </article>
   )
@@ -1683,23 +1790,32 @@ function App() {
   const renderCommentNode = (comment, videoId, depth = 0, showAdminActions = false) => {
     const handle = getHandle(comment)
     const isReply = depth > 0
+    // The admin list is the only place showAdminActions is set, and it is
+    // also the only place the stacked styling applies, so it selects both.
+    const style = showAdminActions ? COMMENT_STYLES.admin : COMMENT_STYLES.detail
 
     return (
-      <article key={comment.id} className={isReply ? 'comment-card comment-reply-card' : 'comment-card'}>
-        <div className="comment-head">
-          <div className="comment-author-block">
-            <span className="comment-author-name">{getDisplayName(comment)}</span>
-            <span className="comment-author-handle">@{handle}</span>
+      <article
+        key={comment.id}
+        className={[
+          style.card,
+          isReply ? 'ml-[18px] border-l-2 border-l-ink/10 pl-3.5 max-[640px]:ml-3 max-[640px]:pl-2.5' : '',
+        ].join(' ')}
+      >
+        <div className={style.head}>
+          <div className={style.authorBlock}>
+            <span className={style.name}>{getDisplayName(comment)}</span>
+            <span className={style.handle}>@{handle}</span>
           </div>
-          <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
+          <span className="text-[0.82rem] text-muted">{formatTimestamp(comment.created_at)}</span>
         </div>
 
-        <p>{comment.text}</p>
+        <p className="mt-2 leading-[1.55] text-body">{comment.text}</p>
 
-        <div className="comment-actions">
+        <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
-            className={comment.liked ? 'ghost-btn active' : 'ghost-btn'}
+            className={comment.liked ? `${GHOST_BTN} ${GHOST_BTN_ACTIVE}` : GHOST_BTN}
             onClick={() => toggleCommentLike(videoId, comment.id)}
             disabled={commentLikeLoadingByCommentId[comment.id]}
             aria-pressed={Boolean(comment.liked)}
@@ -1710,7 +1826,7 @@ function App() {
           {!isReply ? (
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               onClick={() => openReplyComposer(comment.id, handle)}
             >
               Reply
@@ -1718,16 +1834,16 @@ function App() {
           ) : null}
 
           {showAdminActions && isAdmin ? (
-            <button type="button" className="danger-btn" onClick={() => deleteAdminComment(videoId, comment.id)}>
+            <button type="button" className={DANGER_BTN} onClick={() => deleteAdminComment(videoId, comment.id)}>
               Delete
             </button>
           ) : null}
         </div>
 
         {!isReply && replyComposerOpenByCommentId[comment.id] ? (
-          <form className="comment-form reply-form" onSubmit={(event) => handleReplySubmit(videoId, comment, event)}>
+          <form className={`${COMMENT_FORM} mt-2`} onSubmit={(event) => handleReplySubmit(videoId, comment, event)}>
             <textarea
-              className="comment-input"
+              className={COMMENT_INPUT}
               value={replyDraftsByCommentId[comment.id] || ''}
               onChange={(event) =>
                 setReplyDraftsByCommentId((current) => ({
@@ -1738,11 +1854,11 @@ function App() {
               rows="2"
               placeholder={`Reply to @${handle}`}
             />
-            <div className="form-actions reply-actions-row">
-              <button type="submit" className="primary-btn" disabled={replyLoadingByCommentId[comment.id]}>
+            <div className="mt-0 flex flex-wrap gap-2">
+              <button type="submit" className={`${PRIMARY_BTN} mt-0 justify-self-start`} disabled={replyLoadingByCommentId[comment.id]}>
                 {replyLoadingByCommentId[comment.id] ? 'Posting...' : 'Reply'}
               </button>
-              <button type="button" className="secondary-btn" onClick={() => closeReplyComposer(comment.id)}>
+              <button type="button" className={SECONDARY_BTN} onClick={() => closeReplyComposer(comment.id)}>
                 Cancel
               </button>
             </div>
@@ -1750,13 +1866,21 @@ function App() {
         ) : null}
 
         {!isReply && Array.isArray(comment.replies) && comment.replies.length > 0 ? (
-          <div className="comment-replies">
+          <div className="mt-3 grid gap-2">
             {comment.replies.map((reply) => renderCommentNode(reply, videoId, depth + 1, showAdminActions))}
           </div>
         ) : null}
       </article>
     )
   }
+
+// Moderation group accents. Stuck jobs raise no error anywhere else in the
+// system, so their count gets a colour that says "look here".
+const MODERATION_ACCENT = {
+  awaiting_review: 'bg-[#eef1f5] text-muted',
+  failed: 'bg-bad-soft text-[#9b2c2c]',
+  stuck: 'bg-[#fdf0e3] text-[#8a4b12]',
+}
 
   const MODERATION_GROUPS = [
     {
@@ -1778,11 +1902,21 @@ function App() {
     },
   ]
 
+  // Nav buttons: one class string rather than four copies that drift apart.
+  const navButtonClass = (page) =>
+    [
+      'whitespace-nowrap rounded-full border px-4 py-2 cursor-pointer transition-transform duration-150',
+      'hover:-translate-y-px',
+      activePage === page
+        ? 'border-transparent bg-gradient-to-br from-ink to-brand text-white'
+        : 'border-ink/15 bg-white/65 text-ink',
+    ].join(' ')
+
   const renderModerationRow = (entry, groupKey) => (
-    <li key={entry.video_id} className="moderation-row">
-      <div className="moderation-row-main">
-        <span className="moderation-row-title">{entry.title || 'Untitled'}</span>
-        <span className="moderation-row-meta">
+    <li key={entry.video_id} className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-[#eef1f5] bg-[#fafbfc] px-3 py-2">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="font-semibold text-ink">{entry.title || 'Untitled'}</span>
+        <span className="text-[0.83rem] text-muted">
           {entry.duration_display || entry.duration_seconds ? `${entry.duration_display || `${entry.duration_seconds}s`} · ` : ''}
           {entry.attempt_number > 1
             ? `attempt ${entry.attempt_number}`
@@ -1790,12 +1924,12 @@ function App() {
           {entry.previous_attempts > 0 ? ` · ${entry.previous_attempts} before` : ''}
         </span>
         {entry.last_result ? (
-          <span className="moderation-row-history">{entry.last_result}</span>
+          <span className="text-[0.83rem] text-muted">{entry.last_result}</span>
         ) : null}
       </div>
-      <div className="moderation-row-actions">
+      <div className="flex flex-wrap items-center gap-2">
         {entry.video_url ? (
-          <a className="ghost-btn" href={entry.video_url} target="_blank" rel="noreferrer">
+          <a className={GHOST_BTN} href={entry.video_url} target="_blank" rel="noreferrer">
             Preview
           </a>
         ) : null}
@@ -1803,7 +1937,7 @@ function App() {
           <>
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               disabled={analysisRequestLoadingByPostId[entry.video_id]}
               onClick={async () => {
                 await decideApproval(entry.video_id, true)
@@ -1814,7 +1948,7 @@ function App() {
             </button>
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               disabled={analysisRequestLoadingByPostId[entry.video_id]}
               onClick={async () => {
                 await decideApproval(entry.video_id, false)
@@ -1827,7 +1961,7 @@ function App() {
         ) : (
           <button
             type="button"
-            className="ghost-btn"
+            className={GHOST_BTN}
             disabled={analysisRequestLoadingByPostId[entry.video_id]}
             onClick={() => retryAnalysis(entry.video_id)}
           >
@@ -1846,8 +1980,8 @@ function App() {
   const renderModerationPanel = () => {
     if (moderationError) {
       return (
-        <div className="moderation-panel">
-          <p className="moderation-error">{moderationError}</p>
+        <div className="mb-6 rounded-panel border border-line bg-surface px-5 py-[18px]">
+          <p className="m-0 text-[0.9rem] text-[#9b2c2c]">{moderationError}</p>
         </div>
       )
     }
@@ -1858,9 +1992,9 @@ function App() {
 
     if ((moderation.counts?.total || 0) === 0) {
       return (
-        <div className="moderation-panel">
-          <h3 className="moderation-heading">Nothing needs attention</h3>
-          <p className="moderation-blurb">
+        <div className="mb-6 rounded-panel border border-line bg-surface px-5 py-[18px]">
+          <h3 className="m-0 mb-1 text-[1.05rem]">Nothing needs attention</h3>
+          <p className="mt-1 mb-2.5 text-[0.85rem] text-muted">
             No videos are awaiting review, failed, or stuck.
           </p>
         </div>
@@ -1868,10 +2002,10 @@ function App() {
     }
 
     return (
-      <div className="moderation-panel">
-        <h3 className="moderation-heading">
+      <div className="mb-6 rounded-panel border border-line bg-surface px-5 py-[18px]">
+        <h3 className="m-0 mb-1 flex items-center gap-2 text-[1.05rem]">
           Needs attention
-          <span className="moderation-total">{moderation.counts.total}</span>
+          <span className="rounded-full bg-brand px-2.5 py-px text-[0.8rem] text-white">{moderation.counts.total}</span>
         </h3>
         {MODERATION_GROUPS.map((group) => {
           const entries = moderation.groups?.[group.key] || []
@@ -1879,13 +2013,13 @@ function App() {
             return null
           }
           return (
-            <div key={group.key} className={`moderation-group ${group.key}`}>
-              <h4 className="moderation-group-heading">
+            <div key={group.key} className="mt-4 border-t border-[#eef1f5] pt-3.5 first:mt-0 first:border-t-0 first:pt-0">
+              <h4 className="m-0 flex items-center gap-2 text-[0.95rem]">
                 {group.title}
-                <span className="moderation-count">{entries.length}</span>
+                <span className={`rounded-full px-2 text-[0.78rem] ${MODERATION_ACCENT[group.key] || MODERATION_ACCENT.awaiting_review}`}>{entries.length}</span>
               </h4>
-              <p className="moderation-blurb">{group.blurb}</p>
-              <ul className="moderation-list">
+              <p className="mt-1 mb-2.5 text-[0.85rem] text-muted">{group.blurb}</p>
+              <ul className="m-0 flex list-none flex-col gap-2 p-0">
                 {entries.map((entry) => renderModerationRow(entry, group.key))}
               </ul>
             </div>
@@ -1896,8 +2030,8 @@ function App() {
   }
 
   const renderAdminPage = () => (
-    <section className="page-content admin-page">
-      <div className="page-heading">
+    <section className={PAGE_CONTENT}>
+      <div className={PAGE_HEADING}>
         <h2>Admin</h2>
         <p>Admin-only moderation tools for posts, comments, and replies.</p>
       </div>
@@ -1905,24 +2039,24 @@ function App() {
       {renderModerationPanel()}
 
       {posts.length === 0 ? (
-        <div className="empty-feed-card">
-          <p className="eyebrow">Nothing to moderate</p>
+        <div className={`${CARD} p-6 ${CARD_COPY}`}>
+          <p className={EYEBROW}>Nothing to moderate</p>
           <h3>No posts available</h3>
           <p>When content appears, it will show here with delete controls.</p>
         </div>
       ) : (
-        <div className="admin-list">
+        <div className="grid gap-4">
           {posts.map((post) => (
-            <article key={post.id} className="feed-card admin-card">
-              <div className="feed-card-head">
-                <div className="author-block">
-                  <span className="author-name">{getDisplayName(post)}</span>
-                  <span className="author-handle">@{getHandle(post)}</span>
+            <article key={post.id} className={`${CARD} grid gap-3 overflow-hidden p-5 max-[640px]:p-5`}>
+              <div className="flex items-start justify-between gap-2 pb-0.5 max-[640px]:flex-col max-[640px]:gap-3">
+                <div className="grid gap-0.5">
+                  <span className={AUTHOR_NAME}>{getDisplayName(post)}</span>
+                  <span className={AUTHOR_HANDLE}>@{getHandle(post)}</span>
                 </div>
-                <span className="timestamp">{formatTimestamp(post.created_at)}</span>
+                <span className="text-muted">{formatTimestamp(post.created_at)}</span>
               </div>
 
-              <h2>{post.title}</h2>
+              <h2 className="mt-2 text-[clamp(1.15rem,1.6vw,1.5rem)] font-bold leading-tight text-ink">{post.title}</h2>
 
               {renderTagPills(post.id, adminTagEditsByPostId[post.id] || post.tags || [], { editable: true })}
 
@@ -1930,29 +2064,29 @@ function App() {
 
               {renderAnalysisStatus(post)}
 
-              <div className="video-meta">
+              <div className={VIDEO_META}>
                 <span>{post.duration_seconds ? `${post.duration_seconds}s` : 'Duration unavailable'}</span>
                 <span>{post.views || 0} views</span>
                 <span>{post.likes_count || 0} likes</span>
                 <span>{post.comments_count || 0} comments</span>
               </div>
 
-              <div className="post-actions admin-actions-row">
-                <button type="button" className="danger-btn" onClick={() => deleteAdminVideo(post.id)}>
+              <div className={`${ACTION_ROW} mt-0`}>
+                <button type="button" className={DANGER_BTN} onClick={() => deleteAdminVideo(post.id)}>
                   Delete post
                 </button>
               </div>
 
-              <div className="comments-panel admin-comments-panel">
+              <div className={`${COMMENTS_PANEL} mt-0 rounded-panel p-4 max-[640px]:p-3`}>
                 {loadingCommentsByPostId[post.id] ? (
-                  <p className="comments-empty">Loading comments...</p>
+                  <p className={COMMENTS_EMPTY}>Loading comments...</p>
                 ) : null}
 
                 {!loadingCommentsByPostId[post.id] && (commentsByPostId[post.id] || []).length === 0 ? (
-                  <p className="comments-empty">No comments yet.</p>
+                  <p className={COMMENTS_EMPTY}>No comments yet.</p>
                 ) : null}
 
-                <div className="comments-list">
+                <div className="grid gap-2">
                   {(commentsByPostId[post.id] || []).map((comment) => renderCommentNode(comment, post.id, 0, true))}
                 </div>
               </div>
@@ -1969,35 +2103,36 @@ function App() {
   }
 
   const renderSearchPage = () => (
-    <section className="page-content search-page">
-      <div className="page-heading">
+    <section className={`${PAGE_CONTENT} gap-5`}>
+      <div className={PAGE_HEADING}>
         <h2>Search</h2>
         <p>Find clips by title, description, or tags.</p>
       </div>
 
-      <form className="search-panel" onSubmit={handleSearchSubmit}>
-        <label className="search-input-group">
+      <form className="grid gap-4 rounded-card border border-ink/10 bg-white/85 p-5 shadow-card" onSubmit={handleSearchSubmit}>
+        <label className="grid gap-2 font-semibold text-ink [&>span]:text-[0.94rem]">
           <span>Search videos</span>
-          <div className="search-input-row">
+          <div className="flex flex-wrap gap-2">
             <input
               type="text"
+              className="min-w-0 flex-[1_1_280px] rounded-control border border-ink/15 bg-white/95 px-4 py-3 font-normal text-ink"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="freeway merge, near miss, brake check..."
             />
-            <button type="submit" className="primary-btn" disabled={searchLoading}>
+            <button type="submit" className={`${PRIMARY_BTN} mt-0`} disabled={searchLoading}>
               {searchLoading ? 'Searching...' : 'Search'}
             </button>
           </div>
         </label>
 
-        <div className="search-panel-actions">
-          <button type="button" className="secondary-btn" onClick={() => loadSearchResults(searchQuery)} disabled={searchLoading}>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={`${SECONDARY_BTN} mt-0`} onClick={() => loadSearchResults(searchQuery)} disabled={searchLoading}>
             Refresh results
           </button>
           <button
             type="button"
-            className="ghost-btn"
+            className={GHOST_BTN}
             onClick={() => {
               setSearchQuery('')
               setSearchResults([])
@@ -2010,18 +2145,18 @@ function App() {
         </div>
       </form>
 
-      {searchError ? <p className="form-message error">{searchError}</p> : null}
+      {searchError ? <p className={FORM_MESSAGE_ERROR}>{searchError}</p> : null}
 
       {searchHasSearched && !searchLoading && !searchError ? (
-        <div className="search-summary">
+        <div className="flex flex-wrap items-center gap-2 text-[0.94rem] text-muted">
           <span>{searchResults.length} result{searchResults.length === 1 ? '' : 's'}</span>
           {searchQuery.trim() ? <span>for “{searchQuery.trim()}”</span> : null}
         </div>
       ) : null}
 
       {!searchHasSearched && !searchLoading ? (
-        <div className="empty-feed-card search-empty-card">
-          <p className="eyebrow">Start here</p>
+        <div className={`${CARD} mt-0.5 p-6 ${CARD_COPY}`}>
+          <p className={EYEBROW}>Start here</p>
           <h3>Search the video catalog</h3>
           <p>
             Try a title, a common driving phrase, or a tag to find matching clips.
@@ -2029,17 +2164,17 @@ function App() {
         </div>
       ) : null}
 
-      {searchLoading ? <p className="comments-empty">Searching…</p> : null}
+      {searchLoading ? <p className={COMMENTS_EMPTY}>Searching…</p> : null}
 
       {searchHasSearched && !searchLoading && searchResults.length === 0 && !searchError ? (
-        <div className="empty-feed-card search-empty-card">
-          <p className="eyebrow">No matches</p>
+        <div className={`${CARD} mt-0.5 p-6 ${CARD_COPY}`}>
+          <p className={EYEBROW}>No matches</p>
           <h3>Nothing matched your search</h3>
           <p>Try fewer words or search by a tag name instead.</p>
         </div>
       ) : null}
 
-      {searchResults.length > 0 ? <div className="feed-list">{searchResults.map(renderPostCard)}</div> : null}
+      {searchResults.length > 0 ? <div className="grid gap-4">{searchResults.map(renderPostCard)}</div> : null}
     </section>
   )
 
@@ -2119,15 +2254,15 @@ function App() {
   }
 
   const renderFeedPage = () => (
-    <section className="page-content">
-      <div className="page-heading">
+    <section className={PAGE_CONTENT}>
+      <div className={PAGE_HEADING}>
         <h2>Feed</h2>
         <p>Latest dashcam uploads and incidents from the community.</p>
       </div>
 
       {posts.length === 0 ? (
-        <div className="empty-feed-card">
-          <p className="eyebrow">No posts yet</p>
+        <div className={`${CARD} p-6 ${CARD_COPY}`}>
+          <p className={EYEBROW}>No posts yet</p>
           <h3>Your feed is empty</h3>
           <p>
             New dashcam videos will appear here once users start posting.
@@ -2135,14 +2270,14 @@ function App() {
           </p>
           <button
             type="button"
-            className="primary-btn"
+            className={PRIMARY_BTN}
             onClick={() => setActivePage('post-video')}
           >
             Go to Post Video
           </button>
         </div>
       ) : (
-        <div className="feed-list">{posts.map(renderPostCard)}</div>
+        <div className="grid gap-4">{posts.map(renderPostCard)}</div>
       )}
     </section>
   )
@@ -2151,8 +2286,8 @@ function App() {
     const video = currentVideo
     if (detailLoading) {
       return (
-        <section className="page-content">
-          <div className="page-heading">
+        <section className={PAGE_CONTENT}>
+          <div className={PAGE_HEADING}>
             <h2>Loading…</h2>
           </div>
           <p>Loading video details…</p>
@@ -2162,13 +2297,13 @@ function App() {
 
     if (!video) {
       return (
-        <section className="page-content">
-          <div className="page-heading">
+        <section className={PAGE_CONTENT}>
+          <div className={PAGE_HEADING}>
             <h2>Video not found</h2>
           </div>
           <p>The requested video could not be loaded.</p>
-          <div className="form-actions">
-            <button type="button" className="secondary-btn" onClick={() => setActivePage('feed')}>
+          <div className={FORM_ACTIONS}>
+            <button type="button" className={SECONDARY_BTN} onClick={() => setActivePage('feed')}>
               Back to Feed
             </button>
           </div>
@@ -2177,11 +2312,11 @@ function App() {
     }
 
     return (
-      <section className="page-content video-detail-page">
-        <div className="page-heading">
-          <div className="author-block detail-author-block">
-            <span className="author-name">{getDisplayName(video)}</span>
-            <span className="author-handle">@{getHandle(video)}</span>
+      <section className={`${PAGE_CONTENT} video-detail-page mx-auto mt-6 max-w-[900px] px-4 max-[640px]:px-3`}>
+        <div className={PAGE_HEADING}>
+          <div className="grid gap-0.5 mb-2">
+            <span className={AUTHOR_NAME}>{getDisplayName(video)}</span>
+            <span className={AUTHOR_HANDLE}>@{getHandle(video)}</span>
           </div>
           <h2>{video.title}</h2>
         </div>
@@ -2191,21 +2326,21 @@ function App() {
         {renderAnalysisStatus(video)}
 
         {video.playback_url ? (
-          <video className="detail-video" controls preload="metadata">
+          <video className="detail-video w-full max-h-[560px] rounded-card bg-black shadow-card max-[640px]:max-h-[360px]" controls preload="metadata">
             <source src={video.playback_url} type="video/mp4" />
             Your browser does not support the video tag.
           </video>
         ) : (
-          <div className="feed-video-placeholder">Video not available yet.</div>
+          <div className={VIDEO_PLACEHOLDER}>Video not available yet.</div>
         )}
 
         {renderDashcamBadge(video)}
         {renderAiSummary(video)}
         {renderDetectionTimeline(video, seekDetailVideo)}
 
-        <p className="detail-description">{video.description}</p>
+        <p className="mt-4 text-[1.02rem] leading-[1.65] text-body">{video.description}</p>
 
-        <div className="video-meta detail-meta-row">
+        <div className={`${VIDEO_META} mt-4`}>
           <span>{video.duration_seconds ? `${video.duration_seconds}s` : 'Duration unavailable'}</span>
           <span>{video.views} views</span>
           <span>{video.likes_count || 0} likes</span>
@@ -2213,14 +2348,14 @@ function App() {
           <span>{video.shares_count || 0} shares</span>
         </div>
 
-        <div className="post-actions detail-actions-row">
-          <button type="button" className="secondary-btn" onClick={closeDetail}>
+        <div className={ACTION_ROW}>
+          <button type="button" className={SECONDARY_BTN} onClick={closeDetail}>
             Back to Feed
           </button>
           {canRequestAnalysis(video) ? (
             <button
               type="button"
-              className="ghost-btn"
+              className={GHOST_BTN}
               onClick={() => requestAnalysis(video.id)}
               disabled={analysisRequestLoadingByPostId[video.id]}
             >
@@ -2231,7 +2366,7 @@ function App() {
             <>
               <button
                 type="button"
-                className="ghost-btn"
+                className={GHOST_BTN}
                 onClick={() => decideApproval(video.id, true)}
                 disabled={analysisRequestLoadingByPostId[video.id]}
               >
@@ -2239,7 +2374,7 @@ function App() {
               </button>
               <button
                 type="button"
-                className="ghost-btn"
+                className={GHOST_BTN}
                 onClick={() => decideApproval(video.id, false)}
                 disabled={analysisRequestLoadingByPostId[video.id]}
               >
@@ -2250,25 +2385,25 @@ function App() {
         </div>
 
         {analysisRequestErrorByPostId[video.id] ? (
-          <p className="analysis-request-error">{analysisRequestErrorByPostId[video.id]}</p>
+          <p className={ANALYSIS_ERROR}>{analysisRequestErrorByPostId[video.id]}</p>
         ) : null}
 
-        <div className="comments-panel detail-comments detail-comments-sheet">
+        <div className={`${COMMENTS_PANEL} mt-3 rounded-card p-4 max-h-[min(58vh,560px)] overflow-auto bg-white/85 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-md max-[640px]:max-h-[52vh] max-[640px]:rounded-card max-[640px]:p-3`}>
           {loadingCommentsByPostId[video.id] ? (
-            <p className="comments-empty">Loading comments...</p>
+            <p className={`${COMMENTS_EMPTY} py-3 text-muted`}>Loading comments...</p>
           ) : null}
 
           {!loadingCommentsByPostId[video.id] && (commentsByPostId[video.id] || []).length === 0 ? (
-            <p className="comments-empty">No comments yet. Be the first to reply.</p>
+            <p className={`${COMMENTS_EMPTY} py-3 text-muted`}>No comments yet. Be the first to reply.</p>
           ) : null}
 
-          <div className="comments-list">
+          <div className="grid gap-2">
             {(commentsByPostId[video.id] || []).map((comment) => renderCommentNode(comment, video.id))}
           </div>
 
-          <form className="comment-form" onSubmit={(event) => handleCommentSubmit(video.id, event)}>
+          <form className={COMMENT_FORM} onSubmit={(event) => handleCommentSubmit(video.id, event)}>
             <textarea
-              className="comment-input"
+              className={COMMENT_INPUT}
               value={commentDraftsByPostId[video.id] || ''}
               onChange={(event) =>
                 setCommentDraftsByPostId((current) => ({
@@ -2279,7 +2414,7 @@ function App() {
               rows="3"
               placeholder="Add a comment..."
             />
-            <button type="submit" className="primary-btn" disabled={commentLoadingByPostId[video.id]}>
+            <button type="submit" className={PRIMARY_BTN} disabled={commentLoadingByPostId[video.id]}>
               {commentLoadingByPostId[video.id] ? 'Posting...' : 'Post comment'}
             </button>
           </form>
@@ -2289,13 +2424,13 @@ function App() {
   }
 
   const renderPostVideoPage = () => (
-    <section className="page-content">
-      <div className="page-heading">
+    <section className={PAGE_CONTENT}>
+      <div className={PAGE_HEADING}>
         <h2>Post Video</h2>
         <p>Upload a dashcam clip and add details for the feed.</p>
       </div>
 
-      <form className="post-video-card upload-form" onSubmit={handleUploadSubmit}>
+      <form className={`${CARD} grid gap-4 p-6 ${UPLOAD_FIELDS}`} onSubmit={handleUploadSubmit}>
         <label>
           <span>Title</span>
           <input
@@ -2316,12 +2451,12 @@ function App() {
           />
         </label>
 
-          <div className="tag-input-section">
-            <span className="tag-input-label">Tags</span>
-            <div className="tag-editor-row">
+          <div className="mt-2 grid gap-2">
+            <span className={TAG_FIELD_LABEL}>Tags</span>
+            <div className={TAG_ROW}>
               <input
                 type="text"
-                className="tag-input"
+                className={TAG_INPUT}
                 value={uploadTagDraft}
                 onChange={(event) => updateUploadTagDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -2332,17 +2467,17 @@ function App() {
                 }}
                 placeholder="Add a tag and press Enter"
               />
-              <button type="button" className="secondary-btn" onClick={addUploadTag}>
+              <button type="button" className={SECONDARY_BTN} onClick={addUploadTag}>
                 Add
               </button>
             </div>
 
             {uploadTags.length > 0 ? (
-              <div className="tag-editor-chip-list">
+              <div className={CHIP_LIST}>
                 {uploadTags.map((tag, index) => (
-                  <span key={`${tag.text}-${index}`} className={`tag-pill ${getTagColorClass(tag.source)}`}>
+                  <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
                     {tag.text}
-                    <button type="button" className="tag-chip-remove" onClick={() => removeUploadTag(index)}>
+                    <button type="button" className="cursor-pointer border-none bg-transparent p-0 text-base leading-none text-inherit" onClick={() => removeUploadTag(index)}>
                       ×
                     </button>
                   </span>
@@ -2360,14 +2495,14 @@ function App() {
           />
         </label>
 
-        {uploadError ? <p className="form-message error">{uploadError}</p> : null}
-        {uploadSuccess ? <p className="form-message success">{uploadSuccess}</p> : null}
+        {uploadError ? <p className={FORM_MESSAGE_ERROR}>{uploadError}</p> : null}
+        {uploadSuccess ? <p className={FORM_MESSAGE_SUCCESS}>{uploadSuccess}</p> : null}
 
-        <div className="form-actions">
-          <button type="submit" className="primary-btn" disabled={uploading}>
+        <div className={FORM_ACTIONS}>
+          <button type="submit" className={PRIMARY_BTN} disabled={uploading}>
             {uploading ? 'Uploading...' : 'Upload'}
           </button>
-          <button type="button" className="secondary-btn" onClick={() => setActivePage('feed')}>
+          <button type="button" className={SECONDARY_BTN} onClick={() => setActivePage('feed')}>
             Back to Feed
           </button>
         </div>
@@ -2376,47 +2511,33 @@ function App() {
   )
 
   return (
-    <main className="screen app-shell">
-      <header className="navbar">
-        <div className="brand-block">
-          <span className="eyebrow">CaughtOnDash</span>
-          <h1>Community</h1>
+    <main className={`${SCREEN} app-canvas items-start`}>
+      <header className="mb-[18px] flex w-[min(1040px,100%)] items-center justify-between rounded-panel max-[860px]:grid max-[860px]:justify-items-start max-[860px]:gap-4 border border-ink/10 bg-white/70 px-5 py-3.5 backdrop-blur-md">
+        <div>
+          <span className={EYEBROW}>CaughtOnDash</span>
+          <h1 className="mt-1 font-heading text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-[-0.03em] text-ink">
+            Community
+          </h1>
         </div>
 
-        <nav className="nav-links" aria-label="Main navigation">
-          <button
-            type="button"
-            className={activePage === 'feed' ? 'nav-btn active' : 'nav-btn'}
-            onClick={() => setActivePage('feed')}
-          >
+        <nav className="inline-flex flex-wrap items-center gap-2 max-[860px]:order-3" aria-label="Main navigation">
+          <button type="button" className={navButtonClass('feed')} onClick={() => setActivePage('feed')}>
             Feed
           </button>
-          <button
-            type="button"
-            className={activePage === 'search' ? 'nav-btn active' : 'nav-btn'}
-            onClick={() => setActivePage('search')}
-          >
+          <button type="button" className={navButtonClass('search')} onClick={() => setActivePage('search')}>
             Search
           </button>
-          <button
-            type="button"
-            className={activePage === 'post-video' ? 'nav-btn active' : 'nav-btn'}
-            onClick={() => setActivePage('post-video')}
-          >
+          <button type="button" className={navButtonClass('post-video')} onClick={() => setActivePage('post-video')}>
             Post Video
           </button>
           {isAdmin ? (
-            <button
-              type="button"
-              className={activePage === 'admin' ? 'nav-btn active' : 'nav-btn'}
-              onClick={openAdminPanel}
-            >
+            <button type="button" className={navButtonClass('admin')} onClick={openAdminPanel}>
               Admin
             </button>
           ) : null}
         </nav>
 
-        <div className="user-chip">
+        <div className="flex items-center gap-3">
           <UserButton afterSignOutUrl="/" />
           <span>{user?.firstName || user?.emailAddresses?.[0]?.emailAddress}</span>
         </div>

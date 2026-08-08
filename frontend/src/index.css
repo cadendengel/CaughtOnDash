@@ -1,3 +1,46 @@
+@import "tailwindcss";
+
+/* Tailwind's theme, pointed at the palette this app already uses.
+ *
+ * The revamp is a polish, not a repaint: utilities must reproduce the current
+ * colours rather than introduce Tailwind's defaults alongside them. Defining
+ * them here means the hand-written CSS below and any utility class resolve to
+ * the same value while the two coexist during the migration.
+ */
+@theme {
+  --color-ink: #0f172a;
+  --color-body: #334155;
+  --color-muted: #64748b;
+  /* Deliberately the only secondary-text colour. */
+  --color-canvas: #eef4ff;
+  --color-surface: #ffffff;
+  --color-line: #e3e8ee;
+
+  --color-brand: #1d4ed8;
+  --color-brand-soft: #eef2ff;
+
+  --color-good: #166534;
+  --color-good-soft: #eef7f0;
+  --color-warn: #8a4b12;
+  --color-warn-soft: #fdf6e7;
+  --color-bad: #b91c1c;
+  --color-bad-soft: #fdecec;
+
+  --font-sans: 'Trebuchet MS', 'Segoe UI', system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
+  --font-heading: 'Avenir Next', 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+
+  /* Three radii, not six. The app had 28/24/22/20/18/16 with no system
+   * behind it -- each PR picked one. Control for anything you type into,
+   * panel for a block nested inside a card, card for the card itself. */
+  --radius-control: 14px;
+  --radius-panel: 18px;
+  --radius-card: 24px;
+  --shadow-card: rgba(15, 23, 42, 0.12) 0 20px 48px -20px,
+    rgba(15, 23, 42, 0.08) 0 8px 18px -12px;
+}
+
 :root {
   --text: #334155;
   --text-h: #0f172a;
@@ -22,55 +65,80 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-html {
-  background: var(--bg);
+/* The page canvas. A three-layer gradient is unreadable as an arbitrary
+ * value, so it becomes a named utility instead -- same cascade position as
+ * any other utility, without a stylesheet left behind to hold one rule.
+ */
+@utility app-canvas {
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 28%),
+    radial-gradient(circle at 85% 15%, rgba(20, 184, 166, 0.16), transparent 22%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100svh;
-  background: var(--bg);
-}
+/* The app's own base rules, layered.
+ *
+ * Tailwind v4 puts utilities in a real cascade layer, and unlayered CSS beats
+ * layered CSS regardless of specificity. Left unlayered, these element rules
+ * silently defeat utilities: `button { font: inherit }` overrode font-semibold
+ * on every button, and `h1,h2,h3,p { margin: 0 }` would override every margin
+ * utility on a heading. Nothing errors -- the class is present in the DOM and
+ * simply does nothing, which is close to impossible to spot by reading.
+ *
+ * Inside @layer base they behave as intended: they still set the defaults, and
+ * a utility still wins when one is applied.
+ */
+@layer base {
+  html {
+    background: var(--bg);
+  }
 
-* {
-  box-sizing: border-box;
-}
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100svh;
+    background: var(--bg);
+  }
 
-img,
-svg,
-video,
-canvas {
-  display: block;
-  max-width: 100%;
-}
+  * {
+    box-sizing: border-box;
+  }
 
-#root {
-  min-height: 100svh;
-}
+  img,
+  svg,
+  video,
+  canvas {
+    display: block;
+    max-width: 100%;
+  }
 
-h1,
-h2,
-h3,
-p {
-  margin: 0;
-}
+  #root {
+    min-height: 100svh;
+  }
 
-code {
-  font-family: var(--mono);
-  background: var(--code-bg);
-  border-radius: 6px;
-  padding: 0.2rem 0.45rem;
-  color: var(--text-h);
-}
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
+  code {
+    font-family: var(--mono);
+    background: var(--code-bg);
+    border-radius: 6px;
+    padding: 0.2rem 0.45rem;
+    color: var(--text-h);
+  }
 
-a {
-  color: inherit;
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  a {
+    color: inherit;
+  }
 }
