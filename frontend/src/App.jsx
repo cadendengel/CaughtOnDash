@@ -32,7 +32,7 @@ const isStaleProcessing = (post) => {
 // CSS rule covering feed cards, empty-state cards and the upload form, so
 // migrating any one of them alone would have duplicated it and let the three
 // drift apart.
-const CARD = 'rounded-3xl border border-ink/10 bg-white/[0.86] shadow-card'
+const CARD = 'rounded-card border border-ink/10 bg-white/[0.86] shadow-card'
 
 // The author line, shared by the feed card, the admin card and the detail
 // page. Same reasoning: three consumers, one definition.
@@ -41,7 +41,7 @@ const AUTHOR_HANDLE = 'text-[0.8rem] font-medium tracking-[0.015em] text-muted'
 
 // Tag pills. The base is shared; the variant carries the source, which is the
 // only thing that differs and the thing a reader actually needs to tell apart.
-const TAG_PILL = 'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ' +
+const TAG_PILL = 'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ' +
   'text-[0.76rem] font-bold tracking-[0.01em]'
 const TAG_VARIANT = {
   user: 'border-blue-700/20 bg-blue-500/10 text-brand',
@@ -52,14 +52,14 @@ const TAG_VARIANT = {
 
 // The player. aspect-video plus a max height keeps a portrait clip from
 // filling the screen, and object-contain stops it being cropped to fit.
-const VIDEO = 'mt-3.5 aspect-video max-h-[72vh] w-full rounded-[20px] bg-black ' +
+const VIDEO = 'mt-4 aspect-video max-h-[72vh] w-full rounded-card bg-black ' +
   'object-contain shadow-[0_14px_34px_rgba(15,23,42,0.12)]'
-const VIDEO_PLACEHOLDER = 'mt-3.5 grid min-h-[360px] place-items-center rounded-[20px] ' +
-  'bg-gradient-to-br from-ink/90 to-blue-700/80 font-semibold text-white'
+const VIDEO_PLACEHOLDER = 'mt-4 grid min-h-[240px] place-items-center rounded-card ' +
+  'border border-ink/10 bg-ink/[0.04] text-sm font-medium text-muted'
 
 // Buttons. The most reused classes in the app -- 17 call sites for the ghost
 // variant alone -- so they are constants rather than repeated strings.
-const GHOST_BTN = 'cursor-pointer rounded-full border border-ink/15 bg-white/80 px-3.5 py-2 ' +
+const GHOST_BTN = 'cursor-pointer rounded-full border border-ink/15 bg-white/80 px-4 py-2 ' +
   'font-semibold text-ink transition-[background,transform,border-color] duration-200 ' +
   'hover:-translate-y-px hover:bg-white/95 ' +
   'disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60'
@@ -71,12 +71,12 @@ const GHOST_BTN = 'cursor-pointer rounded-full border border-ink/15 bg-white/80 
 const GHOST_BTN_ACTIVE = 'border-transparent bg-gradient-to-br from-ink to-brand text-white ' +
   'shadow-[0_8px_20px_rgba(29,78,216,0.24)]'
 
-const DANGER_BTN = 'cursor-pointer rounded-full border border-red-700/20 bg-red-600/10 px-3.5 py-2 ' +
+const DANGER_BTN = 'cursor-pointer rounded-full border border-red-700/20 bg-red-600/10 px-4 py-2 ' +
   'font-bold text-bad transition-[background,transform,border-color] duration-200 ' +
   'hover:-translate-y-px hover:bg-red-600/15 ' +
   'disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60'
 
-const ACTION_ROW = 'mt-3 flex flex-wrap items-center gap-2.5 max-[640px]:gap-2'
+const ACTION_ROW = 'mt-3 flex flex-wrap items-center gap-2 max-[640px]:gap-2'
 
 // Comments render in two places and are deliberately styled differently: the
 // detail thread is compact with the handle beside the name, while the admin
@@ -85,15 +85,15 @@ const ACTION_ROW = 'mt-3 flex flex-wrap items-center gap-2.5 max-[640px]:gap-2'
 // was whatever happened to be left. It is now an explicit variant.
 const COMMENT_STYLES = {
   detail: {
-    card: 'mb-2 rounded-[18px] border border-ink/5 border-t-ink/10 bg-ink/[0.03] px-3.5 py-3',
-    head: 'flex items-center justify-between gap-2.5',
+    card: 'mb-2 rounded-panel border border-ink/5 border-t-ink/10 bg-ink/[0.03] px-4 py-3',
+    head: 'flex items-center justify-between gap-2',
     authorBlock: 'flex items-baseline gap-2',
     name: 'text-[0.94rem] font-semibold text-ink',
-    handle: 'text-[0.9rem] text-[#888]',
+    handle: 'text-[0.9rem] text-muted',
   },
   admin: {
-    card: 'rounded-[18px] border border-ink/5 bg-ink/[0.03] p-3.5',
-    head: 'flex items-start justify-between gap-2.5',
+    card: 'rounded-panel border border-ink/5 bg-ink/[0.03] p-4',
+    head: 'flex items-start justify-between gap-2',
     authorBlock: 'grid gap-0.5',
     name: 'text-[0.94rem] font-bold text-ink',
     handle: 'text-[0.82rem] text-muted',
@@ -106,54 +106,54 @@ const COMMENT_STYLES = {
 const UPLOAD_FIELDS =
   '[&_label]:grid [&_label]:gap-2 [&_label]:font-semibold [&_label]:text-ink ' +
   '[&_span]:text-[0.94rem] ' +
-  "[&_input[type='text']]:w-full [&_input[type='text']]:rounded-2xl [&_input[type='text']]:border " +
+  "[&_input[type='text']]:w-full [&_input[type='text']]:rounded-control [&_input[type='text']]:border " +
   "[&_input[type='text']]:border-ink/15 [&_input[type='text']]:bg-white/90 " +
-  "[&_input[type='text']]:px-3.5 [&_input[type='text']]:py-3 [&_input[type='text']]:font-normal " +
-  "[&_input[type='file']]:w-full [&_input[type='file']]:rounded-2xl [&_input[type='file']]:border " +
+  "[&_input[type='text']]:px-4 [&_input[type='text']]:py-3 [&_input[type='text']]:font-normal " +
+  "[&_input[type='file']]:w-full [&_input[type='file']]:rounded-control [&_input[type='file']]:border " +
   "[&_input[type='file']]:border-ink/15 [&_input[type='file']]:bg-white/90 " +
-  "[&_input[type='file']]:px-3.5 [&_input[type='file']]:py-3 [&_input[type='file']]:font-normal " +
-  '[&_textarea]:w-full [&_textarea]:resize-y [&_textarea]:rounded-2xl [&_textarea]:border ' +
-  '[&_textarea]:border-ink/15 [&_textarea]:bg-white/90 [&_textarea]:px-3.5 [&_textarea]:py-3 ' +
+  "[&_input[type='file']]:px-4 [&_input[type='file']]:py-3 [&_input[type='file']]:font-normal " +
+  '[&_textarea]:w-full [&_textarea]:resize-y [&_textarea]:rounded-control [&_textarea]:border ' +
+  '[&_textarea]:border-ink/15 [&_textarea]:bg-white/90 [&_textarea]:px-4 [&_textarea]:py-3 ' +
   '[&_textarea]:font-normal'
 
 const FORM_ACTIONS = 'mt-1 flex flex-wrap gap-3'
-const FORM_MESSAGE = 'rounded-2xl px-3.5 py-3 font-semibold'
+const FORM_MESSAGE = 'rounded-control px-4 py-3 font-semibold'
 const FORM_MESSAGE_ERROR = `${FORM_MESSAGE} bg-red-600/10 text-[#991b1b]`
 const FORM_MESSAGE_SUCCESS = `${FORM_MESSAGE} bg-green-600/10 text-good`
 
 // Tag editing, shared by the admin editor on a feed card and the tag section
 // of the upload form.
-const CHIP_LIST = 'mt-2.5 flex flex-wrap gap-1.5'
+const CHIP_LIST = 'mt-2 flex flex-wrap gap-2'
 const TAG_FIELD_LABEL = 'text-[0.82rem] font-bold uppercase tracking-[0.16em] text-muted'
-const TAG_ROW = 'flex flex-wrap items-center gap-2.5'
-const TAG_INPUT = 'min-w-0 flex-[1_1_240px] rounded-2xl border border-ink/15 bg-white/90 ' +
-  'px-3 py-2.5 font-normal text-ink'
+const TAG_ROW = 'flex flex-wrap items-center gap-2'
+const TAG_INPUT = 'min-w-0 flex-[1_1_240px] rounded-control border border-ink/15 bg-white/90 ' +
+  'px-3 py-2 font-normal text-ink'
 
-const SCREEN = 'grid min-h-svh place-items-center p-8 max-[640px]:p-[18px]'
+const SCREEN = 'grid min-h-svh place-items-center p-8 max-[640px]:p-5'
 const PAGE_CONTENT = 'grid w-[min(1040px,100%)] gap-4'
 const PAGE_HEADING = '[&>h2]:font-heading [&>h2]:text-[clamp(1.8rem,3vw,2.8rem)] ' +
-  '[&>h2]:tracking-[-0.03em] [&>h2]:text-ink [&>p]:mt-1.5 [&>p]:text-muted'
+  '[&>h2]:tracking-[-0.03em] [&>h2]:text-ink [&>p]:mt-1 [&>p]:text-muted'
 const EYEBROW = 'inline-flex items-center gap-2 text-[0.72rem] font-bold uppercase ' +
   'tracking-[0.24em] text-muted'
 
 // Empty-state and upload cards style their own heading and copy.
-const CARD_COPY = '[&>h3]:mt-2.5 [&>h3]:font-heading [&>h3]:text-2xl [&>h3]:text-ink ' +
-  '[&>p]:mt-2.5 [&>p]:max-w-[60ch] [&>p]:text-body'
+const CARD_COPY = '[&>h3]:mt-2 [&>h3]:font-heading [&>h3]:text-2xl [&>h3]:text-ink ' +
+  '[&>p]:mt-2 [&>p]:max-w-[60ch] [&>p]:text-body'
 
-const VIDEO_META = 'mt-3 flex flex-wrap gap-2.5 max-[640px]:gap-2 ' +
-  '[&>span]:rounded-full [&>span]:bg-ink/[0.06] [&>span]:px-2.5 [&>span]:py-[5px] ' +
+const VIDEO_META = 'mt-3 flex flex-wrap gap-2 max-[640px]:gap-2 ' +
+  '[&>span]:rounded-full [&>span]:bg-ink/[0.06] [&>span]:px-2.5 [&>span]:py-1 ' +
   '[&>span]:text-[0.86rem] [&>span]:text-ink'
 
-const BTN_BASE = 'mt-4 cursor-pointer rounded-full px-4 py-[9px] font-semibold'
+const BTN_BASE = 'mt-4 cursor-pointer rounded-full px-4 py-2 font-semibold'
 const PRIMARY_BTN = BTN_BASE + ' border-none bg-gradient-to-br from-ink to-brand text-white'
 const SECONDARY_BTN = BTN_BASE + ' border border-ink/15 bg-white/70 text-ink'
 
-const COMMENT_INPUT = 'w-full resize-y rounded-2xl border border-ink/15 bg-white/90 ' +
-  'px-3.5 py-3 font-normal text-ink'
+const COMMENT_INPUT = 'w-full resize-y rounded-control border border-ink/15 bg-white/90 ' +
+  'px-4 py-3 font-normal text-ink'
 
 const COMMENTS_PANEL = 'grid gap-3 border-t border-ink/[0.08] bg-ink/[0.02]'
 const COMMENTS_EMPTY = 'text-[0.82rem] text-muted'
-const COMMENT_FORM = 'grid gap-2.5'
+const COMMENT_FORM = 'grid gap-2'
 const ANALYSIS_ERROR = 'mt-2 text-[0.85rem] text-bad'
 
 function App() {
@@ -498,7 +498,7 @@ function App() {
     return (
       <div
         className={[
-          'mt-2 inline-flex flex-wrap items-baseline gap-2 rounded-full border px-2.5 py-[5px] text-[0.82rem]',
+          'mt-2 inline-flex flex-wrap items-baseline gap-2 rounded-full border px-2.5 py-1 text-[0.82rem]',
           isDashcam
             ? 'border-[#cfe6d6] bg-[#eef7f0] text-[#1e5b34]'
             : 'border-[#eedfb4] bg-[#fdf6e7] text-[#7a5a12]',
@@ -524,7 +524,7 @@ function App() {
     }
 
     return (
-      <p className="mt-2.5 rounded-r-md border-l-[3px] border-[#d0d7de] bg-[#f6f8fa] px-3 py-2.5 text-[0.9rem] leading-[1.45] text-[#444]" title="Generated by automatic analysis">
+      <p className="mt-2 rounded-r-control border-l-[3px] border-[#d0d7de] bg-[#f6f8fa] px-3 py-2 text-[0.9rem] leading-[1.45] text-body" title="Generated by automatic analysis">
         {post.ai_summary}
       </p>
     )
@@ -542,9 +542,9 @@ function App() {
     }
 
     return (
-      <div className="mt-3.5">
-        <h3 className="mb-2 text-[0.95rem] font-semibold text-[#333]">What the analysis saw</h3>
-        <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+      <div className="mt-4">
+        <h3 className="mb-2 text-[0.95rem] font-semibold text-ink">What the analysis saw</h3>
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
           {events.map((event) => {
             const start = Number(event.timestamp_seconds) || 0
             const end = Number(event.last_seen_seconds)
@@ -552,22 +552,22 @@ function App() {
             // object was tracked between the two, which sampling cannot claim.
             const spans = Number.isFinite(end) && end > start
             return (
-              <li key={`${event.label}-${start}`} className="flex items-baseline gap-2.5 text-[0.9rem]">
+              <li key={`${event.label}-${start}`} className="flex items-baseline gap-2 text-[0.9rem]">
                 <button
                   type="button"
-                  className="min-w-[52px] shrink-0 cursor-pointer rounded-[5px] border border-[#d0d7de] bg-white px-2 py-[3px] text-[0.85rem] tabular-nums text-brand hover:border-[#a5b4fc] hover:bg-[#eef2ff]"
+                  className="min-w-[52px] shrink-0 cursor-pointer rounded-control border border-[#d0d7de] bg-white px-2 py-1 text-[0.85rem] tabular-nums text-brand hover:border-[#a5b4fc] hover:bg-[#eef2ff]"
                   onClick={() => onSeek(start)}
                   title={`Jump to ${formatClipTime(start)}`}
                 >
                   {formatClipTime(start)}
                 </button>
-                <span className="font-medium text-[#222]">{event.label}</span>
+                <span className="font-medium text-ink">{event.label}</span>
                 {spans ? (
-                  <span className="text-[0.85rem] text-[#6b7280]">
+                  <span className="text-[0.85rem] text-muted">
                     seen until {formatClipTime(end)}
                   </span>
                 ) : (
-                  <span className="text-[0.85rem] text-[#6b7280]">single frame</span>
+                  <span className="text-[0.85rem] text-muted">single frame</span>
                 )}
               </li>
             )
@@ -1083,7 +1083,7 @@ function App() {
     const showToggle = editable || tagList.length > 3
 
     return (
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {visibleTags.length > 0 ? (
           visibleTags.map((tag, index) => (
             <span key={`${tag.text}-${index}`} className={`${TAG_PILL} ${getTagColorClass(tag.source)}`}>
@@ -1113,8 +1113,8 @@ function App() {
     const draftValue = adminTagDraftsByPostId[videoId] || ''
 
     return (
-      <div className="mt-1.5 grid gap-2.5 rounded-[18px] border border-ink/[0.06] bg-ink/[0.03] p-3">
-        <div className="flex items-center justify-between gap-2.5">
+      <div className="mt-1 grid gap-2 rounded-panel border border-ink/[0.06] bg-ink/[0.03] p-3">
+        <div className="flex items-center justify-between gap-2">
           <span className={TAG_FIELD_LABEL}>Edit tags</span>
           <button type="button" className={GHOST_BTN} onClick={() => toggleTagExpansion(videoId)}>
             Collapse
@@ -1700,7 +1700,7 @@ function App() {
   if (!isSignedIn) {
     return (
       <main className={`${SCREEN} app-canvas`}>
-        <section className="grid w-[min(1040px,100%)] grid-cols-2 overflow-hidden rounded-[28px] border border-ink/10 bg-white/80 shadow-card backdrop-blur-lg max-[860px]:grid-cols-1">
+        <section className="grid w-[min(1040px,100%)] grid-cols-2 overflow-hidden rounded-card border border-ink/10 bg-white/80 shadow-card backdrop-blur-lg max-[860px]:grid-cols-1">
           <div className="grid content-center gap-4 bg-[linear-gradient(145deg,rgba(15,23,42,0.94),rgba(30,64,175,0.88))] p-8 text-ink max-[640px]:p-6 [&>h1]:font-heading [&>h1]:text-[clamp(2.2rem,4vw,4.4rem)] [&>h1]:leading-none [&>h1]:tracking-[-0.04em] [&>h1]:text-white [&>p]:max-w-[34rem] [&>p]:text-white/85">
             <span className={EYEBROW}>CaughtOnDash</span>
             <h1>Sign in to continue</h1>
@@ -1719,8 +1719,8 @@ function App() {
   }
 
   const renderPostCard = (post) => (
-    <article key={post.id} className={`${CARD} overflow-hidden p-5 max-[640px]:p-[18px]`}>
-      <div className="flex items-start justify-between gap-2.5 pb-0.5 max-[640px]:flex-col max-[640px]:gap-3">
+    <article key={post.id} className={`${CARD} overflow-hidden p-5 max-[640px]:p-5`}>
+      <div className="flex items-start justify-between gap-2 pb-0.5 max-[640px]:flex-col max-[640px]:gap-3">
         <div className="grid gap-0.5">
           <span className={AUTHOR_NAME}>{getDisplayName(post)}</span>
           <span className={AUTHOR_HANDLE}>@{getHandle(post)}</span>
@@ -1728,12 +1728,10 @@ function App() {
         <span className="text-muted">{formatTimestamp(post.created_at)}</span>
       </div>
 
-      <h2 className="mt-2 text-[clamp(1.55rem,2.8vw,2.2rem)] font-extrabold leading-[1.08] text-ink">{post.title}</h2>
+      <h2 className="mt-2 text-[clamp(1.15rem,1.6vw,1.5rem)] font-bold leading-tight text-ink">{post.title}</h2>
 
       {renderTagPills(post.id, post.tags || [])}
       {renderAnalysisStatus(post)}
-      {renderDashcamBadge(post)}
-      {renderAiSummary(post)}
 
       {post.playback_url ? (
         <video
@@ -1752,6 +1750,12 @@ function App() {
           Video not available yet.
         </div>
       )}
+
+      {/* Below the video, not above it. These describe the clip, so putting
+          four blocks between the title and the thing they describe pushed the
+          actual content off the first screen. */}
+      {renderDashcamBadge(post)}
+      {renderAiSummary(post)}
 
       <div className={ACTION_ROW}>
         <button
@@ -1865,7 +1869,7 @@ function App() {
         </div>
 
         {!isReply && replyComposerOpenByCommentId[comment.id] ? (
-          <form className={`${COMMENT_FORM} mt-2.5`} onSubmit={(event) => handleReplySubmit(videoId, comment, event)}>
+          <form className={`${COMMENT_FORM} mt-2`} onSubmit={(event) => handleReplySubmit(videoId, comment, event)}>
             <textarea
               className={COMMENT_INPUT}
               value={replyDraftsByCommentId[comment.id] || ''}
@@ -1890,7 +1894,7 @@ function App() {
         ) : null}
 
         {!isReply && Array.isArray(comment.replies) && comment.replies.length > 0 ? (
-          <div className="mt-3 grid gap-2.5">
+          <div className="mt-3 grid gap-2">
             {comment.replies.map((reply) => renderCommentNode(reply, videoId, depth + 1, showAdminActions))}
           </div>
         ) : null}
@@ -1901,7 +1905,7 @@ function App() {
 // Moderation group accents. Stuck jobs raise no error anywhere else in the
 // system, so their count gets a colour that says "look here".
 const MODERATION_ACCENT = {
-  awaiting_review: 'bg-[#eef1f5] text-[#465262]',
+  awaiting_review: 'bg-[#eef1f5] text-muted',
   failed: 'bg-bad-soft text-[#9b2c2c]',
   stuck: 'bg-[#fdf0e3] text-[#8a4b12]',
 }
@@ -1929,7 +1933,7 @@ const MODERATION_ACCENT = {
   // Nav buttons: one class string rather than four copies that drift apart.
   const navButtonClass = (page) =>
     [
-      'rounded-full border px-3.5 py-2 cursor-pointer transition-transform duration-150',
+      'rounded-full border px-4 py-2 cursor-pointer transition-transform duration-150',
       'hover:-translate-y-px',
       activePage === page
         ? 'border-transparent bg-gradient-to-br from-ink to-brand text-white'
@@ -1937,9 +1941,9 @@ const MODERATION_ACCENT = {
     ].join(' ')
 
   const renderModerationRow = (entry, groupKey) => (
-    <li key={entry.video_id} className="flex flex-wrap items-center justify-between gap-3.5 rounded-lg border border-[#eef1f5] bg-[#fafbfc] px-3 py-2.5">
+    <li key={entry.video_id} className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-[#eef1f5] bg-[#fafbfc] px-3 py-2">
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="font-semibold text-[#1f2933]">{entry.title || 'Untitled'}</span>
+        <span className="font-semibold text-ink">{entry.title || 'Untitled'}</span>
         <span className="text-[0.83rem] text-muted">
           {entry.duration_display || entry.duration_seconds ? `${entry.duration_display || `${entry.duration_seconds}s`} · ` : ''}
           {entry.attempt_number > 1
@@ -2004,7 +2008,7 @@ const MODERATION_ACCENT = {
   const renderModerationPanel = () => {
     if (moderationError) {
       return (
-        <div className="mb-[22px] rounded-[10px] border border-line bg-surface px-5 py-[18px]">
+        <div className="mb-6 rounded-panel border border-line bg-surface px-5 py-[18px]">
           <p className="m-0 text-[0.9rem] text-[#9b2c2c]">{moderationError}</p>
         </div>
       )
@@ -2016,7 +2020,7 @@ const MODERATION_ACCENT = {
 
     if ((moderation.counts?.total || 0) === 0) {
       return (
-        <div className="mb-[22px] rounded-[10px] border border-line bg-surface px-5 py-[18px]">
+        <div className="mb-6 rounded-panel border border-line bg-surface px-5 py-[18px]">
           <h3 className="m-0 mb-1 text-[1.05rem]">Nothing needs attention</h3>
           <p className="mt-1 mb-2.5 text-[0.85rem] text-muted">
             No videos are awaiting review, failed, or stuck.
@@ -2026,8 +2030,8 @@ const MODERATION_ACCENT = {
     }
 
     return (
-      <div className="mb-[22px] rounded-[10px] border border-line bg-surface px-5 py-[18px]">
-        <h3 className="m-0 mb-1 flex items-center gap-2.5 text-[1.05rem]">
+      <div className="mb-6 rounded-panel border border-line bg-surface px-5 py-[18px]">
+        <h3 className="m-0 mb-1 flex items-center gap-2 text-[1.05rem]">
           Needs attention
           <span className="rounded-full bg-brand px-2.5 py-px text-[0.8rem] text-white">{moderation.counts.total}</span>
         </h3>
@@ -2040,7 +2044,7 @@ const MODERATION_ACCENT = {
             <div key={group.key} className="mt-4 border-t border-[#eef1f5] pt-3.5 first:mt-0 first:border-t-0 first:pt-0">
               <h4 className="m-0 flex items-center gap-2 text-[0.95rem]">
                 {group.title}
-                <span className={`rounded-full px-[7px] text-[0.78rem] ${MODERATION_ACCENT[group.key] || MODERATION_ACCENT.awaiting_review}`}>{entries.length}</span>
+                <span className={`rounded-full px-2 text-[0.78rem] ${MODERATION_ACCENT[group.key] || MODERATION_ACCENT.awaiting_review}`}>{entries.length}</span>
               </h4>
               <p className="mt-1 mb-2.5 text-[0.85rem] text-muted">{group.blurb}</p>
               <ul className="m-0 flex list-none flex-col gap-2 p-0">
@@ -2063,7 +2067,7 @@ const MODERATION_ACCENT = {
       {renderModerationPanel()}
 
       {posts.length === 0 ? (
-        <div className={`${CARD} p-[26px] ${CARD_COPY}`}>
+        <div className={`${CARD} p-6 ${CARD_COPY}`}>
           <p className={EYEBROW}>Nothing to moderate</p>
           <h3>No posts available</h3>
           <p>When content appears, it will show here with delete controls.</p>
@@ -2071,8 +2075,8 @@ const MODERATION_ACCENT = {
       ) : (
         <div className="grid gap-4">
           {posts.map((post) => (
-            <article key={post.id} className={`${CARD} grid gap-3 overflow-hidden p-5 max-[640px]:p-[18px]`}>
-              <div className="flex items-start justify-between gap-2.5 pb-0.5 max-[640px]:flex-col max-[640px]:gap-3">
+            <article key={post.id} className={`${CARD} grid gap-3 overflow-hidden p-5 max-[640px]:p-5`}>
+              <div className="flex items-start justify-between gap-2 pb-0.5 max-[640px]:flex-col max-[640px]:gap-3">
                 <div className="grid gap-0.5">
                   <span className={AUTHOR_NAME}>{getDisplayName(post)}</span>
                   <span className={AUTHOR_HANDLE}>@{getHandle(post)}</span>
@@ -2080,7 +2084,7 @@ const MODERATION_ACCENT = {
                 <span className="text-muted">{formatTimestamp(post.created_at)}</span>
               </div>
 
-              <h2 className="mt-2 text-[clamp(1.55rem,2.8vw,2.2rem)] font-extrabold leading-[1.08] text-ink">{post.title}</h2>
+              <h2 className="mt-2 text-[clamp(1.15rem,1.6vw,1.5rem)] font-bold leading-tight text-ink">{post.title}</h2>
 
               {renderTagPills(post.id, adminTagEditsByPostId[post.id] || post.tags || [], { editable: true })}
 
@@ -2101,7 +2105,7 @@ const MODERATION_ACCENT = {
                 </button>
               </div>
 
-              <div className={`${COMMENTS_PANEL} mt-0 rounded-[18px] p-3.5 max-[640px]:p-3`}>
+              <div className={`${COMMENTS_PANEL} mt-0 rounded-panel p-4 max-[640px]:p-3`}>
                 {loadingCommentsByPostId[post.id] ? (
                   <p className={COMMENTS_EMPTY}>Loading comments...</p>
                 ) : null}
@@ -2110,7 +2114,7 @@ const MODERATION_ACCENT = {
                   <p className={COMMENTS_EMPTY}>No comments yet.</p>
                 ) : null}
 
-                <div className="grid gap-2.5">
+                <div className="grid gap-2">
                   {(commentsByPostId[post.id] || []).map((comment) => renderCommentNode(comment, post.id, 0, true))}
                 </div>
               </div>
@@ -2127,19 +2131,19 @@ const MODERATION_ACCENT = {
   }
 
   const renderSearchPage = () => (
-    <section className={`${PAGE_CONTENT} gap-[18px]`}>
+    <section className={`${PAGE_CONTENT} gap-5`}>
       <div className={PAGE_HEADING}>
         <h2>Search</h2>
         <p>Find clips by title, description, or tags.</p>
       </div>
 
-      <form className="grid gap-3.5 rounded-[22px] border border-ink/10 bg-white/85 p-[18px] shadow-card" onSubmit={handleSearchSubmit}>
+      <form className="grid gap-4 rounded-card border border-ink/10 bg-white/85 p-5 shadow-card" onSubmit={handleSearchSubmit}>
         <label className="grid gap-2 font-semibold text-ink [&>span]:text-[0.94rem]">
           <span>Search videos</span>
-          <div className="flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2">
             <input
               type="text"
-              className="min-w-0 flex-[1_1_280px] rounded-2xl border border-ink/15 bg-white/95 px-3.5 py-3 font-normal text-ink"
+              className="min-w-0 flex-[1_1_280px] rounded-control border border-ink/15 bg-white/95 px-4 py-3 font-normal text-ink"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="freeway merge, near miss, brake check..."
@@ -2150,7 +2154,7 @@ const MODERATION_ACCENT = {
           </div>
         </label>
 
-        <div className="flex flex-wrap gap-2.5">
+        <div className="flex flex-wrap gap-2">
           <button type="button" className={`${SECONDARY_BTN} mt-0`} onClick={() => loadSearchResults(searchQuery)} disabled={searchLoading}>
             Refresh results
           </button>
@@ -2179,7 +2183,7 @@ const MODERATION_ACCENT = {
       ) : null}
 
       {!searchHasSearched && !searchLoading ? (
-        <div className={`${CARD} mt-0.5 p-[26px] ${CARD_COPY}`}>
+        <div className={`${CARD} mt-0.5 p-6 ${CARD_COPY}`}>
           <p className={EYEBROW}>Start here</p>
           <h3>Search the video catalog</h3>
           <p>
@@ -2191,14 +2195,14 @@ const MODERATION_ACCENT = {
       {searchLoading ? <p className={COMMENTS_EMPTY}>Searching…</p> : null}
 
       {searchHasSearched && !searchLoading && searchResults.length === 0 && !searchError ? (
-        <div className={`${CARD} mt-0.5 p-[26px] ${CARD_COPY}`}>
+        <div className={`${CARD} mt-0.5 p-6 ${CARD_COPY}`}>
           <p className={EYEBROW}>No matches</p>
           <h3>Nothing matched your search</h3>
           <p>Try fewer words or search by a tag name instead.</p>
         </div>
       ) : null}
 
-      {searchResults.length > 0 ? <div className="grid gap-3.5">{searchResults.map(renderPostCard)}</div> : null}
+      {searchResults.length > 0 ? <div className="grid gap-4">{searchResults.map(renderPostCard)}</div> : null}
     </section>
   )
 
@@ -2285,7 +2289,7 @@ const MODERATION_ACCENT = {
       </div>
 
       {posts.length === 0 ? (
-        <div className={`${CARD} p-[26px] ${CARD_COPY}`}>
+        <div className={`${CARD} p-6 ${CARD_COPY}`}>
           <p className={EYEBROW}>No posts yet</p>
           <h3>Your feed is empty</h3>
           <p>
@@ -2301,7 +2305,7 @@ const MODERATION_ACCENT = {
           </button>
         </div>
       ) : (
-        <div className="grid gap-3.5">{posts.map(renderPostCard)}</div>
+        <div className="grid gap-4">{posts.map(renderPostCard)}</div>
       )}
     </section>
   )
@@ -2338,7 +2342,7 @@ const MODERATION_ACCENT = {
     return (
       <section className={`${PAGE_CONTENT} video-detail-page mx-auto mt-6 max-w-[900px] px-4 max-[640px]:px-3`}>
         <div className={PAGE_HEADING}>
-          <div className="grid gap-0.5 mb-1.5">
+          <div className="grid gap-0.5 mb-2">
             <span className={AUTHOR_NAME}>{getDisplayName(video)}</span>
             <span className={AUTHOR_HANDLE}>@{getHandle(video)}</span>
           </div>
@@ -2350,7 +2354,7 @@ const MODERATION_ACCENT = {
         {renderAnalysisStatus(video)}
 
         {video.playback_url ? (
-          <video className="detail-video w-full max-h-[560px] rounded-3xl bg-black shadow-card max-[640px]:max-h-[360px]" controls preload="metadata">
+          <video className="detail-video w-full max-h-[560px] rounded-card bg-black shadow-card max-[640px]:max-h-[360px]" controls preload="metadata">
             <source src={video.playback_url} type="video/mp4" />
             Your browser does not support the video tag.
           </video>
@@ -2364,7 +2368,7 @@ const MODERATION_ACCENT = {
 
         <p className="mt-4 text-[1.02rem] leading-[1.65] text-body">{video.description}</p>
 
-        <div className={`${VIDEO_META} mt-3.5`}>
+        <div className={`${VIDEO_META} mt-4`}>
           <span>{video.duration_seconds ? `${video.duration_seconds}s` : 'Duration unavailable'}</span>
           <span>{video.views} views</span>
           <span>{video.likes_count || 0} likes</span>
@@ -2412,16 +2416,16 @@ const MODERATION_ACCENT = {
           <p className={ANALYSIS_ERROR}>{analysisRequestErrorByPostId[video.id]}</p>
         ) : null}
 
-        <div className={`${COMMENTS_PANEL} mt-3 rounded-3xl p-4 max-h-[min(58vh,560px)] overflow-auto bg-white/85 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-md max-[640px]:max-h-[52vh] max-[640px]:rounded-[20px] max-[640px]:p-3`}>
+        <div className={`${COMMENTS_PANEL} mt-3 rounded-card p-4 max-h-[min(58vh,560px)] overflow-auto bg-white/85 shadow-[0_10px_28px_rgba(15,23,42,0.08)] backdrop-blur-md max-[640px]:max-h-[52vh] max-[640px]:rounded-card max-[640px]:p-3`}>
           {loadingCommentsByPostId[video.id] ? (
-            <p className={`${COMMENTS_EMPTY} py-3 text-[#777]`}>Loading comments...</p>
+            <p className={`${COMMENTS_EMPTY} py-3 text-muted`}>Loading comments...</p>
           ) : null}
 
           {!loadingCommentsByPostId[video.id] && (commentsByPostId[video.id] || []).length === 0 ? (
-            <p className={`${COMMENTS_EMPTY} py-3 text-[#777]`}>No comments yet. Be the first to reply.</p>
+            <p className={`${COMMENTS_EMPTY} py-3 text-muted`}>No comments yet. Be the first to reply.</p>
           ) : null}
 
-          <div className="grid gap-2.5">
+          <div className="grid gap-2">
             {(commentsByPostId[video.id] || []).map((comment) => renderCommentNode(comment, video.id))}
           </div>
 
@@ -2454,7 +2458,7 @@ const MODERATION_ACCENT = {
         <p>Upload a dashcam clip and add details for the feed.</p>
       </div>
 
-      <form className={`${CARD} grid gap-4 p-[26px] ${UPLOAD_FIELDS}`} onSubmit={handleUploadSubmit}>
+      <form className={`${CARD} grid gap-4 p-6 ${UPLOAD_FIELDS}`} onSubmit={handleUploadSubmit}>
         <label>
           <span>Title</span>
           <input
@@ -2475,7 +2479,7 @@ const MODERATION_ACCENT = {
           />
         </label>
 
-          <div className="mt-2 grid gap-2.5">
+          <div className="mt-2 grid gap-2">
             <span className={TAG_FIELD_LABEL}>Tags</span>
             <div className={TAG_ROW}>
               <input
@@ -2536,7 +2540,7 @@ const MODERATION_ACCENT = {
 
   return (
     <main className={`${SCREEN} app-canvas items-start`}>
-      <header className="mb-[18px] flex w-[min(1040px,100%)] items-center justify-between rounded-[18px] max-[860px]:grid max-[860px]:justify-items-start max-[860px]:gap-4 border border-ink/10 bg-white/70 px-[18px] py-3.5 backdrop-blur-md">
+      <header className="mb-[18px] flex w-[min(1040px,100%)] items-center justify-between rounded-panel max-[860px]:grid max-[860px]:justify-items-start max-[860px]:gap-4 border border-ink/10 bg-white/70 px-5 py-3.5 backdrop-blur-md">
         <div>
           <span className={EYEBROW}>CaughtOnDash</span>
           <h1 className="mt-1 font-heading text-[clamp(1.6rem,2.4vw,2.2rem)] tracking-[-0.03em] text-ink">
@@ -2544,7 +2548,7 @@ const MODERATION_ACCENT = {
           </h1>
         </div>
 
-        <nav className="inline-flex items-center gap-2.5 max-[860px]:order-3" aria-label="Main navigation">
+        <nav className="inline-flex items-center gap-2 max-[860px]:order-3" aria-label="Main navigation">
           <button type="button" className={navButtonClass('feed')} onClick={() => setActivePage('feed')}>
             Feed
           </button>
