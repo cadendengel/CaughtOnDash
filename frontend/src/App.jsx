@@ -102,6 +102,27 @@ const COMMENT_STYLES = {
   },
 }
 
+// The upload form styles its fields by element rather than by class, so the
+// faithful translation is scoped variants on the form. Classing every input
+// individually would say the same thing five times.
+const UPLOAD_FIELDS =
+  '[&_label]:grid [&_label]:gap-2 [&_label]:font-semibold [&_label]:text-ink ' +
+  '[&_span]:text-[0.94rem] ' +
+  "[&_input[type='text']]:w-full [&_input[type='text']]:rounded-2xl [&_input[type='text']]:border " +
+  "[&_input[type='text']]:border-ink/15 [&_input[type='text']]:bg-white/90 " +
+  "[&_input[type='text']]:px-3.5 [&_input[type='text']]:py-3 [&_input[type='text']]:font-normal " +
+  "[&_input[type='file']]:w-full [&_input[type='file']]:rounded-2xl [&_input[type='file']]:border " +
+  "[&_input[type='file']]:border-ink/15 [&_input[type='file']]:bg-white/90 " +
+  "[&_input[type='file']]:px-3.5 [&_input[type='file']]:py-3 [&_input[type='file']]:font-normal " +
+  '[&_textarea]:w-full [&_textarea]:resize-y [&_textarea]:rounded-2xl [&_textarea]:border ' +
+  '[&_textarea]:border-ink/15 [&_textarea]:bg-white/90 [&_textarea]:px-3.5 [&_textarea]:py-3 ' +
+  '[&_textarea]:font-normal'
+
+const FORM_ACTIONS = 'mt-1 flex flex-wrap gap-3'
+const FORM_MESSAGE = 'rounded-2xl px-3.5 py-3 font-semibold'
+const FORM_MESSAGE_ERROR = `${FORM_MESSAGE} bg-red-600/10 text-[#991b1b]`
+const FORM_MESSAGE_SUCCESS = `${FORM_MESSAGE} bg-green-600/10 text-good`
+
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const { getToken } = useAuth()
@@ -1097,7 +1118,7 @@ function App() {
           </button>
         </div>
 
-        <div className="form-actions tag-editor-actions">
+        <div className={`${FORM_ACTIONS} tag-editor-actions`}>
           <button type="button" className="primary-btn" onClick={() => saveAdminTags(videoId)} disabled={adminTagSavingByPostId[videoId]}>
             {adminTagSavingByPostId[videoId] ? 'Saving...' : 'Save tags'}
           </button>
@@ -1824,7 +1845,7 @@ function App() {
               rows="2"
               placeholder={`Reply to @${handle}`}
             />
-            <div className="form-actions reply-actions-row">
+            <div className={`${FORM_ACTIONS} reply-actions-row`}>
               <button type="submit" className="primary-btn" disabled={replyLoadingByCommentId[comment.id]}>
                 {replyLoadingByCommentId[comment.id] ? 'Posting...' : 'Reply'}
               </button>
@@ -2115,7 +2136,7 @@ const MODERATION_ACCENT = {
         </div>
       </form>
 
-      {searchError ? <p className="form-message error">{searchError}</p> : null}
+      {searchError ? <p className={FORM_MESSAGE_ERROR}>{searchError}</p> : null}
 
       {searchHasSearched && !searchLoading && !searchError ? (
         <div className="flex flex-wrap items-center gap-2 text-[0.94rem] text-muted">
@@ -2272,7 +2293,7 @@ const MODERATION_ACCENT = {
             <h2>Video not found</h2>
           </div>
           <p>The requested video could not be loaded.</p>
-          <div className="form-actions">
+          <div className={FORM_ACTIONS}>
             <button type="button" className="secondary-btn" onClick={() => setActivePage('feed')}>
               Back to Feed
             </button>
@@ -2400,7 +2421,7 @@ const MODERATION_ACCENT = {
         <p>Upload a dashcam clip and add details for the feed.</p>
       </div>
 
-      <form className={`${CARD} post-video-card upload-form p-[26px]`} onSubmit={handleUploadSubmit}>
+      <form className={`${CARD} post-video-card grid gap-4 p-[26px] ${UPLOAD_FIELDS}`} onSubmit={handleUploadSubmit}>
         <label>
           <span>Title</span>
           <input
@@ -2465,10 +2486,10 @@ const MODERATION_ACCENT = {
           />
         </label>
 
-        {uploadError ? <p className="form-message error">{uploadError}</p> : null}
-        {uploadSuccess ? <p className="form-message success">{uploadSuccess}</p> : null}
+        {uploadError ? <p className={FORM_MESSAGE_ERROR}>{uploadError}</p> : null}
+        {uploadSuccess ? <p className={FORM_MESSAGE_SUCCESS}>{uploadSuccess}</p> : null}
 
-        <div className="form-actions">
+        <div className={FORM_ACTIONS}>
           <button type="submit" className="primary-btn" disabled={uploading}>
             {uploading ? 'Uploading...' : 'Upload'}
           </button>
