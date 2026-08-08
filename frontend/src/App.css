@@ -419,43 +419,9 @@
     display: grid;
     gap: 10px;
   }
-
-  .comment-card {
-    padding: 14px;
-    border-radius: 18px;
-    background: rgba(15, 23, 42, 0.03);
-    border: 1px solid rgba(15, 23, 42, 0.05);
-  }
-
-  .comment-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    align-items: flex-start;
-  }
-
-  .comment-author-block {
-    display: grid;
-    gap: 2px;
-  }
-
-  .comment-author-name {
-    font-size: 0.94rem;
-    font-weight: 700;
-    color: var(--text-h);
-  }
-
-  .comment-author-handle,
-  .comment-timestamp,
   .comments-empty {
     font-size: 0.82rem;
     color: var(--muted);
-  }
-
-  .comment-card p {
-    margin-top: 8px;
-    color: var(--text);
-    line-height: 1.55;
   }
 
   .comment-form {

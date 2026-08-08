@@ -80,6 +80,28 @@ const DANGER_BTN = 'cursor-pointer rounded-full border border-red-700/20 bg-red-
 
 const ACTION_ROW = 'mt-3 flex flex-wrap items-center gap-2.5 max-[640px]:gap-2'
 
+// Comments render in two places and are deliberately styled differently: the
+// detail thread is compact with the handle beside the name, while the admin
+// list stacks them and sits heavier. That difference used to be emergent --
+// a `.video-detail-page .comment-*` ancestor override -- so the admin styling
+// was whatever happened to be left. It is now an explicit variant.
+const COMMENT_STYLES = {
+  detail: {
+    card: 'mb-2 rounded-[18px] border border-ink/5 border-t-ink/10 bg-ink/[0.03] px-3.5 py-3',
+    head: 'flex items-center justify-between gap-2.5',
+    authorBlock: 'flex items-baseline gap-2',
+    name: 'text-[0.94rem] font-semibold text-ink',
+    handle: 'text-[0.9rem] text-[#888]',
+  },
+  admin: {
+    card: 'rounded-[18px] border border-ink/5 bg-ink/[0.03] p-3.5',
+    head: 'flex items-start justify-between gap-2.5',
+    authorBlock: 'grid gap-0.5',
+    name: 'text-[0.94rem] font-bold text-ink',
+    handle: 'text-[0.82rem] text-muted',
+  },
+}
+
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const { getToken } = useAuth()
@@ -1738,20 +1760,29 @@ function App() {
   const renderCommentNode = (comment, videoId, depth = 0, showAdminActions = false) => {
     const handle = getHandle(comment)
     const isReply = depth > 0
+    // The admin list is the only place showAdminActions is set, and it is
+    // also the only place the stacked styling applies, so it selects both.
+    const style = showAdminActions ? COMMENT_STYLES.admin : COMMENT_STYLES.detail
 
     return (
-      <article key={comment.id} className={isReply ? 'comment-card comment-reply-card' : 'comment-card'}>
-        <div className="comment-head">
-          <div className="comment-author-block">
-            <span className="comment-author-name">{getDisplayName(comment)}</span>
-            <span className="comment-author-handle">@{handle}</span>
+      <article
+        key={comment.id}
+        className={[
+          style.card,
+          isReply ? 'ml-[18px] border-l-2 border-l-ink/10 pl-3.5 max-[640px]:ml-3 max-[640px]:pl-2.5' : '',
+        ].join(' ')}
+      >
+        <div className={style.head}>
+          <div className={style.authorBlock}>
+            <span className={style.name}>{getDisplayName(comment)}</span>
+            <span className={style.handle}>@{handle}</span>
           </div>
-          <span className="comment-timestamp">{formatTimestamp(comment.created_at)}</span>
+          <span className="text-[0.82rem] text-muted">{formatTimestamp(comment.created_at)}</span>
         </div>
 
-        <p>{comment.text}</p>
+        <p className="mt-2 leading-[1.55] text-body">{comment.text}</p>
 
-        <div className="comment-actions">
+        <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
             className={comment.liked ? `${GHOST_BTN} ${GHOST_BTN_ACTIVE}` : GHOST_BTN}

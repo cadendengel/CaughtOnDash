@@ -13,48 +13,6 @@
   .video-detail-page .detail-actions-row {
     margin-top: 12px;
   }
-
-  .video-detail-page .comment-card {
-    border-top: 1px solid rgba(15, 23, 42, 0.08);
-    /* More breathing room for top-level comments */
-    padding: 12px 14px;
-    margin-bottom: 8px;
-  }
-
-  .video-detail-page .comment-reply-card {
-    margin-left: 18px;
-    padding-left: 14px;
-    border-left: 2px solid rgba(15, 23, 42, 0.08);
-  }
-
-  .video-detail-page .comment-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .video-detail-page .comment-author-block {
-    display: flex;
-    gap: 8px;
-    align-items: baseline;
-  }
-
-  .video-detail-page .comment-author-name {
-    font-weight: 600;
-  }
-
-  .video-detail-page .comment-author-handle {
-    color: #888;
-    font-size: 0.9rem;
-  }
-
-  .video-detail-page .comment-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 8px;
-  }
-
   .video-detail-page .comment-replies {
     display: grid;
     gap: 10px;
@@ -78,9 +36,5 @@
   }
 
   @media (max-width: 640px) {
-    .video-detail-page .comment-reply-card {
-      margin-left: 12px;
-      padding-left: 10px;
-    }
   }
 }
