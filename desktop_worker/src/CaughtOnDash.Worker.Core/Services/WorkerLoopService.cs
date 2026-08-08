@@ -123,50 +123,80 @@ namespace CaughtOnDash.Worker.Services
 
         private async Task HeartbeatLoop(CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested)
+            // Held open across beats: the connection is the liveness signal, so
+            // the backend learns this worker died when the socket closes rather
+            // than after the stale window. Purely an optimisation -- every send
+            // that fails falls through to the HTTP POST below.
+            using var channel = new HeartbeatChannel(_config.BackendUrl, _config.ApiToken);
+
+            try
             {
-                try
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    // Report the stage and progress the job is actually at, not a
-                    // fixed guess. These are set by ReportProgress as work moves.
-                    var status = _currentJobId.HasValue ? "processing" : "idle";
-                    var stage = _currentJobId.HasValue ? _currentStage : "";
-                    var progress = _currentJobId.HasValue ? _currentProgress : 0;
-
-                    var delivered = await _apiClient.SendHeartbeat(
-                        _config.WorkerId,
-                        _config.WorkerName,
-                        status,
-                        _currentJobId?.ToString(),
-                        stage,
-                        progress,
-                        cancellationToken
-                    );
-
-                    if (delivered)
+                    try
                     {
-                        Logger.Log($"Heartbeat sent (status: {status})");
-                        OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "heartbeat", Message = "Heartbeat sent" });
-                    }
-                    else
-                    {
-                        // Do not report success on a rejected heartbeat -- that is what
-                        // hid the backend rejecting every worker POST.
-                        Logger.Log("Heartbeat rejected by backend", Logger.LogLevel.Error);
-                        OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "error", Message = "Heartbeat rejected by backend" });
-                    }
+                        // Report the stage and progress the job is actually at, not a
+                        // fixed guess. These are set by ReportProgress as work moves.
+                        var status = _currentJobId.HasValue ? "processing" : "idle";
+                        var stage = _currentJobId.HasValue ? _currentStage : "";
+                        var progress = _currentJobId.HasValue ? _currentProgress : 0;
 
-                    await Task.Delay(10000, cancellationToken); // 10 seconds
+                        var delivered = await channel.TrySendAsync(
+                            _config.WorkerId,
+                            status,
+                            _currentJobId?.ToString(),
+                            stage,
+                            progress,
+                            cancellationToken
+                        );
+
+                        var transport = delivered ? "socket" : "http";
+
+                        if (!delivered)
+                        {
+                            delivered = await _apiClient.SendHeartbeat(
+                                _config.WorkerId,
+                                _config.WorkerName,
+                                status,
+                                _currentJobId?.ToString(),
+                                stage,
+                                progress,
+                                cancellationToken
+                            );
+                        }
+
+                        if (delivered)
+                        {
+                            Logger.Log($"Heartbeat sent via {transport} (status: {status})");
+                            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "heartbeat", Message = "Heartbeat sent" });
+                        }
+                        else
+                        {
+                            // Do not report success on a rejected heartbeat -- that is what
+                            // hid the backend rejecting every worker POST. Reaching here
+                            // means both transports failed, not just the socket.
+                            Logger.Log("Heartbeat rejected by backend", Logger.LogLevel.Error);
+                            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "error", Message = "Heartbeat rejected by backend" });
+                        }
+
+                        await Task.Delay(10000, cancellationToken); // 10 seconds
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Heartbeat error: {ex.Message}", Logger.LogLevel.Error);
+                        await Task.Delay(5000, cancellationToken);
+                    }
                 }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"Heartbeat error: {ex.Message}", Logger.LogLevel.Error);
-                    await Task.Delay(5000, cancellationToken);
-                }
+            }
+            finally
+            {
+                // Say goodbye so the backend marks this worker offline now
+                // rather than inferring it from silence two minutes later.
+                await channel.CloseAsync();
             }
         }
 

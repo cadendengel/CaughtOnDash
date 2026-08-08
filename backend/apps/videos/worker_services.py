@@ -112,6 +112,72 @@ def update_worker_heartbeat(worker_id: str, status: str, current_job_id: uuid.UU
     return worker
 
 
+# A worker heartbeats every 10 seconds, over its WebSocket where it has one and
+# over HTTP otherwise. Past this window, treat it as gone and let the job be
+# re-queued -- otherwise a worker that dies mid-job (or, as happened in
+# production, one whose write-backs were all rejected) leaves the video wedged
+# in 'processing' forever with no route back for its owner.
+#
+# Two minutes, down from five, because a closed socket now makes death visible
+# almost immediately and there is less to wait for. It does not go to zero: a
+# dropped connection is not a dead worker. A worker on a flaky network is still
+# decoding frames while its socket is down, and freeing the job the moment the
+# socket closed would hand that same video to a second worker. Twelve missed
+# heartbeats is the cost of not doing the work twice.
+STALE_PROCESSING_MINUTES = 2
+
+
+def apply_worker_heartbeat(
+    worker_id: str,
+    status: str,
+    current_job_id: uuid.UUID | None = None,
+    stage: str = '',
+    progress: int = 0,
+) -> Worker:
+    """Record a heartbeat and, if a job is named, its progress.
+
+    Shared by the HTTP endpoint and the worker WebSocket so the two transports
+    cannot drift on what a heartbeat means. Which transport delivered it is not
+    recorded: liveness is liveness, and a worker that fails over from the socket
+    to HTTP mid-job should look continuously alive rather than briefly dead.
+
+    The job write is scoped to rows still owned by this worker and still
+    processing, and uses a queryset update rather than save(). A bare save()
+    writes every column from the copy that was read, so a heartbeat that loaded
+    the row just before complete_job committed would write its stale snapshot
+    back and revert the job from 'complete' to 'processing' -- which happened in
+    production, leaving a video showing "Processing: 100% (complete)".
+    """
+    worker = update_worker_heartbeat(worker_id, status, current_job_id)
+
+    if not current_job_id:
+        return worker
+
+    updates = {
+        'analysis_progress': progress,
+        'worker_last_seen_at': worker.last_seen_at,
+    }
+    if stage:
+        updates['analysis_stage'] = stage
+
+    updated = Video.objects.filter(
+        id=current_job_id,
+        worker_id=worker_id,
+        analysis_status='processing',
+    ).update(**updates)
+
+    # Only publish when the scoped update actually matched. If it did not, the
+    # job has moved on and this heartbeat describes a state that no longer
+    # exists -- pushing it would tell browsers a finished video went back to
+    # processing, which is the display bug the scoping exists to prevent.
+    if updated:
+        job = Video.objects.filter(id=current_job_id).first()
+        if job is not None:
+            publish_analysis_state(job)
+
+    return worker
+
+
 def claimable_jobs():
     """Videos approved and waiting for a worker, in the order they will run.
 
@@ -218,7 +284,7 @@ def claim_job(job_id: uuid.UUID, worker_id: str, worker_name: str) -> dict:
     
     # If job is processing and stale, allow reclaim
     if job.analysis_status == 'processing' and job.worker_last_seen_at:
-        stale_threshold = now - timedelta(minutes=2)
+        stale_threshold = now - timedelta(minutes=STALE_PROCESSING_MINUTES)
         if job.worker_last_seen_at > stale_threshold:
             # Job is still being processed by an active worker
             return {
@@ -419,7 +485,7 @@ def cancel_job(job_id: uuid.UUID, worker_id: str, reason: str = '') -> dict:
 
 
 @transaction.atomic
-def reset_stale_jobs(timeout_minutes: int = 2) -> dict:
+def reset_stale_jobs(timeout_minutes: int = STALE_PROCESSING_MINUTES) -> dict:
     """Reset stale processing jobs back to pending."""
     now = timezone.now()
     stale_threshold = now - timedelta(minutes=timeout_minutes)
@@ -502,13 +568,6 @@ def decide_approval(video_id: uuid.UUID, approve: bool, decided_by: str) -> dict
 # cannot yank a job out from under a worker that is actively running it, and
 # 'pending' is excluded because it is already queued.
 REQUEUEABLE_ANALYSIS_STATUSES = ('complete', 'failed', 'cancelled')
-
-# A worker heartbeats every 10 seconds. Past this, treat it as gone and let the
-# job be re-queued -- otherwise a worker that dies mid-job (or, as happened in
-# production, one whose write-backs were all rejected) leaves the video wedged
-# in 'processing' forever with no route back for its owner.
-STALE_PROCESSING_MINUTES = 5
-
 
 def _is_stale_processing(job, now) -> bool:
     """True when a job claims to be processing but its worker has gone quiet."""

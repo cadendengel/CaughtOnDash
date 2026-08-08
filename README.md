@@ -73,6 +73,11 @@ in this repo. Replacing gunicorn with the above is the change; leaving gunicorn
 in place keeps HTTP working and silently disables live updates, which the
 frontend treats as "no push" rather than an error.
 
+The worker also heartbeats over `/ws/worker/`, authenticated with
+`WORKER_API_TOKEN`. It falls back to the HTTP heartbeat automatically, so a
+WSGI deployment or a proxy blocking WebSockets costs slower liveness detection
+rather than a broken worker.
+
 **Single process only.** The channel layer is in-memory, so it works because
 one instance runs one worker. Two workers and the layer stops carrying messages
 between them, with no error -- browsers connected to one process simply never

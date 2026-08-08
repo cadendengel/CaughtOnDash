@@ -24,7 +24,7 @@ from apps.videos.worker_services import (
     reorder_queue,
     review_queue,
     get_or_create_worker,
-    update_worker_heartbeat,
+    apply_worker_heartbeat,
     get_next_pending_job,
     claim_job,
     update_job_progress,
@@ -67,37 +67,16 @@ def worker_heartbeat(request):
     
     validated_data = serializer.validated_data
     worker_id = validated_data['worker_id']
-    worker_name = validated_data['worker_name']
     status = validated_data['status']
     current_job_id = validated_data.get('current_job_id')
     stage = validated_data.get('stage', '')
     progress = validated_data.get('progress', 0)
     
-    # Update worker
-    worker = update_worker_heartbeat(worker_id, status, current_job_id)
-    
-    # If processing a job, update its progress and last_seen_at.
-    #
-    # Scoped to jobs still owned by this worker and still processing, and
-    # written with a queryset update rather than save(). A bare save() writes
-    # every column from the copy that was read, so a heartbeat that loaded the
-    # row just before complete_job committed would write its stale snapshot
-    # back and revert the job from 'complete' to 'processing' -- which happened
-    # in production, leaving a video showing "Processing: 100% (complete)".
-    if current_job_id:
-        updates = {
-            'analysis_progress': progress,
-            'worker_last_seen_at': worker.last_seen_at,
-        }
-        if stage:
-            updates['analysis_stage'] = stage
+    # Shared with the worker WebSocket, so both transports mean the same thing
+    # by a heartbeat. worker_name is accepted for wire compatibility but the
+    # worker record is keyed on worker_id.
+    worker = apply_worker_heartbeat(worker_id, status, current_job_id, stage, progress)
 
-        Video.objects.filter(
-            id=current_job_id,
-            worker_id=worker_id,
-            analysis_status='processing',
-        ).update(**updates)
-    
     return JsonResponse({
         'worker_id': worker.id,
         'status': worker.status,
