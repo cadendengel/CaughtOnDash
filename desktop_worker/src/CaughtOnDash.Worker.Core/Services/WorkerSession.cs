@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using CaughtOnDash.Worker.Models;
 
@@ -24,6 +26,9 @@ namespace CaughtOnDash.Worker.Services
 
         public event Action<WorkerSessionState>? StateChanged;
         public event Action<WorkerLogEntry>? LogAppended;
+
+        /// <summary>Raised when the review or run queue has been refetched.</summary>
+        public event Action<QueueSnapshot>? QueueChanged;
 
         public WorkerSession(IAnalyzer? analyzer = null)
         {
@@ -170,6 +175,122 @@ namespace CaughtOnDash.Worker.Services
             }
         }
 
+        /// <summary>Refetch both queues and publish them.</summary>
+        public async Task RefreshQueuesAsync(CancellationToken cancellationToken = default)
+        {
+            if (!_config.IsConfigured)
+            {
+                return;
+            }
+
+            try
+            {
+                var review = await _apiClient.GetReviewQueue(cancellationToken);
+                var run = await _apiClient.GetRunQueue(cancellationToken);
+                QueueChanged?.Invoke(new QueueSnapshot { AwaitingReview = review, Queued = run });
+            }
+            catch (Exception ex)
+            {
+                Log($"Could not refresh the queue: {ex.Message}", Logger.LogLevel.Error);
+            }
+        }
+
+        /// <summary>
+        /// Approve the given videos, in the order supplied, and start the worker.
+        /// </summary>
+        /// <remarks>
+        /// Order is applied before approval so the queue reflects the order they
+        /// were listed in, rather than whatever order the approvals happened to
+        /// land in. Approving is what makes a video claimable, so an approval
+        /// that fails simply leaves that video in review -- the rest still run.
+        /// </remarks>
+        public async Task<BatchResult> StartBatchAsync(
+            IReadOnlyList<Guid> videoIds, CancellationToken cancellationToken = default)
+        {
+            var result = new BatchResult();
+
+            if (videoIds.Count == 0)
+            {
+                Log("Nothing selected.", Logger.LogLevel.Warning);
+                return result;
+            }
+
+            Log($"Starting batch of {videoIds.Count}...");
+
+            if (videoIds.Count > 1 && !await _apiClient.ReorderQueue(videoIds, cancellationToken))
+            {
+                // Not fatal: they will still run, just in the queue's existing order.
+                Log("Could not set the batch order; the videos will run in queue order.",
+                    Logger.LogLevel.Warning);
+            }
+
+            foreach (var videoId in videoIds)
+            {
+                if (await _apiClient.DecideApproval(videoId, approve: true, cancellationToken))
+                {
+                    result.Approved++;
+                }
+                else
+                {
+                    result.Failed++;
+                    Log($"Could not approve {videoId}", Logger.LogLevel.Error);
+                }
+            }
+
+            Log($"Batch: {result.Approved} approved" +
+                (result.Failed > 0 ? $", {result.Failed} failed" : ""));
+
+            await RefreshQueuesAsync(cancellationToken);
+
+            if (result.Approved > 0 && !IsRunning)
+            {
+                // Approving without starting would leave the batch sitting there,
+                // which is not what "start" means.
+                _ = StartAsync();
+            }
+
+            return result;
+        }
+
+        /// <summary>Reject the given videos so they are never analyzed.</summary>
+        public async Task<BatchResult> RejectAsync(
+            IReadOnlyList<Guid> videoIds, CancellationToken cancellationToken = default)
+        {
+            var result = new BatchResult();
+
+            foreach (var videoId in videoIds)
+            {
+                if (await _apiClient.DecideApproval(videoId, approve: false, cancellationToken))
+                {
+                    result.Approved++;
+                }
+                else
+                {
+                    result.Failed++;
+                }
+            }
+
+            Log($"Rejected {result.Approved} video(s)" +
+                (result.Failed > 0 ? $", {result.Failed} failed" : ""));
+
+            await RefreshQueuesAsync(cancellationToken);
+            return result;
+        }
+
+        /// <summary>Apply a new run order to the approved queue.</summary>
+        public async Task ReorderAsync(
+            IReadOnlyList<Guid> videoIds, CancellationToken cancellationToken = default)
+        {
+            if (await _apiClient.ReorderQueue(videoIds, cancellationToken))
+            {
+                await RefreshQueuesAsync(cancellationToken);
+            }
+            else
+            {
+                Log("Could not reorder the queue.", Logger.LogLevel.Error);
+            }
+        }
+
         public async Task CancelCurrentJobAsync()
         {
             try
@@ -265,6 +386,19 @@ namespace CaughtOnDash.Worker.Services
         public string ProgressDisplay => $"{Progress}%";
 
         public WorkerSessionState Clone() => (WorkerSessionState)MemberwiseClone();
+    }
+
+    /// <summary>Both queues as of the last refresh.</summary>
+    public class QueueSnapshot
+    {
+        public List<QueueEntry> AwaitingReview { get; set; } = new();
+        public List<QueueEntry> Queued { get; set; } = new();
+    }
+
+    public class BatchResult
+    {
+        public int Approved { get; set; }
+        public int Failed { get; set; }
     }
 
     public class WorkerLogEntry

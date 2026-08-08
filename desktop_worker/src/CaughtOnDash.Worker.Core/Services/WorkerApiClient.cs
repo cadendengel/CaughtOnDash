@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -163,6 +165,55 @@ namespace CaughtOnDash.Worker.Services
 
             var result = await SendRequest<dynamic>("POST", "/api/videos/worker/heartbeat/", heartbeat, cancellationToken);
             return result != null;
+        }
+
+        /// <summary>Videos waiting for someone to approve or reject them.</summary>
+        public Task<List<QueueEntry>> GetReviewQueue(CancellationToken cancellationToken = default)
+            => GetQueue("/api/videos/worker/jobs/review/", cancellationToken);
+
+        /// <summary>Approved videos, in the order they will run.</summary>
+        public Task<List<QueueEntry>> GetRunQueue(CancellationToken cancellationToken = default)
+            => GetQueue("/api/videos/worker/jobs/", cancellationToken);
+
+        private async Task<List<QueueEntry>> GetQueue(string endpoint, CancellationToken cancellationToken)
+        {
+            var result = await SendRequest<QueueResponse>("GET", endpoint, cancellationToken: cancellationToken);
+            return result?.Items ?? new List<QueueEntry>();
+        }
+
+        /// <summary>Approve or reject a video for analysis.</summary>
+        public async Task<bool> DecideApproval(
+            Guid videoId, bool approve, CancellationToken cancellationToken = default)
+        {
+            var result = await SendRequest<dynamic>(
+                "POST",
+                $"/api/videos/worker/jobs/{videoId}/approval/",
+                new { approve },
+                cancellationToken);
+
+            return result != null;
+        }
+
+        /// <summary>Set the order the queue will run in.</summary>
+        public async Task<bool> ReorderQueue(
+            IEnumerable<Guid> videoIds, CancellationToken cancellationToken = default)
+        {
+            var result = await SendRequest<dynamic>(
+                "POST",
+                "/api/videos/worker/jobs/reorder/",
+                new { video_ids = videoIds.Select(id => id.ToString()).ToList() },
+                cancellationToken);
+
+            return result != null;
+        }
+
+        private class QueueResponse
+        {
+            [JsonProperty("count")]
+            public int Count { get; set; }
+
+            [JsonProperty("items")]
+            public List<QueueEntry> Items { get; set; } = new();
         }
 
         public async Task<JobDto?> GetNextPendingJob(CancellationToken cancellationToken = default)

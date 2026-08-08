@@ -160,6 +160,17 @@ def reorder_queue(video_ids: list) -> dict:
     if not isinstance(video_ids, list):
         return {'success': False, 'error': 'video_ids must be a list'}
 
+    # Validate before querying: passing a malformed value straight to id__in
+    # raises inside the field, which surfaces as a 500 for what is plainly a
+    # bad request.
+    parsed = []
+    for raw in video_ids:
+        try:
+            parsed.append(uuid.UUID(str(raw)))
+        except (ValueError, AttributeError, TypeError):
+            return {'success': False, 'error': f'Not a valid video id: {raw}'}
+
+    video_ids = parsed
     found = {str(v.id): v for v in Video.objects.filter(id__in=video_ids)}
     missing = [str(vid) for vid in video_ids if str(vid) not in found]
     if missing:

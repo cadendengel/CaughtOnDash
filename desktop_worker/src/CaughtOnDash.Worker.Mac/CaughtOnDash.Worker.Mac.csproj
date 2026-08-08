@@ -15,6 +15,8 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.3" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.3" />
+    <!-- DataGrid ships separately in Avalonia; WPF has it built in. -->
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.2.3" />
   </ItemGroup>
 
   <ItemGroup>

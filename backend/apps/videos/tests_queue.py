@@ -98,6 +98,16 @@ class ReorderTests(TestCase):
     def test_non_list_is_refused(self):
         self.assertFalse(reorder_queue('not-a-list')['success'])
 
+    def test_a_malformed_id_is_a_bad_request_not_a_crash(self):
+        # Passing this straight to id__in raises inside the field and surfaces
+        # as a 500 for what is plainly bad input.
+        result = reorder_queue([str(self.a.id), 'not-a-uuid'])
+        self.assertFalse(result['success'])
+        self.assertIn('not a valid video id', result['error'].lower())
+
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.analysis_priority, 0)
+
 
 @mock.patch.dict('os.environ', {'WORKER_API_TOKEN': WORKER_TOKEN})
 class QueueEndpointTests(TestCase):
