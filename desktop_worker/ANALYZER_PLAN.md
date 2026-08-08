@@ -16,9 +16,17 @@ supported — Windows with an NVIDIA GPU, and macOS on Apple Silicon.
 
 ## Non-goals (for now)
 
-- **Timestamped events.** The API schema promises them, but genuine temporal
-  reasoning is far harder than per-frame detection. Return `[]` rather than
-  emitting plausible-but-wrong events, which is what the placeholder does today.
+- **Incident detection.** Genuine temporal reasoning -- "a collision happened
+  here" -- is far harder than per-frame detection, and nothing in the analyzer
+  attempts it.
+
+  What *is* now emitted is one event per detected label, at the moment it was
+  first seen: an observation, not an incident. The detection loop already knew
+  each sampled frame's index, so a timestamp is arithmetic on the frame rate
+  rather than a guess. First-appearance rather than every sighting, because
+  sampling is roughly one frame a second -- a run of appearances is a series of
+  guesses about the gaps, while "a car was on screen at 0:14" was actually
+  observed. `events` is `[]` only when nothing was detected.
 - **Natural-language summaries** beyond a template. A real narrative summary
   needs a vision-language model; that is the hosted-API path, deliberately set
   aside.
@@ -57,7 +65,7 @@ daemon lifecycle to babysit.
 ```
 {"type":"progress","stage":"analyzing","progress":45}
 {"type":"progress","stage":"detecting_events","progress":70}
-{"type":"result","summary":"...","tags":[...],"events":[],"metadata":{...}}
+{"type":"result","summary":"...","tags":[...],"events":[{"timestamp_seconds":3.07,"label":"truck","description":"truck first seen","confidence":0.72,"frames_seen":1,"last_seen_seconds":3.07}],"metadata":{...}}
 ```
 
 - stderr carries human-readable logs, surfaced into the worker's Activity Log.

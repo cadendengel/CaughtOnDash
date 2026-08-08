@@ -143,5 +143,67 @@ class SummarizeTests(unittest.TestCase):
         self.assertIn('2m 05s', summary)
 
 
+class BuildEventsTests(unittest.TestCase):
+    """Events carry timestamps, so a wrong one sends a viewer to the wrong place.
+
+    These are observations -- "a car was visible at 0:14" -- not incidents.
+    Nothing here claims to know whether anything happened.
+    """
+
+    def test_an_event_marks_when_a_label_was_first_seen(self):
+        events = detection.build_events(
+            kept={'car': 3},
+            appearances={'car': [4.0, 2.0, 9.5]},
+            best_confidence={'car': 0.91},
+            tags=['car'])
+
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(event['timestamp_seconds'], 2.0)
+        self.assertEqual(event['last_seen_seconds'], 9.5)
+        self.assertEqual(event['label'], 'car')
+        self.assertEqual(event['confidence'], 0.91)
+        self.assertEqual(event['frames_seen'], 3)
+
+    def test_events_are_ordered_by_time(self):
+        events = detection.build_events(
+            kept={'car': 1, 'person': 1, 'dog': 1},
+            appearances={'car': [8.0], 'person': [1.5], 'dog': [4.0]},
+            best_confidence={'car': 0.8, 'person': 0.7, 'dog': 0.6},
+            tags=['car', 'person', 'dog'])
+
+        self.assertEqual([e['label'] for e in events], ['person', 'dog', 'car'])
+
+    def test_a_label_with_no_recorded_appearance_is_skipped(self):
+        # Rather than emit an event at 0.0, which would point a viewer at the
+        # start of the clip for something never actually located.
+        events = detection.build_events(
+            kept={'car': 2}, appearances={}, best_confidence={'car': 0.5}, tags=['car'])
+
+        self.assertEqual(events, [])
+
+    def test_only_kept_tags_become_events(self):
+        # Labels discarded for appearing too rarely must not come back as events.
+        events = detection.build_events(
+            kept={'car': 5},
+            appearances={'car': [1.0], 'toaster': [2.0]},
+            best_confidence={'car': 0.9, 'toaster': 0.4},
+            tags=['car'])
+
+        self.assertEqual([e['label'] for e in events], ['car'])
+
+
+class FrameSecondsTests(unittest.TestCase):
+    def test_converts_a_frame_index_to_seconds(self):
+        self.assertEqual(detection._frame_seconds(60, {'fps': 30.0}), 2.0)
+        self.assertEqual(detection._frame_seconds(45, {'fps': 30.0}), 1.5)
+
+    def test_a_missing_or_zero_fps_does_not_divide_by_zero(self):
+        # Some containers report no frame rate. A timestamp of 0 is wrong but
+        # harmless; a ZeroDivisionError would fail the whole analysis.
+        self.assertEqual(detection._frame_seconds(60, {}), 0.0)
+        self.assertEqual(detection._frame_seconds(60, {'fps': 0}), 0.0)
+
+
 if __name__ == '__main__':
     unittest.main()
