@@ -207,3 +207,46 @@ class FrameSecondsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SamplingFloorTests(unittest.TestCase):
+    """Short clips need enough frames for the dashcam verdict to mean anything.
+
+    At one frame a second a five-second clip is judged on four frames, so a
+    single detection moves the road-object share by 25 points. A real
+    night-time dashcam clip was classified "not dashcam" off one detection in
+    four frames.
+    """
+
+    def test_a_short_clip_is_sampled_to_the_floor(self):
+        # 5 seconds at 60fps: one per second would give 5.
+        indices = detection.frame_indices(300, 60.0, 1.0, 300)
+        self.assertGreaterEqual(len(indices), 7)
+
+    def test_a_long_clip_is_unaffected(self):
+        # 60 seconds already exceeds the floor from duration alone.
+        indices = detection.frame_indices(1800, 30.0, 1.0, 300)
+        self.assertEqual(len(indices), 60)
+
+    def test_it_never_asks_for_more_frames_than_exist(self):
+        # A 3-frame video cannot yield 8 samples.
+        indices = detection.frame_indices(3, 30.0, 1.0, 300)
+        self.assertLessEqual(len(indices), 3)
+        self.assertTrue(all(0 <= i < 3 for i in indices))
+
+    def test_max_frames_still_caps_the_floor(self):
+        indices = detection.frame_indices(300, 60.0, 1.0, 2)
+        self.assertLessEqual(len(indices), 2)
+
+
+class ConfidenceDefaultTests(unittest.TestCase):
+    def test_the_default_admits_low_light_detections(self):
+        """Measured, not guessed.
+
+        On a real night clip the model scored cars at 0.35-0.5; a 0.5 gate
+        discarded them and the footage read as "not dashcam". The negative
+        case -- a portrait video of a teddy bear -- reports zero road objects
+        at this threshold, so the sensitivity does not invent road scenes.
+        """
+        self.assertEqual(detection.DEFAULT_CONFIDENCE, 0.35)
+

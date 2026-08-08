@@ -288,6 +288,35 @@ at 0.5, tune against real footage.
 
 ---
 
+## Tuning, measured on real footage
+
+A night-time dashcam clip was classified "not dashcam". The cause was the
+confidence gate, not the classifier: at 0.5 the model saw one car in four
+sampled frames, because dark road and headlight glare put most detections in
+the 0.35-0.5 band where they were discarded.
+
+Swept on the three real videos in production:
+
+| sample_fps | conf | frames | road share | verdict |
+|---|---|---|---|---|
+| 1.0 | 0.50 | 4 | 0.25 | not dashcam (wrong) |
+| 1.0 | 0.35 | 4 | 0.50 | dashcam |
+| 2.0 | 0.50 | 9 | 0.22 | not dashcam (wrong) |
+| 2.0 | 0.35 | 9 | 0.56 | dashcam |
+| 4.0 | 0.35 | 19 | 0.58 | dashcam |
+
+Denser sampling at the old threshold made it *worse*, which ruled out "too few
+frames" as the primary cause. The threshold was the whole story.
+
+Two changes followed: confidence 0.5 -> 0.35, and a floor of 8 sampled frames
+so a short clip is not judged on four. With both, the night clip reports car,
+person, stop sign and traffic light where it previously reported one car, and
+lands at 0.571 rather than exactly on the 0.5 boundary.
+
+The negative case was checked at every setting: a portrait video of a teddy
+bear reports zero road objects at 0.35 and even at 0.25, so the added
+sensitivity does not manufacture road scenes.
+
 ## Risks
 
 | Risk | Mitigation |

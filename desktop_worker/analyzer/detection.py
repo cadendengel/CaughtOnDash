@@ -20,11 +20,29 @@ from typing import Callable, Iterable
 DEFAULT_MODEL = 'yolov8n.pt'
 
 # Below this, detections are more noise than signal on dashcam footage.
-DEFAULT_CONFIDENCE = 0.5
+# 0.35, down from 0.5.
+#
+# Measured on a real night-time dashcam clip: at 0.5 the model saw one car in
+# four sampled frames and the footage was classified as "not dashcam". The
+# cars were there and scoring 0.3-0.5 -- dark, wet road, headlight glare -- so
+# a 0.5 gate discarded them. At 0.35 the same clip reports cars, a person and
+# a traffic light, and classifies correctly.
+#
+# Checked against the negative case too: a portrait video of a teddy bear
+# stays at zero road objects at 0.35, 0.25 and every density tried, so this
+# buys sensitivity without inventing road scenes.
+DEFAULT_CONFIDENCE = 0.35
 
 # One frame per second is plenty: dashcam scenes change slowly, and sampling
 # every frame would multiply cost ~25x for almost no additional information.
 DEFAULT_SAMPLE_FPS = 1.0
+
+# One frame a second leaves a 5-second clip judged on four frames, where a
+# single detection moves the road-object share by 25 points and the dashcam
+# verdict can turn on one frame. Short clips get sampled densely enough for
+# the share to mean something; long ones are unaffected, since they already
+# exceed this from duration alone.
+MIN_SAMPLED_FRAMES = 8
 
 # Hard ceiling regardless of duration. A 30 minute clip at 1 fps would be 1800
 # inferences, which is minutes of work on a CPU-only host. Sampling is spread
@@ -75,6 +93,8 @@ def frame_indices(frame_count: int, fps: float, sample_fps: float, max_frames: i
         fps = 30.0  # a guess is better than sampling nothing
 
     wanted = max(1, int(math.ceil((frame_count / fps) * sample_fps)))
+    # Floor for short clips; never more frames than the video has.
+    wanted = max(wanted, min(MIN_SAMPLED_FRAMES, frame_count))
     wanted = min(wanted, max_frames, frame_count)
 
     if wanted == 1:
