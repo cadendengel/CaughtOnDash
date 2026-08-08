@@ -2,6 +2,7 @@ from django.http import JsonResponse
 from django.db.models import Count
 
 from apps.accounts.models import Profile
+from apps.videos.classification import dashcam_classification
 from apps.videos.models import Video, VideoLike
 from apps.videos.tagging import serialize_video_tags
 from apps.store import current_clerk_user_id as resolve_current_clerk_user_id, response_envelope
@@ -54,6 +55,9 @@ def feed_view(request):
         'worker_last_seen_at',
         'ai_summary',
         'ai_tags',
+        # Selected only to derive the dashcam verdict below; the raw metadata
+        # is internal and stays out of the response.
+        'ai_metadata',
     ).annotate(
         likes_count=Count('likes', distinct=True),
         comments_count=Count('comments', distinct=True),
@@ -102,6 +106,7 @@ def feed_view(request):
             'worker_last_seen_at': video['worker_last_seen_at'].isoformat() if video['worker_last_seen_at'] else None,
             'ai_summary': video['ai_summary'],
             'ai_tags': video['ai_tags'],
+            'dashcam_classification': dashcam_classification(video.get('ai_metadata')),
             'created_at': video['created_at'].isoformat() if hasattr(video['created_at'], 'isoformat') else video['created_at'],
             'updated_at': video['updated_at'].isoformat() if hasattr(video['updated_at'], 'isoformat') else video['updated_at'],
             'deleted_at': video['deleted_at'].isoformat() if hasattr(video['deleted_at'], 'isoformat') else video['deleted_at'],

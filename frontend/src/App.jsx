@@ -351,6 +351,37 @@ function App() {
     return `${minutes}:${String(total % 60).padStart(2, '0')}`
   }
 
+  // Whether the footage looks like it came from a dashcam.
+  //
+  // Rendered with its reasoning rather than as a bare yes/no, because it is a
+  // heuristic -- two cheap signals, road objects and orientation -- and a
+  // viewer should be able to see what it was based on and disagree.
+  //
+  // A missing verdict is not a negative one. Videos that were never analyzed,
+  // or analyzed before the classifier existed, say nothing here rather than
+  // claiming they are not dashcam footage.
+  const renderDashcamBadge = (post) => {
+    const verdict = post.dashcam_classification
+    if (!verdict || typeof verdict.looks_like_dashcam !== 'boolean') {
+      return null
+    }
+
+    const isDashcam = verdict.looks_like_dashcam
+    return (
+      <div
+        className={`dashcam-badge ${isDashcam ? 'is-dashcam' : 'not-dashcam'}`}
+        title={verdict.reason ? `Because: ${verdict.reason}` : undefined}
+      >
+        <span className="dashcam-badge-label">
+          {isDashcam ? 'Looks like dashcam footage' : 'May not be dashcam footage'}
+        </span>
+        {verdict.reason ? (
+          <span className="dashcam-badge-reason">{verdict.reason}</span>
+        ) : null}
+      </div>
+    )
+  }
+
   // What the analysis actually concluded. Until now this was stored, served,
   // and never shown -- the whole pipeline was invisible to the person the
   // video belongs to.
@@ -1499,6 +1530,7 @@ function App() {
 
       {renderTagPills(post.id, post.tags || [])}
       {renderAnalysisStatus(post)}
+      {renderDashcamBadge(post)}
       {renderAiSummary(post)}
 
       {post.playback_url ? (
@@ -1957,6 +1989,7 @@ function App() {
           <div className="feed-video-placeholder">Video not available yet.</div>
         )}
 
+        {renderDashcamBadge(video)}
         {renderAiSummary(video)}
         {renderDetectionTimeline(video, seekDetailVideo)}
 

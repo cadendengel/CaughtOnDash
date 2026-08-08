@@ -195,3 +195,41 @@
   color: #6b7280;
   font-size: 0.85rem;
 }
+
+/* --- Dashcam verdict ---------------------------------------------------- */
+
+/* Deliberately understated. It is a heuristic from two cheap signals, so it
+   should read as an observation the viewer can weigh, not a certification. */
+.dashcam-badge {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.82rem;
+}
+
+.dashcam-badge.is-dashcam {
+  background: #eef7f0;
+  border-color: #cfe6d6;
+  color: #1e5b34;
+}
+
+/* Amber rather than red: "may not be" is a doubt, not a failure or a
+   rejection, and red already means rejected elsewhere on the card. */
+.dashcam-badge.not-dashcam {
+  background: #fdf6e7;
+  border-color: #eedfb4;
+  color: #7a5a12;
+}
+
+.dashcam-badge-label {
+  font-weight: 600;
+}
+
+.dashcam-badge-reason {
+  opacity: 0.85;
+}
