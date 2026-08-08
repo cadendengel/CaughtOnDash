@@ -19,6 +19,10 @@ from .views import (
     search_videos,
 )
 from .worker_views import (
+    list_queue,
+    list_review_queue,
+    reorder_queue_view,
+    worker_decide_approval,
     worker_status,
     worker_heartbeat,
     get_next_job,
@@ -71,6 +75,14 @@ urlpatterns = [
     path('worker/heartbeat/', worker_heartbeat, name='worker-heartbeat'),
     # GET /api/videos/worker/jobs/next/ - get next pending job
     path('worker/jobs/next/', get_next_job, name='worker-jobs-next'),
+    # GET /api/videos/worker/jobs/ - the approved queue, in run order
+    path('worker/jobs/', list_queue, name='worker-jobs-list'),
+    # GET /api/videos/worker/jobs/review/ - videos awaiting approval
+    path('worker/jobs/review/', list_review_queue, name='worker-jobs-review'),
+    # POST /api/videos/worker/jobs/reorder/ - set queue order
+    path('worker/jobs/reorder/', reorder_queue_view, name='worker-jobs-reorder'),
+    # POST /api/videos/worker/jobs/<job_id>/approval/ - approve or reject
+    path('worker/jobs/<uuid:job_id>/approval/', worker_decide_approval, name='worker-job-approval'),
     # POST /api/videos/worker/jobs/<job_id>/claim/ - claim a job
     path('worker/jobs/<uuid:job_id>/claim/', claim_job_view, name='worker-job-claim'),
     # POST /api/videos/worker/jobs/<job_id>/progress/ - update job progress

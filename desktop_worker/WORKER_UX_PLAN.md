@@ -80,14 +80,30 @@ and retroactively gating them would strand already-analyzed work.
 Cancelled jobs also return to `pending_review` — a job was approved once, but
 re-running it is a fresh decision.
 
-### 2b — Queue listing and priority
+### 2b — Queue listing and priority — DONE
 
-- [ ] `analysis_priority` field. Ordering becomes priority, then
+- [x] `analysis_priority` field. Ordering is priority, then
       `analysis_requested_at`, then `created_at`
-- [ ] `GET /api/videos/worker/jobs/` — list the claimable queue. Only
-      `jobs/next` exists today, which is why the worker cannot show a queue
-- [ ] `GET` the review queue (awaiting approval) for the desktop table
-- [ ] Reorder endpoint writing priority
+- [x] `GET /api/videos/worker/jobs/` — the approved queue in run order
+- [x] `GET /api/videos/worker/jobs/review/` — videos awaiting a decision
+- [x] `POST /api/videos/worker/jobs/reorder/` — takes the whole ordered list
+- [x] `POST /api/videos/worker/jobs/<id>/approval/` — worker-token approval
+
+Rows carry what a person needs to decide: duration, playback URL for preview,
+attempt number, how many previous attempts there were, and what the last
+finished run concluded. Listing stays at two queries regardless of queue
+length, which a test pins.
+
+Reorder takes the entire ordered list rather than move-up/move-down, because
+the caller already knows the order it wants and one write avoids two clients
+fighting over adjacent swaps. Priorities descend from the list length, so a
+video arriving mid-review lands behind anything explicitly ordered.
+
+**Worth knowing:** approval is reachable with the worker token, because the
+desktop app holds that token rather than Clerk credentials. It is not a wider
+grant -- that token can already claim jobs and write results -- but it does
+mean the token approves as well as processes. The Clerk endpoint for owners
+still exists alongside it.
 
 Ordering lives server-side deliberately: with three hosts, "the queue" should
 mean one thing rather than three, and a local-only order dies on restart.

@@ -170,6 +170,11 @@ class Video(models.Model):
         blank=True,
         help_text="When the approval decision was made",
     )
+    analysis_priority = models.IntegerField(
+        default=0,
+        db_index=True,
+        help_text="Higher runs sooner. Ties fall back to when analysis was requested.",
+    )
     # Worker assignment fields
     worker_id = models.CharField(
         max_length=255,

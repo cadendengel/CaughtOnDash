@@ -40,6 +40,65 @@ class JobDto(serializers.Serializer):
     analysis_status = serializers.CharField(read_only=True)
 
 
+class QueueEntrySerializer(serializers.Serializer):
+    """A row in the worker's queue or review table.
+
+    Richer than JobDto because this drives a table a person reads before
+    deciding whether to spend compute on the video: how long it is, whether it
+    has been analyzed before, and what the last attempt concluded.
+    """
+
+    video_id = serializers.UUIDField(source='id', read_only=True)
+    title = serializers.CharField(read_only=True)
+    description = serializers.CharField(read_only=True)
+    video_url = serializers.URLField(source='playback_url', read_only=True)
+    thumbnail_url = serializers.URLField(read_only=True)
+    duration_seconds = serializers.IntegerField(read_only=True)
+    owner_clerk_user_id = serializers.CharField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+
+    approval_status = serializers.CharField(read_only=True)
+    analysis_status = serializers.CharField(read_only=True)
+    analysis_priority = serializers.IntegerField(read_only=True)
+    analysis_requested_at = serializers.DateTimeField(read_only=True)
+
+    attempt_number = serializers.SerializerMethodField()
+    previous_attempts = serializers.SerializerMethodField()
+    last_result = serializers.SerializerMethodField()
+
+    def get_attempt_number(self, video) -> int:
+        """Which attempt this would be -- 3 means it is back for a third look."""
+        runs = getattr(video, 'prefetched_runs', None)
+        if runs is None:
+            return 1
+        return runs[0].attempt_number if runs else 1
+
+    def get_previous_attempts(self, video) -> int:
+        runs = getattr(video, 'prefetched_runs', None)
+        if not runs:
+            return 0
+        return max(0, len(runs) - 1)
+
+    def get_last_result(self, video):
+        """What the most recent finished attempt concluded, if any.
+
+        This is the context that makes a re-review meaningful: you can see the
+        model already called it a parking lot before deciding to run it again.
+        """
+        runs = getattr(video, 'prefetched_runs', None) or []
+        for run in runs:
+            if run.status in ('complete', 'failed'):
+                return {
+                    'attempt_number': run.attempt_number,
+                    'status': run.status,
+                    'summary': run.summary,
+                    'tags': run.tags,
+                    'error': run.error,
+                    'finished_at': run.finished_at.isoformat() if run.finished_at else None,
+                }
+        return None
+
+
 class JobClaimSerializer(serializers.Serializer):
     """Serializer for job claim requests."""
     
