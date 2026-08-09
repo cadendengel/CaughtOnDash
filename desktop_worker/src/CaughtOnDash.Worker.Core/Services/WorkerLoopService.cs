@@ -27,6 +27,16 @@ namespace CaughtOnDash.Worker.Services
         private int _lastSentProgress = -1;
         private DateTime _lastSentAt = DateTime.MinValue;
 
+        // Set once the backend has been asked to finish a job. Progress
+        // delivered through Progress<T> arrives asynchronously, so the
+        // analyzer's last reports -- uploading_results at 90 and 95 -- can land
+        // after CompleteJob has already returned. The progress endpoint
+        // rightly refuses a completed job, which logged three
+        // "Cannot update job in state: complete" errors on every successful
+        // run. Those are the kind of routine errors that train you to ignore
+        // the log, which is how a real failure hid here once before.
+        private volatile bool _jobFinishing;
+
         public event Action<WorkerLoopEvent>? OnStatusUpdate;
 
         public WorkerLoopService(WorkerConfig config, WorkerApiClient apiClient, IAnalyzer analyzer, LocalVideoStorageService storageService)
@@ -266,6 +276,7 @@ namespace CaughtOnDash.Worker.Services
             var downloadedPath = _storageService.GetVideoPath(job.VideoId);
             var stage = "downloading";
             ResetProgressThrottle();
+            _jobFinishing = false;
 
             try
             {
@@ -284,6 +295,10 @@ namespace CaughtOnDash.Worker.Services
 
                 stage = "uploading_results";
                 ReportProgress(job, stage, 95, cancellationToken);
+
+                // From here the job's progress is the backend's to record.
+                // Anything still queued in Progress<T> is stale by definition.
+                _jobFinishing = true;
 
                 var success = await _apiClient.CompleteJob(job.JobId, _config.WorkerId, result, cancellationToken);
                 if (success)
@@ -349,7 +364,7 @@ namespace CaughtOnDash.Worker.Services
                 Stage = stage
             });
 
-            if (notifyBackend && ShouldSendProgress(stage, percent))
+            if (notifyBackend && !_jobFinishing && ShouldSendProgress(stage, percent))
             {
                 _lastSentStage = stage;
                 _lastSentProgress = percent;
