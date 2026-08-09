@@ -131,6 +131,32 @@ between them, with no error -- browsers connected to one process simply never
 hear about changes made in the other. Scaling past one worker means moving
 CHANNEL_LAYERS to Redis first.
 
+## Health check
+
+`GET /api/health/`, unauthenticated and uncached:
+
+```json
+{"status": "ok", "database": "ok", "migrations": "applied"}
+```
+
+It answers **503**, not 200-with-a-field, when the database is unreachable or
+migrations are unapplied. Monitors act on status codes and nothing else.
+
+It executes `SELECT 1`, not merely `connection.ensure_connection()`. Under a
+pooler the connection object exists while the pooler refuses to hand out a
+backend -- the shape of `EMAXCONNSESSION` -- so a check short of a real
+statement would have reported "ok" for the whole of the 8 August outage.
+Unapplied migrations fail it for the same reason: production once ran a day
+against a schema its code did not match, and every video endpoint 500d.
+
+**Point an uptime monitor at it.** The endpoint alone changes nothing; being
+told is the point. UptimeRobot's free tier polls every five minutes and emails
+on a non-2xx, which is enough.
+
+For a post-deploy check by hand, `backend/scripts/smoke.sh [base-url]` hits
+health and the WebSocket upgrade and exits non-zero if either fails. It
+defaults to production.
+
 ## Deployment Notes
 
 - Use the Supabase **Transaction Pooler** URL for `DATABASE_URL` (port 6543).
