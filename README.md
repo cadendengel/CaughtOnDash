@@ -77,10 +77,32 @@ connect. Live analysis status depends on it.
 daphne -b 0.0.0.0 -p $PORT caughtondash.asgi:application
 ```
 
-On Render this is the service's start command, set in the dashboard rather than
-in this repo -- Render ignores Procfiles, so the dashboard is the source of
-truth and the repo can only document it. Production is on daphne; confirm with
-`x-render-origin-server` on any response.
+On Render, both commands are dashboard settings -- Render ignores Procfiles, so
+**the dashboard is the source of truth** and this section can only describe it.
+With the service's root directory set to `backend`:
+
+```
+# Build Command
+pip install -r requirements.txt
+
+# Start Command
+python manage.py migrate && daphne -b 0.0.0.0 -p $PORT caughtondash.asgi:application
+```
+
+**Migrations run at start, not at build, and this matters.** With `migrate` in
+the build command, a build cannot succeed while the database is unreachable --
+which is precisely when a deploy is most needed. During the 8 August outage the
+pooler was exhausted, so the deploy carrying the fix could not build, so the
+pooler stayed exhausted; recovery meant suspending the service by hand. Running
+migrations at start keeps them enforced -- a failed migration still stops the
+release -- without making the build depend on the database.
+
+One consequence: if two instances briefly overlap during a deploy they will run
+`migrate` concurrently. Django locks per migration, so the second waits rather
+than corrupting anything, but a slow migration will delay the new instance's
+start.
+
+Production is on daphne; confirm with `x-render-origin-server` on any response.
 
 Reverting to gunicorn, or any other WSGI server, keeps HTTP working and
 silently disables live updates. Nothing errors: the frontend treats a socket
@@ -114,11 +136,10 @@ CHANNEL_LAYERS to Redis first.
 - Use the Supabase **Transaction Pooler** URL for `DATABASE_URL` (port 6543).
   The Session Pooler on 5432 caps clients at 15 — shared between the web app,
   the desktop worker and every browser — and exceeding it fails every request
-  with `EMAXCONNSESSION`, including the `migrate` in the build command, which
-  makes the deploy that would fix it impossible. The transaction pooler has no
-  such cap. Prepared statements and server-side cursors are disabled in
+  with `EMAXCONNSESSION`. The transaction pooler has no such cap. Prepared statements and server-side cursors are disabled in
   settings to suit it; both are harmless on the session pooler, so the same
   settings work with either URL.
 - Keep `SUPABASE_SERVICE_KEY` server-side only.
 - Set `CORS_ALLOWED_ORIGINS` to the deployed frontend origin.
-- Run `python manage.py migrate` on the production backend before serving traffic.
+- Migrations run from the start command (see Serving), so a deploy applies them
+  before daphne binds the port. Nothing manual is needed on a normal deploy.
