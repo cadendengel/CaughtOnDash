@@ -309,6 +309,17 @@ def claim_job(job_id: uuid.UUID, worker_id: str, worker_name: str) -> dict:
             'error': 'Job not found'
         }
     
+    # The video's bytes must actually be in storage. A record whose upload never
+    # finished stays status='pending' with no playback_url; claiming and
+    # "completing" it produced a feed card marked Complete with analysis results
+    # for a video that will not play (QA ISSUE-4). claimable_jobs() already gates
+    # on status='ready'; this closes the same gap on the by-id claim path.
+    if job.status != 'ready':
+        return {
+            'success': False,
+            'error': f'Video is not ready for analysis (status: {job.status})'
+        }
+
     # Check if job is in a claimable state
     if job.analysis_status not in ('pending', 'failed', 'cancelled'):
         return {

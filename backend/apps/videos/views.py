@@ -27,9 +27,14 @@ from apps.videos.tagging import normalize_video_tags, serialize_video_tags
 from apps.store import (
     current_clerk_user_id as resolve_current_clerk_user_id,
     get_identity,
+    is_authenticated,
     parse_json_request,
     response_envelope,
 )
+
+
+def _auth_required() -> JsonResponse:
+    return JsonResponse({'detail': 'Authentication required.'}, status=401)
 from apps.storage import upload_bytes_to_supabase
 from apps.videos.worker_services import decide_approval, open_analysis_run, request_analysis
 
@@ -248,9 +253,15 @@ def upload_url_view(request):
 
     payload = parse_json_request(request)
     identity = get_identity(request, payload)
-    
-    # Ensure profile exists
-    Profile.objects.update_or_create(
+    if not is_authenticated(identity):
+        return _auth_required()
+
+    # Ensure profile exists. get_or_create, NOT update_or_create: identity's
+    # username/display_name are id-derived placeholders when the caller omits
+    # them, and overwriting an existing good profile with those downgraded every
+    # poster's handle to their raw Clerk id (QA ISSUE-3). Creating a video must
+    # never mutate the poster's profile.
+    Profile.objects.get_or_create(
         clerk_user_id=identity['clerk_user_id'],
         defaults={
             'email': identity['email'],
@@ -259,7 +270,7 @@ def upload_url_view(request):
             'avatar_url': identity['avatar_url'],
         }
     )
-    
+
     # Create video record; storage upload will be handled by server-side upload endpoint
     video = Video.objects.create(
         owner_clerk_user_id=identity['clerk_user_id'],
@@ -643,6 +654,10 @@ def video_like_view(request, video_id):
 
     payload = parse_json_request(request)
     identity = get_identity(request, payload)
+    if not is_authenticated(identity):
+        # An unauthenticated caller would otherwise like AS the shared blank
+        # profile -- anonymous engagement attributed to one id (QA ISSUE-7).
+        return _auth_required()
 
     like = VideoLike.objects.filter(video=video, user_clerk_user_id=identity['clerk_user_id']).first()
     liked = False
@@ -737,6 +752,10 @@ def video_comments_view(request, video_id):
     if request.method == 'POST':
         payload = parse_json_request(request)
         text = str(payload.get('text') or '').strip()
+        identity = get_identity(request, payload)
+        if not is_authenticated(identity):
+            return _auth_required()
+
         if not text:
             return JsonResponse({'detail': 'text is required.'}, status=400)
 
@@ -757,7 +776,6 @@ def video_comments_view(request, video_id):
             except VideoComment.DoesNotExist:
                 return JsonResponse({'detail': 'Parent comment not found.'}, status=404)
 
-        identity = get_identity(request, payload)
         comment = VideoComment.objects.create(
             video_id=video_uuid,
             parent_comment=parent_comment,
@@ -801,6 +819,8 @@ def video_comment_like_view(request, comment_id):
 
     payload = parse_json_request(request)
     identity = get_identity(request, payload)
+    if not is_authenticated(identity):
+        return _auth_required()
 
     like = VideoCommentLike.objects.filter(comment=comment, user_clerk_user_id=identity['clerk_user_id']).first()
     liked = False

@@ -17,6 +17,10 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class MalformedJSON(Exception):
+    """A non-empty request body that is not valid JSON."""
+
+
 def parse_json_request(request) -> dict[str, Any]:
     if not request.body:
         return {}
@@ -27,6 +31,28 @@ def parse_json_request(request) -> dict[str, Any]:
         return {}
 
     return data if isinstance(data, dict) else {}
+
+
+def parse_json_request_strict(request) -> dict[str, Any]:
+    """Like parse_json_request, but a non-empty unparseable body raises
+    MalformedJSON instead of being silently treated as empty. Use on write
+    endpoints so a broken client gets a 400 rather than a surprising success
+    (QA ISSUE-8)."""
+    if not request.body:
+        return {}
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError, ValueError):
+        raise MalformedJSON('Request body is not valid JSON.')
+    return data if isinstance(data, dict) else {}
+
+
+def is_authenticated(identity: dict[str, Any]) -> bool:
+    """True when a real caller is behind the request. get_identity yields a
+    blank clerk_user_id for an unauthenticated caller while REQUIRE_CLERK_JWT is
+    on (and a non-blank 'demo-user' when it is off), so this gates writes
+    without breaking local development (QA ISSUE-1/ISSUE-7)."""
+    return bool(identity.get('clerk_user_id'))
 
 
 def response_envelope(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
