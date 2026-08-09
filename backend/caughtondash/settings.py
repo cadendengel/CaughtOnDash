@@ -99,6 +99,17 @@ if DATABASE_URL:
     #
     # ASGI_THREADS caps the pool as a second line of defence, so the worst case
     # is bounded even if something re-enables persistent connections later.
+    #
+    # TRANSACTION-POOLER CAVEAT (QA ISSUE-6): conn_max_age=0 is correct for the
+    # SESSION pooler (15-client cap) but is a liability on the TRANSACTION pooler
+    # (200-client cap). With age=0 every request opens a fresh client connection
+    # to Supavisor and closes it; sustained traffic churns hundreds of
+    # short-lived client connections, and if Supavisor frees them slowly they
+    # pile toward the 200 cap. A sustained (even sequential) load test drove the
+    # whole site to EMAXCONN 5xx for ~39 minutes. On the transaction pooler,
+    # raising DB_CONN_MAX_AGE (e.g. 30-60) so connections are REUSED reduces that
+    # churn -- but verify under load before trusting it, and keep it 0 on the
+    # session pooler. This is why it stays an env var rather than a hardcoded value.
     DATABASES = {
         'default': dj_database_url.parse(
             DATABASE_URL,

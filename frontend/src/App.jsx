@@ -164,6 +164,11 @@ function App() {
   const [moderation, setModeration] = useState(null)
   const [moderationError, setModerationError] = useState('')
   const [posts, setPosts] = useState([])
+  // 'loading' until the first feed fetch resolves, then 'loaded' or 'error'.
+  // Without this the empty-state renders while the first load is still in
+  // flight (and stays if that load fails), which read as "your feed is empty"
+  // right after sign-in until a manual reload (QA ISSUE-5).
+  const [feedStatus, setFeedStatus] = useState('loading')
   const [tagsExpandedByPostId, setTagsExpandedByPostId] = useState({})
   const [uploadTags, setUploadTags] = useState([])
   const [uploadTagDraft, setUploadTagDraft] = useState('')
@@ -730,16 +735,23 @@ function App() {
   }
 
   const loadFeed = async () => {
+    setFeedStatus((current) => (current === 'loaded' ? current : 'loading'))
     try {
       const headers = user?.id ? { 'X-Clerk-User-Id': user.id } : {}
       const res = await authFetch(`${API_BASE}/api/feed/`, { headers })
-      if (!res.ok) return
+      if (!res.ok) {
+        setFeedStatus('error')
+        return []
+      }
       const data = await res.json()
       const items = data.items || []
       setPosts(items)
+      setFeedStatus('loaded')
       return items
     } catch (err) {
-      // ignore for now
+      // A failed first load must not masquerade as an empty feed; surface it so
+      // the user can retry instead of being stuck on the empty-state.
+      setFeedStatus('error')
     }
     return []
   }
@@ -2260,7 +2272,21 @@ const MODERATION_ACCENT = {
         <p>Latest dashcam uploads and incidents from the community.</p>
       </div>
 
-      {posts.length === 0 ? (
+      {posts.length === 0 && feedStatus === 'loading' ? (
+        <div className={`${CARD} p-6 ${CARD_COPY}`}>
+          <p className={EYEBROW}>Loading</p>
+          <h3>Loading the feed…</h3>
+        </div>
+      ) : posts.length === 0 && feedStatus === 'error' ? (
+        <div className={`${CARD} p-6 ${CARD_COPY}`}>
+          <p className={EYEBROW}>Something went wrong</p>
+          <h3>Couldn’t load the feed</h3>
+          <p>The server didn’t respond. This is usually temporary.</p>
+          <button type="button" className={PRIMARY_BTN} onClick={() => loadFeed()}>
+            Try again
+          </button>
+        </div>
+      ) : posts.length === 0 ? (
         <div className={`${CARD} p-6 ${CARD_COPY}`}>
           <p className={EYEBROW}>No posts yet</p>
           <h3>Your feed is empty</h3>
