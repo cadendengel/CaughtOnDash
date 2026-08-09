@@ -15,11 +15,59 @@ enough concurrency to spread work across threads.
 """
 
 import os
+import subprocess
+import sys
 from unittest import mock
 
 from django.test import SimpleTestCase
 
 from caughtondash.env import get_int
+
+
+class EffectiveConnMaxAgeTests(SimpleTestCase):
+    """The value that actually reaches DATABASES, not just what get_int returns.
+
+    A stale block in settings once forced CONN_MAX_AGE=600 after the Postgres
+    branch set it to 0, so every connection was held for ten minutes and the
+    pooler filled under load (QA ISSUE-6). The old tests only checked get_int in
+    isolation, so they never saw it. This resolves settings the way production
+    does -- with a Postgres DATABASE_URL -- and asserts the effective value.
+    """
+
+    def _conn_max_age(self, database_url, extra_env=None):
+        env = {
+            **os.environ,
+            'DEBUG': 'true',
+            'SECRET_KEY': 'test-only',
+            'DATABASE_URL': database_url,
+        }
+        env.pop('DB_CONN_MAX_AGE', None)
+        if extra_env:
+            env.update(extra_env)
+        code = (
+            'import django, os; '
+            "os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'caughtondash.settings'); "
+            'django.setup(); '
+            'from django.conf import settings; '
+            "print(settings.DATABASES['default']['CONN_MAX_AGE'])"
+        )
+        out = subprocess.run(
+            [sys.executable, '-c', code], capture_output=True, text=True, timeout=60, env=env,
+        )
+        assert out.returncode == 0, out.stderr
+        return int(out.stdout.strip().splitlines()[-1])
+
+    def test_transaction_pooler_default_is_zero(self):
+        url = 'postgresql://u:p@host.pooler.supabase.com:6543/postgres'
+        self.assertEqual(self._conn_max_age(url), 0)
+
+    def test_session_pooler_default_is_zero(self):
+        url = 'postgresql://u:p@host.pooler.supabase.com:5432/postgres'
+        self.assertEqual(self._conn_max_age(url), 0)
+
+    def test_env_override_is_respected(self):
+        url = 'postgresql://u:p@host.pooler.supabase.com:6543/postgres'
+        self.assertEqual(self._conn_max_age(url, {'DB_CONN_MAX_AGE': '30'}), 30)
 
 
 class ConnectionLifetimeTests(SimpleTestCase):
