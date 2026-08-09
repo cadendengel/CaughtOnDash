@@ -36,6 +36,9 @@ namespace CaughtOnDash.Worker.Services
                         Logger.Log("Cleared masked API token from saved config", Logger.LogLevel.Warning);
                     }
                     Logger.Log($"Loaded config from {_configPath}");
+                    // Both hosts load config through here, so this is the one
+                    // place that records which backend the worker is using.
+                    Logger.LogStartupContext(_config);
                     return _config;
                 }
 

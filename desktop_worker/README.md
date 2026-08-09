@@ -84,7 +84,38 @@ search indexes.
 problem from recognising objects, and timestamps that were never measured would
 be worse than none.
 
+## Logs
+
+The Activity Log panel shows the current session. The same lines also go to a
+file that outlives the process:
+
+```
+Windows   %LOCALAPPDATA%\CaughtOnDash\logs\worker.log
+macOS     ~/Library/Logs/CaughtOnDash/worker.log
+Linux     ~/.local/state/CaughtOnDash/logs/worker.log
+```
+
+The path is printed as the first line of the log itself, so it can be found
+without remembering the table above. Files roll at 2 MB, five kept.
+
+Near the top of every run is the effective configuration:
+
+```
+Worker mac-1 (Mac) -> backend https://caughtondash.onrender.com, token set (44 chars), analyzer python
+```
+
+That line exists because "which backend is it actually talking to" has been the
+first question in most of this project's worker problems, and the token is
+reduced to a length so a log can be pasted somewhere without leaking one.
+
+Logging never throws: an unwritable location disables file output and the
+worker carries on. If the file is missing, the console line says why.
+
 ## Troubleshooting
+
+**Heartbeats appear to be rejected** — read the log file before assuming the
+backend is at fault. `Connection refused` means nothing is listening at
+`BackendUrl`, which is a different problem from a 401.
 
 **Every request returns 401** — `ApiToken` does not match `WORKER_API_TOKEN` on
 the backend. They are separate from user authentication; Clerk settings do not
