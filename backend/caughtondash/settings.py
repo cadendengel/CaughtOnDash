@@ -100,16 +100,16 @@ if DATABASE_URL:
     # ASGI_THREADS caps the pool as a second line of defence, so the worst case
     # is bounded even if something re-enables persistent connections later.
     #
-    # TRANSACTION-POOLER CAVEAT (QA ISSUE-6): conn_max_age=0 is correct for the
-    # SESSION pooler (15-client cap) but is a liability on the TRANSACTION pooler
-    # (200-client cap). With age=0 every request opens a fresh client connection
-    # to Supavisor and closes it; sustained traffic churns hundreds of
-    # short-lived client connections, and if Supavisor frees them slowly they
-    # pile toward the 200 cap. A sustained (even sequential) load test drove the
-    # whole site to EMAXCONN 5xx for ~39 minutes. On the transaction pooler,
-    # raising DB_CONN_MAX_AGE (e.g. 30-60) so connections are REUSED reduces that
-    # churn -- but verify under load before trusting it, and keep it 0 on the
-    # session pooler. This is why it stays an env var rather than a hardcoded value.
+    # This 0 is the intended value -- but for a long time it did NOT take effect:
+    # a stale "connection pooling" block further down unconditionally set
+    # CONN_MAX_AGE=600 (its guard tested OPTIONS, where CONN_MAX_AGE never
+    # lives). So every connection was actually held for ten minutes, and under
+    # daphne each in-flight request's connection is held that whole time. Under
+    # load they accumulate until the pooler's client cap is hit -- 15 on the
+    # session pooler (EMAXCONNSESSION), 200 on the transaction pooler (EMAXCONN)
+    # -- and every endpoint 5xxs. That override is now removed (QA ISSUE-6), so
+    # this value finally governs. Keep it 0; DB_CONN_MAX_AGE can override it for
+    # deliberate experiments on the transaction pooler.
     DATABASES = {
         'default': dj_database_url.parse(
             DATABASE_URL,
@@ -178,10 +178,12 @@ if 'test' in sys.argv:
         }
     }
 
-# Connection pooling: persistent connections reduce overhead.
-# CONN_MAX_AGE is set via dj_database_url but can be overridden here if needed.
-if 'CONN_MAX_AGE' not in DATABASES['default'].get('OPTIONS', {}):
-    DATABASES['default']['CONN_MAX_AGE'] = 600
+# NOTE: a block here used to force CONN_MAX_AGE=600 unconditionally -- its guard
+# checked OPTIONS, but CONN_MAX_AGE is a top-level key, so the guard was always
+# true. That silently overrode the conn_max_age set above and held every
+# connection for ten minutes, which is the root cause of the pooler-exhaustion
+# outages (QA ISSUE-6). CONN_MAX_AGE is now set once, above, from
+# conn_max_age -- do not re-assign it here.
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
