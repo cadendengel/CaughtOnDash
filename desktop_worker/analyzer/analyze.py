@@ -103,6 +103,10 @@ def describe(metadata: dict) -> str:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description='Analyze a dashcam video.')
+    # Prints the analyzer version and exits. The worker calls this to learn the
+    # current version so its "requeue outdated" button can ask the backend to
+    # re-run everything not on it -- analyze.py stays the single source of truth.
+    parser.add_argument('--version', action='version', version=ANALYZER_VERSION)
     parser.add_argument('video_path', help='Path to the video file')
     parser.add_argument('--no-detect', action='store_true',
                         help='Skip object detection and report metadata only')

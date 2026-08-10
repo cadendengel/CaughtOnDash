@@ -196,6 +196,21 @@ namespace CaughtOnDash.Worker.Mac
         private async void RefreshQueueButton_Click(object? sender, RoutedEventArgs e)
             => await _session.RefreshQueuesAsync();
 
+        private async void RequeueOutdatedButton_Click(object? sender, RoutedEventArgs e)
+        {
+            RequeueOutdatedButton.IsEnabled = false;
+            try
+            {
+                // Result is logged to the Activity Log by the session; disabling
+                // the button while it runs is enough feedback here.
+                await _session.RequeueOutdatedAsync();
+            }
+            finally
+            {
+                RequeueOutdatedButton.IsEnabled = true;
+            }
+        }
+
         private void SelectAll_Click(object? sender, RoutedEventArgs e)
         {
             foreach (var row in _rows)

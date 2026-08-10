@@ -126,6 +126,56 @@ namespace CaughtOnDash.Worker.Services
             return result;
         }
 
+        /// <summary>
+        /// Run <c>analyze.py --version</c> and return what it prints. analyze.py
+        /// is the single source of truth for the analyzer version; the worker
+        /// asks it rather than hardcoding a value that could drift.
+        /// </summary>
+        public async Task<string> GetVersionAsync(CancellationToken cancellationToken = default)
+        {
+            var scriptPath = ResolveScriptPath();
+            if (!File.Exists(scriptPath))
+            {
+                throw new InvalidOperationException(
+                    $"Analyzer script not found at '{scriptPath}'. Set AnalyzerScriptPath in " +
+                    "appsettings.json to the location of analyze.py.");
+            }
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _config.PythonExecutable,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(scriptPath) ?? Environment.CurrentDirectory,
+            };
+            startInfo.ArgumentList.Add(scriptPath);
+            startInfo.ArgumentList.Add("--version");
+
+            using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+            try
+            {
+                process.Start();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Could not run the Python analyzer using '{_config.PythonExecutable}'. " +
+                    $"Check PythonExecutable in appsettings.json. ({ex.Message})", ex);
+            }
+
+            var stdout = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+
+            var version = stdout.Trim();
+            if (string.IsNullOrEmpty(version))
+            {
+                throw new InvalidOperationException("analyze.py --version produced no output.");
+            }
+            return version;
+        }
+
         private string ResolveScriptPath()
         {
             var configured = _config.AnalyzerScriptPath;

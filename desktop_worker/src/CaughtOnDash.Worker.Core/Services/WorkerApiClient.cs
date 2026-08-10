@@ -216,6 +216,35 @@ namespace CaughtOnDash.Worker.Services
             public List<QueueEntry> Items { get; set; } = new();
         }
 
+        public class RequeueResult
+        {
+            [JsonProperty("requeued")]
+            public int Requeued { get; set; }
+
+            [JsonProperty("skipped_current_version")]
+            public int SkippedCurrentVersion { get; set; }
+
+            [JsonProperty("target_version")]
+            public string TargetVersion { get; set; } = "";
+        }
+
+        /// <summary>
+        /// Ask the backend to requeue every analyzed video NOT on
+        /// <paramref name="analyzerVersion"/>, so an algorithm change can re-run
+        /// the whole corpus. Returns null on failure. The version is the
+        /// analyzer's own (from analyze.py --version), keeping it the single
+        /// source of truth.
+        /// </summary>
+        public async Task<RequeueResult?> RequeueStaleVersion(
+            string workerId, string analyzerVersion, CancellationToken cancellationToken = default)
+        {
+            return await SendRequest<RequeueResult>(
+                "POST",
+                "/api/videos/worker/jobs/requeue-stale/",
+                new { worker_id = workerId, analyzer_version = analyzerVersion },
+                cancellationToken);
+        }
+
         public async Task<JobDto?> GetNextPendingJob(CancellationToken cancellationToken = default)
         {
             try

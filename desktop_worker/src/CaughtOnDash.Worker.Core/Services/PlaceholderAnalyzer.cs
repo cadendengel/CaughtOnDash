@@ -9,6 +9,13 @@ namespace CaughtOnDash.Worker.Services
     public interface IAnalyzer
     {
         Task<AnalysisResult> AnalyzeAsync(string videoPath, IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// The analyzer's version string -- the same value it stamps into each
+        /// result's metadata. Used by "requeue outdated" so the backend can
+        /// re-run everything not on this version.
+        /// </summary>
+        Task<string> GetVersionAsync(CancellationToken cancellationToken = default);
     }
 
     public class PlaceholderAnalyzer : IAnalyzer
@@ -19,6 +26,11 @@ namespace CaughtOnDash.Worker.Services
         {
             _random = new Random();
         }
+
+        // The placeholder produces stub results, so its "version" is a fixed
+        // sentinel. Requeuing against it is meaningless, which the UI notes.
+        public Task<string> GetVersionAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult("placeholder");
 
         public async Task<AnalysisResult> AnalyzeAsync(string videoPath, IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken)
         {

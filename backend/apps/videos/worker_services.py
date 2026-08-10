@@ -708,5 +708,76 @@ def admin_retry_job(job_id: uuid.UUID) -> dict:
     job.worker_id = None
     job.worker_name = ''
     job.save()
-    
+
     return {'success': True, 'job_id': str(job_id)}
+
+
+def _stored_analyzer_version(job) -> str:
+    meta = job.ai_metadata if isinstance(job.ai_metadata, dict) else {}
+    return str(meta.get('analyzer_version') or '')
+
+
+@transaction.atomic
+def requeue_stale_version(target_version: str, requested_by: str = '') -> dict:
+    """Requeue every analyzed video that is NOT on ``target_version``.
+
+    For iterating on the analyzer: when the algorithm changes, re-run the whole
+    corpus so old results are refreshed. Unlike request_analysis (the per-video
+    "Re-analyze"), this does NOT send videos back for review -- a version bump is
+    not a moderation decision, so an already-approved video keeps its approval
+    and goes straight to the work queue. Idempotent: a video already on
+    target_version is skipped, so pressing the button twice re-runs nothing.
+
+    Only videos in a settled state (complete/failed/cancelled) are touched;
+    anything pending or processing is left alone so an in-flight run is never
+    disturbed. Old AI results stay in place until the new run overwrites them.
+    """
+    target = (target_version or '').strip()
+    if not target:
+        return {'success': False, 'error': 'analyzer_version is required'}
+
+    candidates = (
+        Video.objects.select_for_update()
+        .filter(
+            deleted_at__isnull=True,
+            status='ready',
+            approval_status='approved',
+            analysis_status__in=REQUEUEABLE_ANALYSIS_STATUSES,
+        )
+    )
+
+    now = timezone.now()
+    requeued = 0
+    skipped_current = 0
+    for job in candidates:
+        if _stored_analyzer_version(job) == target:
+            skipped_current += 1
+            continue
+
+        job.analysis_status = 'pending'
+        job.analysis_stage = 'queued'
+        job.analysis_progress = 0
+        job.analysis_error = ''
+        job.analysis_requested_at = now
+        job.analysis_started_at = None
+        job.analysis_completed_at = None
+        job.analysis_failed_at = None
+        job.worker_id = None
+        job.worker_name = ''
+        job.worker_claimed_at = None
+        job.worker_last_seen_at = None
+        job.save()
+
+        # Record the attempt. It is already approved, so the run opens past the
+        # review gate rather than at 'awaiting_approval'.
+        run = open_analysis_run(job, requested_by)
+        run.status = 'approved'
+        run.save(update_fields=['status'])
+        requeued += 1
+
+    return {
+        'success': True,
+        'target_version': target,
+        'requeued': requeued,
+        'skipped_current_version': skipped_current,
+    }
