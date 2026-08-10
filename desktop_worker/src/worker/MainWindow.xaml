@@ -121,8 +121,13 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock x:Name="QueueHeading" Text="Review Queue" FontWeight="Bold" FontSize="14"/>
-                        <Button Grid.Column="1" x:Name="RefreshQueueButton" Content="Refresh"
-                                Click="RefreshQueueButton_Click" Padding="10,3"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button x:Name="RequeueOutdatedButton" Content="Requeue outdated"
+                                    Click="RequeueOutdatedButton_Click" Padding="10,3" Margin="0,0,8,0"
+                                    ToolTip="Re-run every video not on the current analyzer version"/>
+                            <Button x:Name="RefreshQueueButton" Content="Refresh"
+                                    Click="RefreshQueueButton_Click" Padding="10,3"/>
+                        </StackPanel>
                     </Grid>
 
                     <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,10">

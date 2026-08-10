@@ -42,6 +42,20 @@ namespace CaughtOnDash.Worker
         private void RefreshQueueButton_Click(object sender, RoutedEventArgs e)
             => _viewModel?.RefreshQueues();
 
+        private async void RequeueOutdatedButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_viewModel is null) return;
+            RequeueOutdatedButton.IsEnabled = false;
+            try
+            {
+                await _viewModel.RequeueOutdatedAsync();
+            }
+            finally
+            {
+                RequeueOutdatedButton.IsEnabled = true;
+            }
+        }
+
         private void ReviewTab_Click(object sender, RoutedEventArgs e)
             => _viewModel?.ShowReviewQueue();
 

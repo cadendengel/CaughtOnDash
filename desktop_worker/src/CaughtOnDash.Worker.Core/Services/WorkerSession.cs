@@ -208,6 +208,45 @@ namespace CaughtOnDash.Worker.Services
         }
 
         /// <summary>
+        /// Requeue every analyzed video that is not on the current analyzer
+        /// version, so an algorithm change re-runs the whole corpus. Asks the
+        /// analyzer for its version (single source of truth), then the backend to
+        /// requeue anything else. Returns a short summary for the UI.
+        /// </summary>
+        public async Task<string> RequeueOutdatedAsync(CancellationToken cancellationToken = default)
+        {
+            if (!_config.IsConfigured)
+            {
+                Log("Worker not configured; cannot requeue.", Logger.LogLevel.Warning);
+                return "Worker not configured.";
+            }
+
+            string version;
+            try
+            {
+                version = await _analyzer.GetVersionAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Log($"Could not determine the analyzer version: {ex.Message}", Logger.LogLevel.Error);
+                return "Could not determine the analyzer version.";
+            }
+
+            Log($"Requeuing every video not on analyzer version '{version}'...");
+            var result = await _apiClient.RequeueStaleVersion(_config.WorkerId, version, cancellationToken);
+            if (result == null)
+            {
+                Log("Requeue failed. See the log for the API error.", Logger.LogLevel.Error);
+                return "Requeue failed.";
+            }
+
+            var summary = $"Requeued {result.Requeued} video(s); {result.SkippedCurrentVersion} already on '{version}'.";
+            Log(summary);
+            await RefreshQueuesAsync(cancellationToken);
+            return summary;
+        }
+
+        /// <summary>
         /// Approve the given videos, in the order supplied, and start the worker.
         /// </summary>
         /// <remarks>

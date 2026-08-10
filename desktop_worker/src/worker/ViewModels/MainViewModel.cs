@@ -212,6 +212,12 @@ namespace CaughtOnDash.Worker.ViewModels
 
         public async void RefreshQueues() => await _session.RefreshQueuesAsync();
 
+        /// <summary>
+        /// Requeue every video not on the current analyzer version. The outcome
+        /// is written to the Activity Log by the session.
+        /// </summary>
+        public async Task RequeueOutdatedAsync() => await _session.RequeueOutdatedAsync();
+
         public void SelectAll()
         {
             foreach (var row in _rows)

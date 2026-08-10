@@ -32,6 +32,7 @@ from .worker_views import (
     fail_job_view,
     cancel_job_view,
     admin_retry_job_view,
+    requeue_stale_version_view,
     moderation_overview,
     reset_stale_jobs_view,
 )
@@ -82,6 +83,9 @@ urlpatterns = [
     path('worker/jobs/review/', list_review_queue, name='worker-jobs-review'),
     # POST /api/videos/worker/jobs/reorder/ - set queue order
     path('worker/jobs/reorder/', reorder_queue_view, name='worker-jobs-reorder'),
+    # POST /api/videos/worker/jobs/requeue-stale/ - requeue all videos not on the
+    # current analyzer version (re-run the corpus after an algorithm change)
+    path('worker/jobs/requeue-stale/', requeue_stale_version_view, name='worker-jobs-requeue-stale'),
     # POST /api/videos/worker/jobs/<job_id>/approval/ - approve or reject
     path('worker/jobs/<uuid:job_id>/approval/', worker_decide_approval, name='worker-job-approval'),
     # POST /api/videos/worker/jobs/<job_id>/claim/ - claim a job

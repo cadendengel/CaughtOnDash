@@ -35,6 +35,7 @@ from apps.videos.worker_services import (
     cancel_job,
     reset_stale_jobs,
     admin_retry_job,
+    requeue_stale_version,
 )
 
 
@@ -352,6 +353,33 @@ def cancel_job_view(request, job_id):
     if not result['success']:
         return JsonResponse(result, status=400)
     
+    return JsonResponse(result)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@worker_required
+def requeue_stale_version_view(request):
+    """POST /api/worker/jobs/requeue-stale/ - Requeue every analyzed video not on
+    the given analyzer_version, so an algorithm change can re-run the corpus.
+
+    Worker-authenticated: the desktop worker knows its own analyzer version and
+    passes it, keeping analyze.py the single source of truth for the version.
+    """
+    try:
+        import json
+        data = json.loads(request.body or b'{}')
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    analyzer_version = str(data.get('analyzer_version') or '').strip()
+    if not analyzer_version:
+        return JsonResponse({'error': 'analyzer_version is required'}, status=400)
+    requested_by = str(data.get('worker_id') or 'worker')
+
+    result = requeue_stale_version(analyzer_version, requested_by=requested_by)
+    if not result['success']:
+        return JsonResponse(result, status=400)
     return JsonResponse(result)
 
 
