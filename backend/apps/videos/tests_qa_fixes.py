@@ -125,3 +125,38 @@ class WorkerNotReadyTests(TestCase):
         ready = _ready_video()
         result = claim_job(ready.id, 'worker-1', 'Worker One')
         self.assertTrue(result['success'])
+
+
+class ManageCsrfTests(TestCase):
+    """ISSUE-9: the owner edit/delete endpoint must be CSRF-exempt like every
+    other write view, since auth is a Bearer JWT with no CSRF token. Without the
+    exemption the CSRF middleware 403s every PATCH/DELETE and an owner can never
+    edit or delete their own video through the API.
+    """
+
+    def test_owner_can_delete_through_the_csrf_enforcing_client(self):
+        # enforce_csrf_checks mirrors production, where the middleware would
+        # otherwise 403 before the view runs. With REQUIRE_CLERK_JWT off the
+        # caller resolves to 'demo-user', which owns this video.
+        video = _ready_video(owner_clerk_user_id='demo-user')
+        client = Client(enforce_csrf_checks=True)
+
+        response = client.delete(f'/api/videos/{video.id}/manage/')
+
+        self.assertEqual(response.status_code, 200)
+        video.refresh_from_db()
+        self.assertIsNotNone(video.deleted_at)
+
+    def test_owner_can_patch_through_the_csrf_enforcing_client(self):
+        video = _ready_video(owner_clerk_user_id='demo-user')
+        client = Client(enforce_csrf_checks=True)
+
+        response = client.patch(
+            f'/api/videos/{video.id}/manage/',
+            data=json.dumps({'title': 'Renamed'}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        video.refresh_from_db()
+        self.assertEqual(video.title, 'Renamed')

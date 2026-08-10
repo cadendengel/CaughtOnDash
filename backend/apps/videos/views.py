@@ -988,8 +988,13 @@ def video_approval_view(request, video_id):
     return JsonResponse(response_envelope('video-approval', {'video': video.to_dict()}), status=200)
 
 
+@csrf_exempt
 def video_update_delete_view(request, video_id):
     # PATCH / DELETE for video metadata or soft-delete.
+    # csrf_exempt like every other write view here: auth is a Bearer JWT, not a
+    # Django session, so there is no CSRF cookie/token to check. Without this the
+    # CSRF middleware 403s every PATCH/DELETE, so an owner cannot edit or delete
+    # their own video through the API at all (QA ISSUE-9).
     # NOTE: still CSRF-protected, so it is not reachable from the SPA yet. The
     # ownership check below is in place for when authentication lands; opening
     # this up while identity is a spoofable header would be a step backwards.
