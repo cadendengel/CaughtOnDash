@@ -608,15 +608,14 @@ function App() {
   )
 
   const renderAnalysisStatus = (post) => {
-    // Whether analysis has been started comes first in the pipeline, so it
-    // comes first in the label. Showing "Cancelled" or "Pending 0%" for a video
-    // nobody has started yet describes the machinery rather than the situation.
-    if (post.approval_status === 'pending_review') {
-      return renderStatusRow(STATUS_TONE.pending, 'Not started')
-    }
-
-    if (post.approval_status === 'rejected') {
-      return renderStatusRow(STATUS_TONE.cancelled, 'Skipped')
+    // The backend derives one state from its three status fields; this used to
+    // re-derive it here, reading approval_status directly to avoid showing
+    // "Cancelled" for a video that had never run. The stored value is truthful
+    // now and the state is served alongside it, so the two cases that are not
+    // about a run in progress just render their label.
+    if (post.state === 'not_started' || post.state === 'skipped') {
+      const tone = post.state === 'skipped' ? STATUS_TONE.cancelled : STATUS_TONE.pending
+      return renderStatusRow(tone, post.state_label)
     }
 
     if (!post.analysis_status) {

@@ -23,6 +23,11 @@ class Video(models.Model):
         ("unlisted", "Unlisted"),
     )
     ANALYSIS_STATUS_CHOICES = (
+        # 'not_started' rather than reusing 'cancelled' for a video nobody has
+        # started: an upload had no run to cancel, and saying otherwise forced
+        # every reader to special-case it. 'cancelled' now means only what it
+        # says -- a run that was abandoned partway.
+        ("not_started", "Not Started"),
         ("pending", "Pending Analysis"),
         ("processing", "Processing"),
         ("complete", "Complete"),
@@ -269,9 +274,9 @@ class Video(models.Model):
     def state(self) -> str:
         """One user-facing state, derived from the three status fields.
 
-        Order matters. A rejected video is 'skipped' whatever its analysis
-        history says, and a video nobody has started yet is 'not_started' even
-        though its analysis_status literally reads 'cancelled'.
+        Order matters: a rejected video is 'skipped' whatever its analysis
+        history says, and a video nobody has started yet is 'not_started'
+        whatever its analysis fields say.
         """
         if self.approval_status == 'rejected':
             return self.STATE_SKIPPED
@@ -288,8 +293,8 @@ class Video(models.Model):
         if self.analysis_status == 'failed':
             return self.STATE_FAILED
 
-        # 'cancelled' on an approved video means a run was abandoned, which
-        # leaves it startable again rather than finished.
+        # 'not_started', or 'cancelled' on an approved video -- a run that was
+        # abandoned leaves the video startable again rather than finished.
         return self.STATE_NOT_STARTED
 
     @property
@@ -329,6 +334,11 @@ class Video(models.Model):
             # Analysis state
             "analysis_status": self.analysis_status,
             "analysis_stage": self.analysis_stage,
+            # The derived state, so the feed shows the same words as the
+            # all-videos table and the workers instead of re-deriving them from
+            # the raw fields above.
+            "state": self.state,
+            "state_label": self.state_label,
             "analysis_progress": self.analysis_progress,
             "analysis_requested_at": self.analysis_requested_at.isoformat() if self.analysis_requested_at else None,
             "analysis_started_at": self.analysis_started_at.isoformat() if self.analysis_started_at else None,

@@ -174,6 +174,12 @@ def _video_author_payload_from_owner(owner_clerk_user_id: str) -> dict:
     }
 
 
+def _derived_state_fields(approval_status: str, analysis_status: str) -> dict:
+    """The derived state for a raw row, via the model property that defines it."""
+    stand_in = Video(approval_status=approval_status, analysis_status=analysis_status)
+    return {'state': stand_in.state, 'state_label': stand_in.state_label}
+
+
 def _serialize_video_row(row: dict | Video, *, include_defaults: bool = True, liked_video_ids: set[UUID] | None = None) -> dict:
     if isinstance(row, Video):
         payload = row.to_dict()
@@ -220,6 +226,14 @@ def _serialize_video_row(row: dict | Video, *, include_defaults: bool = True, li
                 'analysis_failed_at': row.get('analysis_failed_at').isoformat() if row.get('analysis_failed_at') and hasattr(row.get('analysis_failed_at'), 'isoformat') else None,
                 'analysis_error': row.get('analysis_error', '') or '',
                 'approval_status': row.get('approval_status', 'pending_review') or 'pending_review',
+                # Derived through an unsaved Video rather than reimplemented
+                # here. This branch serializes raw query rows instead of model
+                # instances, and a second copy of the rules is exactly the
+                # duplication the derived state exists to remove.
+                **_derived_state_fields(
+                    row.get('approval_status') or 'pending_review',
+                    row.get('analysis_status') or 'pending',
+                ),
                 'dashcam_classification': dashcam_classification(row.get('ai_metadata')),
                 'approval_decided_by': row.get('approval_decided_by', '') or '',
                 'approval_decided_at': row.get('approval_decided_at').isoformat() if row.get('approval_decided_at') and hasattr(row.get('approval_decided_at'), 'isoformat') else None,
@@ -354,14 +368,16 @@ def upload_file_view(request):
             thumbnail_url = ''
             print(f'Thumbnail upload failed for {video.id}: {exc}')
 
-    # Mark ready and put the video up for review. It is not queued for analysis
-    # here: nothing is analyzed until someone approves it, so analysis capacity
-    # is spent deliberately rather than on everything uploaded.
+    # Mark ready and leave it waiting to be started. It is not queued for
+    # analysis here: nothing is analyzed until someone starts it, so analysis
+    # capacity is spent deliberately rather than on everything uploaded.
     video.thumbnail_url = thumbnail_url
     video.playback_url = public_url
     video.status = 'ready'
     video.approval_status = 'pending_review'
-    video.analysis_status = 'cancelled'
+    # Not 'cancelled': there was no run to cancel. Saying otherwise made every
+    # reader special-case a brand new upload.
+    video.analysis_status = 'not_started'
     video.analysis_stage = 'queued'
     video.analysis_requested_at = timezone.now()
     video.save(update_fields=[

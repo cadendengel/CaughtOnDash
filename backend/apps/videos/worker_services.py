@@ -612,7 +612,12 @@ def decide_approval(video_id: uuid.UUID, approve: bool, decided_by: str) -> dict
 # States a video can be re-queued from. 'processing' is excluded so a request
 # cannot yank a job out from under a worker that is actively running it, and
 # 'pending' is excluded because it is already queued.
-REQUEUEABLE_ANALYSIS_STATUSES = ('complete', 'failed', 'cancelled')
+#
+# 'not_started' is included defensively. An approved video should never be in
+# it -- approving sets 'pending' -- but if one ever were, leaving it out would
+# make the video invisible to both re-analyze and the version requeue, i.e.
+# permanently stuck with no way to run it.
+REQUEUEABLE_ANALYSIS_STATUSES = ('not_started', 'complete', 'failed', 'cancelled')
 
 def _is_stale_processing(job, now) -> bool:
     """True when a job claims to be processing but its worker has gone quiet."""
@@ -657,12 +662,14 @@ def request_analysis(job_id: uuid.UUID, requested_by: str = '') -> dict:
     if job.analysis_status not in REQUEUEABLE_ANALYSIS_STATUSES and not _is_stale_processing(job, now):
         return {'success': False, 'error': f'Cannot re-analyze a video in state: {job.analysis_status}'}
 
-    # Back to the review queue, not straight into the work queue.
+    # Back to waiting to be started, not straight into the work queue.
     job.approval_status = 'pending_review'
     job.approval_decided_by = ''
     job.approval_decided_at = None
 
-    job.analysis_status = 'cancelled'
+    # Asking for a re-run cancels nothing; the previous results stay until the
+    # new run overwrites them.
+    job.analysis_status = 'not_started'
     job.analysis_stage = 'queued'
     job.analysis_progress = 0
     job.analysis_error = ''
