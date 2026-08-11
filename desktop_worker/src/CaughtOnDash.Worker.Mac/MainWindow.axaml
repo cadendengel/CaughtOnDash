@@ -113,7 +113,7 @@
                     BorderThickness="1" CornerRadius="5">
                 <Grid Margin="15" RowDefinitions="Auto,Auto,*,Auto">
                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-                        <TextBlock x:Name="QueueHeading" Text="Review Queue" FontWeight="Bold" FontSize="14"/>
+                        <TextBlock x:Name="QueueHeading" Text="Not started" FontWeight="Bold" FontSize="14"/>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                             <Button x:Name="RequeueOutdatedButton" Content="Requeue outdated"
                                     Click="RequeueOutdatedButton_Click" Padding="10,3"
@@ -124,7 +124,7 @@
                     </Grid>
 
                     <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,10,0,10">
-                        <Button x:Name="ReviewTabButton" Content="Awaiting review" Click="ReviewTab_Click"/>
+                        <Button x:Name="ReviewTabButton" Content="Not started" Click="ReviewTab_Click"/>
                         <Button x:Name="QueuedTabButton" Content="Queued" Click="QueuedTab_Click"/>
                         <TextBlock x:Name="QueueCountText" Text="" VerticalAlignment="Center"
                                    Foreground="#666666" Margin="8,0,0,0"/>
@@ -148,10 +148,25 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Title" Binding="{Binding Entry.Title}" Width="3*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Title" Binding="{Binding Entry.Title}" Width="2*" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Length" Binding="{Binding Entry.DurationDisplay}" Width="84" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Attempt" Binding="{Binding Entry.AttemptDisplay}" Width="90" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Last result" Binding="{Binding Entry.HistoryDisplay}" Width="2*" IsReadOnly="True"/>
+                            <!-- 3*, and a tooltip carrying the full text. HistoryDisplay runs to ~90
+                                 characters ("Attempt 2: " plus an 80-character summary) and the
+                                 columns are star-sized, so they always total the grid width: the text
+                                 was being clipped mid-sentence with no way to read the rest.
+                                 A template column rather than DataGridTextColumn + ElementStyle,
+                                 which Avalonia's DataGrid does not have. -->
+                            <DataGridTemplateColumn Header="Last result" Width="3*" IsReadOnly="True">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="svc:QueueRow">
+                                        <TextBlock Text="{Binding Entry.HistoryDisplay}"
+                                                   ToolTip.Tip="{Binding Entry.HistoryDisplay}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" Margin="12,0,12,0"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -162,7 +177,7 @@
                                 ToolTip.Tip="Open the selected video in your browser"/>
                         <Button x:Name="MoveUpButton" Margin="0,0,8,8" Content="Up" Click="MoveUp_Click"/>
                         <Button x:Name="MoveDownButton" Margin="0,0,8,8" Content="Down" Click="MoveDown_Click"/>
-                        <Button x:Name="RejectButton" Margin="0,0,8,8" Content="Reject" Click="Reject_Click"
+                        <Button x:Name="RejectButton" Margin="0,0,8,8" Content="Skip" Click="Reject_Click"
                                 Background="#C0392B" Foreground="White"/>
                         <Button x:Name="StartBatchButton" Margin="0,0,8,8" Content="Start Batch" Click="StartBatch_Click"
                                 Background="#27AE60" Foreground="White" FontWeight="Bold" Padding="14,4"/>

@@ -243,6 +243,70 @@ class Video(models.Model):
     def __str__(self):
         return f"{self.title} ({self.id})"
 
+    # The one place that turns three status fields into something a person can
+    # read. approval_status, analysis_status and analysis_stage are orthogonal,
+    # and every surface used to derive its own labels from them -- the web app
+    # even special-cased a freshly uploaded video because it is stored as
+    # analysis_status='cancelled' despite never having run. Deriving it once
+    # here means the feed, the workers and the all-videos table agree.
+    STATE_NOT_STARTED = 'not_started'
+    STATE_QUEUED = 'queued'
+    STATE_RUNNING = 'running'
+    STATE_DONE = 'done'
+    STATE_FAILED = 'failed'
+    STATE_SKIPPED = 'skipped'
+
+    STATE_LABELS = {
+        STATE_NOT_STARTED: 'Not started',
+        STATE_QUEUED: 'Queued',
+        STATE_RUNNING: 'Running',
+        STATE_DONE: 'Done',
+        STATE_FAILED: 'Failed',
+        STATE_SKIPPED: 'Skipped',
+    }
+
+    @property
+    def state(self) -> str:
+        """One user-facing state, derived from the three status fields.
+
+        Order matters. A rejected video is 'skipped' whatever its analysis
+        history says, and a video nobody has started yet is 'not_started' even
+        though its analysis_status literally reads 'cancelled'.
+        """
+        if self.approval_status == 'rejected':
+            return self.STATE_SKIPPED
+
+        if self.approval_status == 'pending_review':
+            return self.STATE_NOT_STARTED
+
+        if self.analysis_status == 'processing':
+            return self.STATE_RUNNING
+        if self.analysis_status == 'pending':
+            return self.STATE_QUEUED
+        if self.analysis_status == 'complete':
+            return self.STATE_DONE
+        if self.analysis_status == 'failed':
+            return self.STATE_FAILED
+
+        # 'cancelled' on an approved video means a run was abandoned, which
+        # leaves it startable again rather than finished.
+        return self.STATE_NOT_STARTED
+
+    @property
+    def state_label(self) -> str:
+        return self.STATE_LABELS.get(self.state, self.state)
+
+    @property
+    def analyzer_version(self) -> str:
+        """Which analyzer produced the current results, '' if never analyzed.
+
+        Surfaced because it is what a re-run is judged by: after an analyzer
+        change, the useful question about any video is whether it is on the new
+        version yet.
+        """
+        meta = self.ai_metadata if isinstance(self.ai_metadata, dict) else {}
+        return str(meta.get('analyzer_version') or '')
+
     def to_dict(self):
         """Serialize to API response format."""
         return {

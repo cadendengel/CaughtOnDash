@@ -196,7 +196,7 @@ namespace CaughtOnDash.Worker.Services
                 {
                     _lastReviewCount = review.Count;
                     _lastQueuedCount = run.Count;
-                    Log($"Queue: {review.Count} awaiting review, {run.Count} approved");
+                    Log($"Queue: {review.Count} not started, {run.Count} queued");
                 }
 
                 QueueChanged?.Invoke(new QueueSnapshot { AwaitingReview = review, Queued = run });
@@ -314,7 +314,7 @@ namespace CaughtOnDash.Worker.Services
                 }
             }
 
-            Log($"Batch: {result.Approved} approved" +
+            Log($"Batch: {result.Approved} started" +
                 (result.Failed > 0 ? $", {result.Failed} failed" : ""));
 
             await RefreshQueuesAsync(cancellationToken);
@@ -347,7 +347,7 @@ namespace CaughtOnDash.Worker.Services
                 }
             }
 
-            Log($"Rejected {result.Approved} video(s)" +
+            Log($"Skipped {result.Approved} video(s)" +
                 (result.Failed > 0 ? $", {result.Failed} failed" : ""));
 
             await RefreshQueuesAsync(cancellationToken);

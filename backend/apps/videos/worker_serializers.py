@@ -62,6 +62,17 @@ class QueueEntrySerializer(serializers.Serializer):
     analysis_priority = serializers.IntegerField(read_only=True)
     analysis_requested_at = serializers.DateTimeField(read_only=True)
 
+    # The raw fields above are kept for callers that already read them; `state`
+    # is the one a UI should show. See Video.state for why three fields cannot
+    # be displayed as-is.
+    state = serializers.CharField(read_only=True)
+    state_label = serializers.CharField(read_only=True)
+    analysis_stage = serializers.CharField(read_only=True)
+    analysis_progress = serializers.IntegerField(read_only=True)
+    # Which analyzer produced the current results: after a version bump this is
+    # how you tell what has been re-run and what is still stale.
+    analyzer_version = serializers.CharField(read_only=True)
+
     attempt_number = serializers.SerializerMethodField()
     previous_attempts = serializers.SerializerMethodField()
     last_result = serializers.SerializerMethodField()

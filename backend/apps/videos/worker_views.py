@@ -106,6 +106,13 @@ def get_next_job(request):
     })
 
 
+# The all-videos table loads in one request and sorts client-side, which is
+# simple and fine at the current corpus size. This ceiling is the point where
+# that stops being true: past it the response is truncated and flagged, rather
+# than growing unboundedly, and the table needs real pagination instead.
+ALL_VIDEOS_LIMIT = 2000
+
+
 def _queue_payload(queryset, limit=200):
     """Serialize a queue, pulling each video's run history in one extra query."""
     videos = list(queryset[:limit])
@@ -137,6 +144,37 @@ def list_review_queue(request):
     """GET /api/videos/worker/jobs/review/ - videos awaiting a decision."""
     entries = _queue_payload(review_queue())
     return JsonResponse({'count': len(entries), 'items': entries})
+
+
+@require_http_methods(["GET"])
+@admin_required
+def all_videos(request):
+    """GET /api/videos/admin/all/ - every video, with its state and details.
+
+    The queue views answer "what should run next"; this answers "what is the
+    state of everything", which is a different question and had no home. It is
+    also how a corpus-wide re-run is watched: `analyzer_version` per row shows
+    what has been re-analyzed and what is still on the old model.
+
+    Deliberately unpaginated and unsorted beyond a stable newest-first default:
+    the client holds the whole list and sorts it by column. That is the right
+    trade at this size and the wrong one later -- see the limit note below.
+    """
+    videos = Video.objects.filter(deleted_at__isnull=True)
+
+    # _queue_payload caps at 200, which would silently truncate a table whose
+    # whole promise is "every video". Pass an explicit ceiling and tell the
+    # caller when it was hit, so the UI can say so rather than quietly lie.
+    total = videos.count()
+    entries = _queue_payload(videos, limit=ALL_VIDEOS_LIMIT)
+
+    return JsonResponse({
+        'count': len(entries),
+        'total': total,
+        'truncated': total > len(entries),
+        'limit': ALL_VIDEOS_LIMIT,
+        'items': entries,
+    })
 
 
 @require_http_methods(["GET"])
