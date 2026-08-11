@@ -4,20 +4,45 @@ Kept separate from analyze.py so the metadata path stays usable on a machine
 without the ML dependencies installed, and so this module can be imported and
 exercised on its own.
 
-Model: YOLOv8n. COCO's vocabulary happens to suit dashcam footage well -- car,
-truck, bus, motorcycle, person, bicycle, traffic light, stop sign -- and the
-nano weights are small enough to run at a sensible speed on a CPU.
+Model: YOLOv8 trained on BDD100K, a real driving dataset. It replaced the
+COCO-trained yolov8n, which had two measured failures on our own footage:
+it invented non-driving classes (airplane, boat at conf 0.35) and it missed
+vehicles in snow badly enough to flip the dashcam verdict -- two winter clips
+scored a road-object share of 0.21 and 0.08 and were classified "not dashcam".
+The same clips score 0.71 and 0.67 here. The driving vocabulary is also why the
+hallucinations cannot recur: there is no airplane class to predict.
 """
 
 from __future__ import annotations
 
 import math
+import os
 from collections import defaultdict
 from typing import Callable, Iterable
 
-# Default model. Pinned by name so every host runs the same weights; ultralytics
-# caches the download after the first run.
-DEFAULT_MODEL = 'yolov8n.pt'
+# Default model, resolved next to this file rather than by bare name. The COCO
+# weights could be a bare filename because ultralytics downloads those on
+# demand; these are custom weights that no one can fetch for us, so the path
+# has to be real. Absolute, because the worker sets its own working directory
+# and a relative name silently resolved against it (that is how a stray
+# yolov8n.pt ended up in backend/).
+#
+# Only the basename of this is recorded in the result metadata: the full path
+# is a local detail that differs per host, and it would otherwise be written
+# into the stored metadata of every video analysed.
+DEFAULT_MODEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'detect-2.0.pt')
+
+# BDD checkpoints abbreviate two class names. Every consumer downstream --
+# tags, events, the feed -- has been reading the COCO spellings since milestone
+# 3, so the labels are renamed at the boundary: this change swaps the detector,
+# not the API. Also mapped: 'pedestrian' -> 'person', which some BDD
+# checkpoints use, so re-pointing DEFAULT_MODEL at a different one does not
+# silently change the output vocabulary.
+CLASS_ALIASES = {
+    'motor': 'motorcycle',
+    'bike': 'bicycle',
+    'pedestrian': 'person',
+}
 
 # Below this, detections are more noise than signal on dashcam footage.
 # 0.35, down from 0.5.
@@ -56,8 +81,15 @@ MIN_FRAME_SHARE = 0.05
 
 # Classes that indicate a road scene. 'person' is deliberately excluded: people
 # appear in road footage and in everything else, so it carries no signal here.
+# 'rider' is excluded for the same reason, and 'train' because a train is rail,
+# not road -- footage shot from or of a train is exactly the false positive this
+# signal exists to avoid.
+#
+# 'traffic sign' replaces COCO's 'stop sign' and is doing real work: it is the
+# strongest signal on the winter clips, present in 16 of 24 sampled frames on
+# winter-kose-2 where cars were visible in only 5.
 ROAD_CLASSES = frozenset({
-    'car', 'truck', 'bus', 'motorcycle', 'bicycle', 'traffic light', 'stop sign',
+    'car', 'truck', 'bus', 'motorcycle', 'bicycle', 'traffic light', 'traffic sign',
 })
 
 # A road object must be present in at least this share of sampled frames. A car
@@ -170,6 +202,16 @@ def detect(
     from ultralytics import YOLO
 
     device = resolve_device()
+    # A missing custom checkpoint is a deployment mistake, not a runtime
+    # condition to paper over. Falling back to COCO weights here would produce
+    # plausible-looking results under the detect-2.0 version string, and the
+    # requeue-outdated pass would mark the corpus current on a model it never
+    # actually ran.
+    if not os.path.exists(model_name):
+        raise RuntimeError(
+            f'Detection weights not found: {model_name}. These are custom '
+            'weights and are not downloaded automatically -- see the "Model '
+            'weights" section of analyzer/README.md.')
     model = YOLO(model_name)
 
     indices = frame_indices(
@@ -204,7 +246,8 @@ def detect(
             seen_in_frame: set[str] = set()
             for prediction in predictions:
                 for box in prediction.boxes:
-                    label = prediction.names[int(box.cls)]
+                    raw = prediction.names[int(box.cls)]
+                    label = CLASS_ALIASES.get(raw, raw)
                     score = float(box.conf)
                     seen_in_frame.add(label)
                     best_confidence[label] = max(best_confidence[label], score)
@@ -236,7 +279,7 @@ def detect(
         'discarded': sorted(set(frames_with_class) - set(kept)),
         'frames_sampled': sampled,
         'frames_requested': len(indices),
-        'model': model_name,
+        'model': os.path.basename(model_name),
         'device': device,
         'confidence_threshold': confidence,
     }
@@ -251,7 +294,7 @@ def _empty_result(model_name: str, device: str, confidence: float, sampled: int)
         'discarded': [],
         'frames_sampled': sampled,
         'frames_requested': 0,
-        'model': model_name,
+        'model': os.path.basename(model_name),
         'device': device,
         'confidence_threshold': confidence,
     }

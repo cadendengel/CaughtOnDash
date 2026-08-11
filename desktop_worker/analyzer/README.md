@@ -155,11 +155,50 @@ implying nothing was there.
 
 ### Model weights
 
-`yolov8n.pt` (~6 MB) downloads on first run into the working directory and is
-gitignored. The first analysis on a new host therefore needs network access and
-takes noticeably longer than subsequent ones — measured on the CPU-only laptop,
-an 8 second clip took 58s cold and 6.8s warm. Nearly all of that gap is the
-download, not inference.
+`detect-2.0.pt` (~20 MB) is a YOLOv8 trained on BDD100K, a real driving
+dataset. It is **not** downloaded automatically. The COCO `yolov8n.pt` it
+replaced was a well-known checkpoint that ultralytics fetched on demand; these
+are custom weights, so each host fetches them once:
+
+```bash
+./fetch-weights.sh          # macOS / Linux
+.\fetch-weights.ps1         # Windows
+```
+
+Both verify a pinned SHA-256 and are safe to re-run — an already-correct file
+is left alone. Weights stay gitignored (`desktop_worker/analyzer/*.pt`), which
+is why this is a fetch rather than a file in the repo.
+
+If the weights are missing, `analyze.py` fails with a message pointing here
+rather than falling back to other weights. That is deliberate: a silent
+fallback would produce plausible-looking results stamped with the
+`detect-2.0` analyzer version, and "Requeue outdated" would then mark the
+corpus as current on a model that never ran.
+
+**Licence:** BDD100K is non-commercial (research/education), and a model
+trained on it inherits that. Fine for CaughtOnDash as a personal project;
+revisit before any commercial use.
+
+#### Why this model
+
+The COCO-trained `yolov8n.pt` had two failures measured on our own footage:
+
+- It invented non-driving classes — `airplane` and `boat` at confidence 0.35.
+- It missed vehicles in snow badly enough to flip the verdict. Two winter
+  clips scored a road-object share of 0.21 and 0.08 and were classified "not
+  dashcam". They score 0.75 and 0.67 here.
+
+Across 14 test clips, the dashcam verdict went from 10/14 to 12/14 correct,
+with zero hallucinated classes. The two remaining failures are genuinely empty
+roads with no vehicles to detect — no detector fixes those; see
+`DETECTION_IMPROVEMENT_PLAN.md` for the egomotion approach.
+
+**Known limitation:** this checkpoint reads TikTok's search-bar overlay as a
+`traffic sign` at 0.66 confidence. Since `traffic sign` counts toward the
+road-scene signal and a watermark persists across every frame, a landscape clip
+with social-media chrome could score as a road scene on the overlay alone.
+Portrait phone video is still rejected on orientation. Not observed on burned-in
+dashcam timestamps, which produce no detection.
 
 ### Speed
 
