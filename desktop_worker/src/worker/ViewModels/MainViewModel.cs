@@ -128,9 +128,9 @@ namespace CaughtOnDash.Worker.ViewModels
                 _ = LoadThumbnail(row);
             }
 
-            _mainWindow.QueueHeading.Text = _showingReviewQueue ? "Review Queue" : "Run Queue";
+            _mainWindow.QueueHeading.Text = _showingReviewQueue ? "Not started" : "Run queue";
             _mainWindow.QueueCountText.Text = _rows.Count == 0
-                ? (_showingReviewQueue ? "Nothing awaiting review" : "Queue empty")
+                ? (_showingReviewQueue ? "Nothing waiting to start" : "Queue empty")
                 : $"{_rows.Count} video{(_rows.Count == 1 ? "" : "s")}";
 
             // Reordering works on both tabs: arrange the review list, tick a
@@ -359,7 +359,7 @@ namespace CaughtOnDash.Worker.ViewModels
             var ids = SelectedIds();
             if (ids.Count == 0)
             {
-                AddLog("Tick the videos you want to reject first.", Logger.LogLevel.Warning);
+                AddLog("Tick the videos you want to skip first.", Logger.LogLevel.Warning);
                 return;
             }
 

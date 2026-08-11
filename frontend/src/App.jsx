@@ -163,6 +163,12 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [moderation, setModeration] = useState(null)
   const [moderationError, setModerationError] = useState('')
+  const [allVideos, setAllVideos] = useState(null)
+  const [allVideosError, setAllVideosError] = useState('')
+  const [allVideosLoading, setAllVideosLoading] = useState(false)
+  // Newest first by default: the video you just uploaded is the one you are
+  // most likely looking for.
+  const [allVideosSort, setAllVideosSort] = useState({ key: 'created_at', direction: 'desc' })
   const [posts, setPosts] = useState([])
   // 'loading' until the first feed fetch resolves, then 'loaded' or 'error'.
   // Without this the empty-state renders while the first load is still in
@@ -602,15 +608,15 @@ function App() {
   )
 
   const renderAnalysisStatus = (post) => {
-    // Approval comes first in the pipeline, so it comes first in the label.
-    // Showing "Cancelled" or "Pending 0%" for a video nobody has looked at yet
-    // describes the machinery rather than the situation.
+    // Whether analysis has been started comes first in the pipeline, so it
+    // comes first in the label. Showing "Cancelled" or "Pending 0%" for a video
+    // nobody has started yet describes the machinery rather than the situation.
     if (post.approval_status === 'pending_review') {
-      return renderStatusRow(STATUS_TONE.pending, 'Pending review')
+      return renderStatusRow(STATUS_TONE.pending, 'Not started')
     }
 
     if (post.approval_status === 'rejected') {
-      return renderStatusRow(STATUS_TONE.cancelled, 'Not selected for analysis')
+      return renderStatusRow(STATUS_TONE.cancelled, 'Skipped')
     }
 
     if (!post.analysis_status) {
@@ -915,7 +921,7 @@ function App() {
     }
 
     setActivePage('admin')
-    await loadAdminOverview()
+    await Promise.all([loadAdminOverview(), loadAllVideos()])
   }
 
   const closeDetail = () => {
@@ -1375,6 +1381,37 @@ function App() {
     }
   }, [authFetch, API_BASE])
 
+  // Every video and its state, for the all-videos table. Separate from both the
+  // feed (capped, ordered for reading) and the moderation groups (only things
+  // needing a decision): this one is deliberately unfiltered, because the
+  // question it answers is "where does everything stand", including the videos
+  // that are perfectly fine.
+  const loadAllVideos = useCallback(async () => {
+    setAllVideosLoading(true)
+    try {
+      const response = await authFetch(`${API_BASE}/api/videos/admin/all/`)
+      if (!response.ok) {
+        setAllVideosError('Could not load the video list.')
+        return
+      }
+      setAllVideos(await response.json())
+      setAllVideosError('')
+    } catch {
+      setAllVideosError('Could not reach the server.')
+    } finally {
+      setAllVideosLoading(false)
+    }
+  }, [authFetch, API_BASE])
+
+  // Clicking a column sorts by it; clicking the same one again reverses it.
+  const toggleAllVideosSort = (key) => {
+    setAllVideosSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: ALL_VIDEO_COLUMNS.find((c) => c.key === key)?.defaultDirection || 'asc' },
+    )
+  }
+
   const retryAnalysis = async (videoId) => {
     if (!videoId || analysisRequestLoadingByPostId[videoId]) {
       return
@@ -1779,7 +1816,7 @@ function App() {
               onClick={() => decideApproval(post.id, true)}
               disabled={analysisRequestLoadingByPostId[post.id]}
             >
-              {analysisRequestLoadingByPostId[post.id] ? 'Working...' : 'Approve for analysis'}
+              {analysisRequestLoadingByPostId[post.id] ? 'Working...' : 'Start analysis'}
             </button>
             <button
               type="button"
@@ -1886,6 +1923,67 @@ function App() {
     )
   }
 
+const formatDuration = (seconds) => {
+  const total = Number(seconds) || 0
+  if (total <= 0) {
+    return '--'
+  }
+  const minutes = Math.floor(total / 60)
+  return `${minutes}:${String(total % 60).padStart(2, '0')}`
+}
+
+// What the most recent attempt concluded. Mirrors the desktop worker's
+// HistoryDisplay so a video reads the same in both places.
+const describeLastResult = (video) => {
+  const last = video.last_result
+  if (!last) {
+    return 'Never analyzed'
+  }
+  if (last.status === 'failed') {
+    return `Attempt ${last.attempt_number} failed: ${last.error || 'no error recorded'}`
+  }
+  return `Attempt ${last.attempt_number}: ${last.summary || 'no summary'}`
+}
+
+// Colours for the derived state. Failed is the only one that should pull the
+// eye; the rest are informational and stay quiet.
+const STATE_ACCENT = {
+  not_started: 'bg-[#eef1f5] text-muted',
+  queued: 'bg-[#eef1f5] text-muted',
+  running: 'bg-[#e8f1fb] text-[#1c4f82]',
+  done: 'bg-[#e7f4ec] text-[#1e6b3f]',
+  failed: 'bg-bad-soft text-[#9b2c2c]',
+  skipped: 'bg-[#eef1f5] text-muted',
+}
+
+// The all-videos table. `sortValue` returns what a column sorts by, which is
+// not always what it displays: state sorts by pipeline order rather than
+// alphabetically, so Running does not land between Queued and Skipped.
+const STATE_SORT_ORDER = ['running', 'queued', 'not_started', 'failed', 'done', 'skipped']
+
+const ALL_VIDEO_COLUMNS = [
+  { key: 'title', label: 'Title', sortValue: (v) => (v.title || '').toLowerCase() },
+  {
+    key: 'state',
+    label: 'State',
+    sortValue: (v) => {
+      const index = STATE_SORT_ORDER.indexOf(v.state)
+      return index === -1 ? STATE_SORT_ORDER.length : index
+    },
+  },
+  {
+    key: 'analyzer_version',
+    label: 'Analyzer',
+    // Never-analyzed sorts last rather than first: an empty string would
+    // otherwise bubble to the top and bury the versions you care about.
+    sortValue: (v) => v.analyzer_version || '￿',
+  },
+  { key: 'attempt_number', label: 'Attempt', sortValue: (v) => v.attempt_number || 0, numeric: true },
+  { key: 'duration_seconds', label: 'Length', sortValue: (v) => v.duration_seconds || 0, numeric: true },
+  { key: 'created_at', label: 'Uploaded', sortValue: (v) => v.created_at || '', defaultDirection: 'desc' },
+  { key: 'last_result', label: 'Last result', sortable: false },
+]
+
 // Moderation group accents. Stuck jobs raise no error anywhere else in the
 // system, so their count gets a colour that says "look here".
 const MODERATION_ACCENT = {
@@ -1896,9 +1994,12 @@ const MODERATION_ACCENT = {
 
   const MODERATION_GROUPS = [
     {
+      // The API still calls this group 'awaiting_review'; only the wording
+      // changed. Starting a video is a decision about spending analysis time,
+      // not a moderation verdict, so the UI stopped calling it a review.
       key: 'awaiting_review',
-      title: 'Awaiting review',
-      blurb: 'Uploaded and waiting for a decision before analysis can run.',
+      title: 'Not started',
+      blurb: 'Uploaded and waiting to be started.',
     },
     {
       key: 'failed',
@@ -1956,7 +2057,7 @@ const MODERATION_ACCENT = {
                 await loadModeration()
               }}
             >
-              Approve
+              Start
             </button>
             <button
               type="button"
@@ -1967,7 +2068,7 @@ const MODERATION_ACCENT = {
                 await loadModeration()
               }}
             >
-              Reject
+              Skip
             </button>
           </>
         ) : (
@@ -2007,7 +2108,7 @@ const MODERATION_ACCENT = {
         <div className="mb-6 rounded-panel border border-line bg-surface px-5 py-[18px]">
           <h3 className="m-0 mb-1 text-[1.05rem]">Nothing needs attention</h3>
           <p className="mt-1 mb-2.5 text-[0.85rem] text-muted">
-            No videos are awaiting review, failed, or stuck.
+            No videos are waiting to start, failed, or stuck.
           </p>
         </div>
       )
@@ -2041,6 +2142,128 @@ const MODERATION_ACCENT = {
     )
   }
 
+  const renderAllVideosPanel = () => {
+    if (allVideosError) {
+      return (
+        <div className="mb-6 rounded-panel border border-line bg-surface px-5 py-[18px]">
+          <p className="m-0 text-[0.9rem] text-[#9b2c2c]">{allVideosError}</p>
+        </div>
+      )
+    }
+
+    const items = allVideos?.items || []
+    const { key: sortKey, direction } = allVideosSort
+    const column = ALL_VIDEO_COLUMNS.find((c) => c.key === sortKey)
+
+    // Sort a copy: `items` is state, and sorting in place would mutate it.
+    const sorted = [...items].sort((a, b) => {
+      const read = column?.sortValue || (() => '')
+      const left = read(a)
+      const right = read(b)
+      if (left === right) {
+        // Stable tiebreak so equal values do not shuffle between renders.
+        return (a.video_id || '').localeCompare(b.video_id || '')
+      }
+      const order = left > right ? 1 : -1
+      return direction === 'asc' ? order : -order
+    })
+
+    return (
+      <div className="mb-6 rounded-panel border border-line bg-surface px-5 py-[18px]">
+        <h3 className="m-0 mb-1 flex items-center gap-2 text-[1.05rem]">
+          All videos
+          {allVideos ? (
+            <span className="rounded-full bg-[#eef1f5] px-2.5 py-px text-[0.8rem] text-muted">{allVideos.total}</span>
+          ) : null}
+        </h3>
+        <p className="mt-1 mb-2.5 text-[0.85rem] text-muted">
+          Every video and where it stands. Click a column to sort.
+        </p>
+
+        {allVideos?.truncated ? (
+          <p className="mt-1 mb-2.5 text-[0.85rem] text-[#8a4b12]">
+            Showing the first {allVideos.count} of {allVideos.total}. This table loads everything at
+            once and has outgrown that.
+          </p>
+        ) : null}
+
+        {allVideosLoading && !allVideos ? (
+          <p className="text-[0.85rem] text-muted">Loading...</p>
+        ) : sorted.length === 0 ? (
+          <p className="text-[0.85rem] text-muted">No videos yet.</p>
+        ) : (
+          // The table can outgrow narrow screens, so it scrolls inside its own
+          // box rather than pushing the page sideways.
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.85rem]">
+              <thead>
+                <tr className="border-b border-line text-left">
+                  {ALL_VIDEO_COLUMNS.map((col) => {
+                    const isSorted = col.key === sortKey
+                    const sortable = col.sortable !== false
+                    return (
+                      <th
+                        key={col.key}
+                        scope="col"
+                        aria-sort={isSorted ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                        className={`whitespace-nowrap py-2 pr-4 font-semibold ${col.numeric ? 'text-right' : ''}`}
+                      >
+                        {sortable ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleAllVideosSort(col.key)}
+                            className="inline-flex items-center gap-1 font-semibold hover:text-brand"
+                          >
+                            {col.label}
+                            <span aria-hidden="true" className={isSorted ? '' : 'opacity-25'}>
+                              {isSorted && direction === 'asc' ? '↑' : '↓'}
+                            </span>
+                          </button>
+                        ) : (
+                          col.label
+                        )}
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((video) => (
+                  <tr key={video.video_id} className="border-b border-[#eef1f5] last:border-b-0">
+                    <td className="max-w-[22ch] truncate py-2 pr-4" title={video.title}>
+                      {video.title || 'Untitled'}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <span className={`whitespace-nowrap rounded-full px-2 py-px text-[0.78rem] ${STATE_ACCENT[video.state] || STATE_ACCENT.not_started}`}>
+                        {video.state_label}
+                        {video.state === 'running' && video.analysis_progress
+                          ? ` ${video.analysis_progress}%`
+                          : ''}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap py-2 pr-4 text-muted">
+                      {video.analyzer_version || '--'}
+                    </td>
+                    <td className="py-2 pr-4 text-right text-muted">{video.attempt_number || 0}</td>
+                    <td className="whitespace-nowrap py-2 pr-4 text-right text-muted">
+                      {formatDuration(video.duration_seconds)}
+                    </td>
+                    <td className="whitespace-nowrap py-2 pr-4 text-muted">
+                      {formatTimestamp(video.created_at)}
+                    </td>
+                    <td className="max-w-[34ch] truncate py-2 text-muted" title={describeLastResult(video)}>
+                      {describeLastResult(video)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const renderAdminPage = () => (
     <section className={PAGE_CONTENT}>
       <div className={PAGE_HEADING}>
@@ -2049,6 +2272,8 @@ const MODERATION_ACCENT = {
       </div>
 
       {renderModerationPanel()}
+
+      {renderAllVideosPanel()}
 
       {posts.length === 0 ? (
         <div className={`${CARD} p-6 ${CARD_COPY}`}>
@@ -2396,7 +2621,7 @@ const MODERATION_ACCENT = {
                 onClick={() => decideApproval(video.id, true)}
                 disabled={analysisRequestLoadingByPostId[video.id]}
               >
-                {analysisRequestLoadingByPostId[video.id] ? 'Working...' : 'Approve for analysis'}
+                {analysisRequestLoadingByPostId[video.id] ? 'Working...' : 'Start analysis'}
               </button>
               <button
                 type="button"

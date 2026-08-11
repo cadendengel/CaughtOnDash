@@ -127,10 +127,14 @@ namespace CaughtOnDash.Worker.Models
                 ? $"{DurationSeconds / 60}:{DurationSeconds % 60:00}"
                 : "--";
 
-        /// <summary>"1st look" / "3rd review", so a returning video stands out.</summary>
+        /// <summary>"1st run" / "3rd run", so a returning video stands out.
+        ///
+        /// Said "review" until the approve/reject vocabulary was dropped, where
+        /// it was the last survivor of the word and meant something else again:
+        /// an analysis attempt, not a human decision.</summary>
         public string AttemptDisplay => PreviousAttempts == 0
-            ? "1st look"
-            : $"{Ordinal(AttemptNumber)} review";
+            ? "1st run"
+            : $"{Ordinal(AttemptNumber)} run";
 
         /// <summary>What the previous run concluded, for the row's detail line.</summary>
         public string HistoryDisplay
