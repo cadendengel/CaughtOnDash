@@ -29,12 +29,17 @@ def _video(**overrides):
 
 
 class StateDerivationTests(TestCase):
-    def test_a_fresh_upload_reads_as_not_started_despite_being_stored_cancelled(self):
-        """The exact case the web app had to special-case."""
-        video = _video(approval_status='pending_review', analysis_status='cancelled')
+    def test_a_fresh_upload_reads_as_not_started(self):
+        video = _video(approval_status='pending_review', analysis_status='not_started')
 
         self.assertEqual(video.state, Video.STATE_NOT_STARTED)
         self.assertEqual(video.state_label, 'Not started')
+
+    def test_legacy_rows_stored_as_cancelled_still_read_as_not_started(self):
+        """Rows written before 'not_started' existed, and any the backfill missed."""
+        video = _video(approval_status='pending_review', analysis_status='cancelled')
+
+        self.assertEqual(video.state, Video.STATE_NOT_STARTED)
 
     def test_approved_and_pending_is_queued(self):
         self.assertEqual(_video(analysis_status='pending').state, Video.STATE_QUEUED)
@@ -68,6 +73,76 @@ class StateDerivationTests(TestCase):
     def test_every_state_has_a_label(self):
         for state in Video.STATE_LABELS:
             self.assertTrue(Video.STATE_LABELS[state])
+
+
+class NotStartedStatusTests(TestCase):
+    """'cancelled' now means only what it says: a run that was abandoned."""
+
+    def test_an_upload_is_stored_as_not_started(self):
+        video = _video(approval_status='pending_review', analysis_status='not_started')
+
+        self.assertEqual(video.analysis_status, 'not_started')
+        self.assertEqual(video.state, Video.STATE_NOT_STARTED)
+
+    def test_an_approved_cancelled_video_is_startable_not_finished(self):
+        """A genuinely abandoned run still means 'cancelled', and is startable."""
+        video = _video(approval_status='approved', analysis_status='cancelled')
+
+        self.assertEqual(video.state, Video.STATE_NOT_STARTED)
+
+    def test_not_started_is_requeueable(self):
+        """Otherwise such a video would be invisible to every path that runs it."""
+        from apps.videos.worker_services import REQUEUEABLE_ANALYSIS_STATUSES
+
+        self.assertIn('not_started', REQUEUEABLE_ANALYSIS_STATUSES)
+        self.assertNotIn('processing', REQUEUEABLE_ANALYSIS_STATUSES)
+        self.assertNotIn('pending', REQUEUEABLE_ANALYSIS_STATUSES)
+
+    def test_not_started_is_a_valid_choice(self):
+        valid = dict(Video.ANALYSIS_STATUS_CHOICES)
+
+        self.assertIn('not_started', valid)
+        self.assertIn('cancelled', valid)
+
+    def test_a_not_started_video_is_not_claimable(self):
+        """Nothing runs until it is started, whatever the status field says."""
+        from apps.videos.worker_services import claimable_jobs
+
+        _video(approval_status='pending_review', analysis_status='not_started')
+
+        self.assertEqual(claimable_jobs().count(), 0)
+
+    def test_the_feed_serializer_carries_the_derived_state(self):
+        video = _video(approval_status='pending_review', analysis_status='not_started')
+
+        payload = video.to_dict()
+
+        self.assertEqual(payload['state'], 'not_started')
+        self.assertEqual(payload['state_label'], 'Not started')
+
+    def test_the_raw_row_serializer_carries_it_too(self):
+        """The feed has two serialization paths; the UI reads state from both."""
+        from apps.videos.views import _serialize_video_row
+
+        video = _video(approval_status='approved', analysis_status='processing')
+        row = {
+            'id': video.id,
+            'owner_clerk_user_id': video.owner_clerk_user_id,
+            'title': video.title,
+            'description': '',
+            'visibility': 'public',
+            'status': 'ready',
+            'created_at': video.created_at,
+            'updated_at': video.updated_at,
+            'deleted_at': None,
+            'approval_status': 'approved',
+            'analysis_status': 'processing',
+        }
+
+        payload = _serialize_video_row(row)
+
+        self.assertEqual(payload['state'], 'running')
+        self.assertEqual(payload['state_label'], 'Running')
 
 
 class AnalyzerVersionTests(TestCase):
