@@ -120,6 +120,22 @@ class NotStartedStatusTests(TestCase):
         self.assertEqual(payload['state'], 'not_started')
         self.assertEqual(payload['state_label'], 'Not started')
 
+    def test_the_feed_endpoint_carries_it_too(self):
+        """The feed is a third serializer, and the one the cards actually read.
+
+        It builds its payload from .values() rows in apps.feed, so adding the
+        state to the model and to apps.videos left it out -- and the card falls
+        back to the raw analysis_status when it is missing.
+        """
+        _video(approval_status='pending_review', analysis_status='not_started',
+               visibility='public')
+
+        items = Client().get('/api/feed/').json().get('items') or []
+
+        self.assertTrue(items, 'expected the video in the feed')
+        self.assertEqual(items[0]['state'], 'not_started')
+        self.assertEqual(items[0]['state_label'], 'Not started')
+
     def test_the_raw_row_serializer_carries_it_too(self):
         """The feed has two serialization paths; the UI reads state from both."""
         from apps.videos.views import _serialize_video_row
