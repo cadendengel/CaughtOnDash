@@ -5,6 +5,7 @@ from apps.accounts.models import Profile
 from apps.videos.classification import dashcam_classification
 from apps.videos.models import Video, VideoLike
 from apps.videos.tagging import serialize_video_tags
+from apps.videos.views import _derived_state_fields
 from apps.store import current_clerk_user_id as resolve_current_clerk_user_id, response_envelope
 
 
@@ -103,6 +104,14 @@ def feed_view(request):
             'analysis_stage': video['analysis_stage'],
             'analysis_progress': video['analysis_progress'],
             'approval_status': video['approval_status'],
+            # The derived state the cards actually render. This is the third
+            # place a video gets serialized -- values() rows here, raw rows and
+            # model instances in apps.videos.views -- so it goes through the
+            # shared helper rather than repeating the rules a third time.
+            **_derived_state_fields(
+                video['approval_status'] or 'pending_review',
+                video['analysis_status'] or 'pending',
+            ),
             'worker_last_seen_at': video['worker_last_seen_at'].isoformat() if video['worker_last_seen_at'] else None,
             'ai_summary': video['ai_summary'],
             'ai_tags': video['ai_tags'],
