@@ -196,6 +196,19 @@ namespace CaughtOnDash.Worker.Mac
         private async void RefreshQueueButton_Click(object? sender, RoutedEventArgs e)
             => await _session.RefreshQueuesAsync();
 
+        private async void ResetStaleButton_Click(object? sender, RoutedEventArgs e)
+        {
+            ResetStaleButton.IsEnabled = false;
+            try
+            {
+                await _session.ResetStaleJobsAsync();
+            }
+            finally
+            {
+                ResetStaleButton.IsEnabled = true;
+            }
+        }
+
         private async void RequeueOutdatedButton_Click(object? sender, RoutedEventArgs e)
         {
             RequeueOutdatedButton.IsEnabled = false;

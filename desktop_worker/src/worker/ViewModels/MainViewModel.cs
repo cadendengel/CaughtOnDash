@@ -218,6 +218,8 @@ namespace CaughtOnDash.Worker.ViewModels
         /// </summary>
         public async Task RequeueOutdatedAsync() => await _session.RequeueOutdatedAsync();
 
+        public async Task ResetStaleJobsAsync() => await _session.ResetStaleJobsAsync();
+
         public void SelectAll()
         {
             foreach (var row in _rows)

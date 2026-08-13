@@ -66,8 +66,11 @@ namespace CaughtOnDash.Worker.Services
             _cancellationTokenSource = new CancellationTokenSource();
             _stopTcs = new TaskCompletionSource<bool>();
 
-            Logger.Log("Worker started");
-            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "idle", Message = "Worker started" });
+            // No log line: WorkerSession brackets this with "Connecting..." and
+            // the heartbeat socket announces itself. This used to print twice --
+            // once here and once from the Message below, which WorkerSession logs
+            // for any event carrying one.
+            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "idle" });
 
             await MainLoop(_cancellationTokenSource.Token);
         }
@@ -79,7 +82,6 @@ namespace CaughtOnDash.Worker.Services
                 return;
             }
 
-            Logger.Log("Stopping worker...");
             _cancellationTokenSource?.Cancel();
             
             if (_stopTcs != null)
@@ -89,8 +91,8 @@ namespace CaughtOnDash.Worker.Services
 
             _isRunning = false;
             _currentJobId = null;
-            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "stopped", Message = "Worker stopped" });
-            Logger.Log("Worker stopped");
+            // Likewise: WorkerSession logs "Disconnected" once this returns.
+            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "stopped" });
         }
 
         public async Task CancelCurrentJobAsync()
@@ -256,19 +258,19 @@ namespace CaughtOnDash.Worker.Services
                         // Back off before retrying: another worker may hold the job,
                         // and retrying immediately spins the loop against the server.
                         Logger.Log($"Failed to claim job {job.JobId}");
-                        OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "claim_failed", Message = "Failed to claim job" });
+                        OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "claim_failed" });
                         await Task.Delay(5000, cancellationToken);
                         continue;
                     }
 
                     _currentJobId = job.JobId;
-                    OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "processing", Message = "Processing job...", JobId = job.JobId, JobTitle = job.Title });
+                    OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "processing", JobId = job.JobId, JobTitle = job.Title });
 
                     // Process the job
                     await ProcessJob(job, cancellationToken);
 
                     _currentJobId = null;
-                    OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "idle", Message = "Job completed" });
+                    OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "idle" });
                 }
                 catch (OperationCanceledException)
                 {

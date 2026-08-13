@@ -36,6 +36,7 @@ from apps.videos.worker_services import (
     reset_stale_jobs,
     admin_retry_job,
     requeue_stale_version,
+    STALE_PROCESSING_MINUTES,
 )
 
 
@@ -419,6 +420,36 @@ def requeue_stale_version_view(request):
     if not result['success']:
         return JsonResponse(result, status=400)
     return JsonResponse(result)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@worker_required
+def worker_reset_stale_view(request):
+    """POST /api/videos/worker/jobs/reset-stale/ - free jobs whose worker died.
+
+    A worker that crashes mid-job leaves the video claimed and 'processing'
+    forever: requeue skips it deliberately, so it cannot be yanked from a worker
+    that is genuinely running it, and nothing else ever clears it. The site then
+    shows a progress bar that will never move. That happened here -- a UI crash
+    orphaned a job, and clearing it needed a hand-authenticated admin call.
+
+    Worker-authenticated, like requeue-stale and for the same reason: this is
+    queue maintenance, and the worker is both what orphans jobs and what needs
+    them back. The token can already claim, cancel and requeue the whole corpus,
+    so this grants nothing new.
+    """
+    try:
+        timeout_minutes = int(request.GET.get('timeout_minutes', STALE_PROCESSING_MINUTES))
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'timeout_minutes must be a whole number'}, status=400)
+
+    # A zero or negative timeout would reset jobs a live worker is holding,
+    # which is the one thing this must not do.
+    if timeout_minutes < 1:
+        return JsonResponse({'error': 'timeout_minutes must be at least 1'}, status=400)
+
+    return JsonResponse(reset_stale_jobs(timeout_minutes))
 
 
 @csrf_exempt
