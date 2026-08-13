@@ -18,6 +18,9 @@ namespace CaughtOnDash.Worker.Services
         private Guid? _currentJobId;
         private TaskCompletionSource<bool>? _stopTcs;
         private volatile string _currentStage = "";
+        // Whether the last heartbeat failed, so a broken connection logs once
+        // rather than every ten seconds for as long as it stays broken.
+        private volatile bool _heartbeatFailing;
         private volatile int _currentProgress;
 
         // Backend progress reporting is throttled to these bounds. See ReportProgress.
@@ -175,18 +178,30 @@ namespace CaughtOnDash.Worker.Services
                             );
                         }
 
+                        // A heartbeat is a state, not an event, so it is reported as
+                        // one: the UI shows a coloured dot rather than two log lines
+                        // every ten seconds. Only a failure is worth a log entry,
+                        // and only the first of a run of them.
                         if (delivered)
                         {
-                            Logger.Log($"Heartbeat sent via {transport} (status: {status})");
-                            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "heartbeat", Message = "Heartbeat sent" });
+                            if (_heartbeatFailing)
+                            {
+                                Logger.Log($"Heartbeat recovered via {transport}");
+                            }
+                            _heartbeatFailing = false;
+                            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "heartbeat", HeartbeatOk = true });
                         }
                         else
                         {
                             // Do not report success on a rejected heartbeat -- that is what
                             // hid the backend rejecting every worker POST. Reaching here
                             // means both transports failed, not just the socket.
-                            Logger.Log("Heartbeat rejected by backend", Logger.LogLevel.Error);
-                            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "error", Message = "Heartbeat rejected by backend" });
+                            if (!_heartbeatFailing)
+                            {
+                                Logger.Log("Heartbeat rejected by backend", Logger.LogLevel.Error);
+                            }
+                            _heartbeatFailing = true;
+                            OnStatusUpdate?.Invoke(new WorkerLoopEvent { Status = "heartbeat", HeartbeatOk = false });
                         }
 
                         await Task.Delay(10000, cancellationToken); // 10 seconds
@@ -350,14 +365,26 @@ namespace CaughtOnDash.Worker.Services
             JobDto job, string stage, int percent, CancellationToken cancellationToken,
             bool notifyBackend = true)
         {
+            var stageChanged = _currentStage != stage;
             _currentStage = stage;
             _currentProgress = percent;
 
-            Logger.Log($"[{job.Title}] {stage}: {percent}%");
+            // Only stage changes reach the activity log. Logging every percent
+            // put ~117 lines per job into it -- 3,464 lines for an 18-job batch,
+            // of which about 180 were worth reading. The live percentage belongs
+            // on the progress bar, which is fed by the event below and updates
+            // in place instead of scrolling the interesting lines away.
+            if (stageChanged)
+            {
+                Logger.Log($"[{job.Title}] {stage}");
+            }
+
             OnStatusUpdate?.Invoke(new WorkerLoopEvent
             {
                 Status = "processing",
-                Message = $"Processing: {stage}",
+                // No Message: WorkerSession logs any Message it receives, and
+                // "Processing: {stage}" duplicated the line above without the
+                // title or the percentage. It was half of all log volume.
                 JobId = job.JobId,
                 JobTitle = job.Title,
                 Progress = percent,
@@ -408,5 +435,8 @@ namespace CaughtOnDash.Worker.Services
         public string? JobTitle { get; set; }
         public int Progress { get; set; }
         public string? Stage { get; set; }
+        /// <summary>Whether the last heartbeat reached the backend, for the
+        /// connection indicator. Null on events that say nothing about it.</summary>
+        public bool? HeartbeatOk { get; set; }
     }
 }

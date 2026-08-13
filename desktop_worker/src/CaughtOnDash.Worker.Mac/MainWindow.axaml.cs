@@ -380,6 +380,8 @@ namespace CaughtOnDash.Worker.Mac
             };
 
             BackendUrlDisplay.Text = state.BackendUrl;
+            ConnectionDot.Fill = new SolidColorBrush(Color.Parse(state.ConnectionColour));
+            ToolTip.SetTip(ConnectionDot, state.ConnectionTooltip);
             LastHeartbeatText.Text = state.LastHeartbeatDisplay;
             CurrentJobText.Text = state.CurrentJob;
             StageText.Text = state.Stage;
@@ -395,12 +397,32 @@ namespace CaughtOnDash.Worker.Mac
             ProcessingPanel.IsVisible = isProcessing;
             IdlePanel.IsVisible = !isProcessing;
             IdleText.Text = state.IsConfigured
-                ? state.CanStop ? "Waiting for a job." : "Worker stopped."
+                ? state.CanStop ? "Waiting for a job." : "Disconnected."
                 : "Worker is not configured.";
 
             StartButton.IsEnabled = state.CanStart;
             StopButton.IsEnabled = state.CanStop;
             CancelJobButton.IsEnabled = state.CanCancelJob;
+        }
+
+        /// <summary>Is the log scrolled to the newest entry?</summary>
+        /// <remarks>
+        /// Within a couple of pixels: an exact comparison never matches, because
+        /// the offset lands on fractional values as rows of different heights are
+        /// added, and the follow would switch itself off at random.
+        /// </remarks>
+        private bool IsScrolledToBottom()
+        {
+            var scroll = LogListBox.Scroll;
+            if (scroll == null)
+            {
+                // No scrollbar yet -- the list is shorter than its viewport, so
+                // the newest entry is visible by definition.
+                return true;
+            }
+
+            var remaining = scroll.Extent.Height - scroll.Viewport.Height - scroll.Offset.Y;
+            return remaining <= 2.0;
         }
 
         private void OnLogAppended(WorkerLogEntry entry)
@@ -419,18 +441,42 @@ namespace CaughtOnDash.Worker.Mac
                     },
                 };
 
+                // Whether to follow the newest entry is decided BEFORE the add,
+                // because adding a row is what makes "at the bottom" false.
+                var follow = IsScrolledToBottom();
+
                 LogListBox.Items.Add(row);
+
+                // Follow only when the reader is already at the bottom. Following
+                // unconditionally meant scrolling up to read something was
+                // impossible while a job ran -- the list yanked itself back down
+                // on the next line, and lines arrive several times a second.
+                // Scrolling up now pauses the follow; scrolling back to the
+                // bottom resumes it, which is how a terminal tail behaves.
+                //
+                // Scroll before trimming, the order the WPF host has always used
+                // and never crashed with. Trimming first leaves the virtualizing
+                // panel briefly inconsistent and ScrollIntoView, which runs a
+                // synchronous layout pass, walks straight into it -- an unhandled
+                // exception on the UI thread that aborted the process and lost 18
+                // queued jobs to a scroll position. Guarded as well: failing to
+                // scroll is cosmetic, failing to analyze is not.
+                if (follow)
+                {
+                    try
+                    {
+                        LogListBox.ScrollIntoView(LogListBox.Items.Count - 1);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Mid-relayout. The next line scrolls anyway.
+                    }
+                }
 
                 while (LogListBox.Items.Count > MaxLogRows)
                 {
                     LogListBox.Items.RemoveAt(0);
                 }
-
-                // Follow the newest entry. Without this the list stays pinned at
-                // the top while entries scroll past below the fold, which is
-                // useless during a job. The WPF host has always done this; the
-                // Avalonia port did not.
-                LogListBox.ScrollIntoView(LogListBox.Items.Count - 1);
             });
         }
     }

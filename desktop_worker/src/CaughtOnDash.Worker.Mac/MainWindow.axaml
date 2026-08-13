@@ -41,7 +41,14 @@
 
                         <StackPanel Margin="0,0,0,10">
                             <TextBlock Text="Status:" FontWeight="SemiBold"/>
-                            <TextBlock x:Name="StatusText" Text="Stopped" Foreground="#E74C3C" FontSize="13" Margin="0,3,0,0"/>
+                            <!-- The dot replaces two heartbeat log lines every ten
+                                 seconds. A heartbeat is a state, so it is shown as
+                                 one; only a failure now reaches the log. -->
+                            <StackPanel Orientation="Horizontal" Spacing="7" Margin="0,3,0,0">
+                                <Ellipse x:Name="ConnectionDot" Width="9" Height="9" Fill="#B0B0B0"
+                                         VerticalAlignment="Center"/>
+                                <TextBlock x:Name="StatusText" Text="Disconnected" Foreground="#E74C3C" FontSize="13"/>
+                            </StackPanel>
                         </StackPanel>
 
                         <StackPanel Margin="0,0,0,10">
@@ -55,10 +62,17 @@
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Margin="0,10,0,0" Spacing="10">
-                            <Button x:Name="StartButton" Content="Start" Click="StartButton_Click"
-                                    Background="#27AE60" Foreground="White" Height="35" Width="100"/>
-                            <Button x:Name="StopButton" Content="Stop" Click="StopButton_Click"
-                                    Background="#E74C3C" Foreground="White" Height="35" Width="100" IsEnabled="False"/>
+                            <!-- Connect/Disconnect, not Start/Stop: this controls
+                                 whether the worker is online, not whether work
+                                 happens. Work is controlled by what is queued,
+                                 which is why an "Idle" status exists at all.
+                                 "Start" now means one thing everywhere: put this
+                                 work in motion. -->
+                            <Button x:Name="StartButton" Content="Connect" Click="StartButton_Click"
+                                    Background="#27AE60" Foreground="White" Height="35" Width="110"
+                                    ToolTip.Tip="Go online and run whatever is queued"/>
+                            <Button x:Name="StopButton" Content="Disconnect" Click="StopButton_Click"
+                                    Background="#E74C3C" Foreground="White" Height="35" Width="110" IsEnabled="False"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -179,7 +193,7 @@
                         <Button x:Name="MoveDownButton" Margin="0,0,8,8" Content="Down" Click="MoveDown_Click"/>
                         <Button x:Name="RejectButton" Margin="0,0,8,8" Content="Skip" Click="Reject_Click"
                                 Background="#C0392B" Foreground="White"/>
-                        <Button x:Name="StartBatchButton" Margin="0,0,8,8" Content="Start Batch" Click="StartBatch_Click"
+                        <Button x:Name="StartBatchButton" Margin="0,0,8,8" Content="Start selected" Click="StartBatch_Click"
                                 Background="#27AE60" Foreground="White" FontWeight="Bold" Padding="14,4"/>
                     </WrapPanel>
                 </Grid>
