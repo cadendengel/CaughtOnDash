@@ -96,9 +96,9 @@ reporting one:
 
 **Container metadata** — width, height, fps, frame count, duration, file size.
 
-**Object tags** — YOLOv8n over sampled frames. COCO's vocabulary suits dashcam
-footage: `car`, `truck`, `bus`, `motorcycle`, `person`, `bicycle`,
-`traffic light`, `stop sign`.
+**Object tags** — YOLOv8 trained on BDD100K over sampled frames. A driving
+vocabulary: `car`, `truck`, `bus`, `motorcycle`, `bicycle`, `person`, `rider`,
+`traffic light`, `traffic sign`, `train`.
 
 Sampling defaults to one frame per second, capped at 300 frames. The cap is
 spread across the whole video rather than truncating it, so a long clip is still
@@ -111,18 +111,39 @@ losing brief real events.
 
 ```json
 {"looks_like_dashcam": true,
- "reason": "road objects across most frames, landscape orientation",
+ "reason": "camera moving with the road, though few road objects were detected",
  "orientation": "landscape",
- "road_classes_detected": ["car", "traffic light", "truck"],
- "strongest_road_class_share": 0.889}
+ "road_classes_detected": [],
+ "strongest_road_class_share": 0.0,
+ "egomotion": {"radiality": 0.96, "pixels_per_frame": 8.89,
+               "looks_like_driving": true}}
 ```
 
-It requires **both** road objects across most frames **and** landscape
-orientation. Either alone is too easy to trip: a passenger filming out of a
-window is landscape with cars in it, and a phone in a car mount is portrait
-footage of a road. Requiring both keeps false positives low at the cost of
-missing unusual dashcam setups — the right trade for something that might drive
-moderation.
+Landscape orientation is required, and then **either** road objects across most
+frames **or** forward/rearward camera motion. Portrait stays a hard gate: a
+phone in a car mount is not a dashcam.
+
+Either, not both, because the two signals fail in opposite situations and the
+test corpus contains both failures. An empty rural road has no object to count
+and scores 0.96 radiality; a clip of gridlock is full of cars and scores 0.16,
+because the vehicle is barely moving. Requiring both would reject each of them.
+
+**Egomotion** is optical flow between *adjacent* frames — not between the
+one-second samples, where nothing tracks at road speed. It scores how
+consistently the flow radiates from a focus, and how fast. The sign is
+discarded: a rear-facing camera and a reversing vehicle produce the same field
+converging inward (measured −0.975 against +0.974 on the same clip reversed), so
+scoring the sign would reject every rear-facing dashcam.
+
+Speed matters as much as shape. A slow synthetic zoom scored 0.998 radiality —
+higher than any real dashcam clip — on 0.5 pixels per frame, and an aerial drone
+shot scored 0.87 on 1.7. Real driving moves the scene: the clips that depend on
+egomotion alone move 3.7 and 8.9 pixels per frame.
+
+Measured on 14 driving clips and 11 others (walking, hiking, cycling, panning,
+static): 14/14 driving clips correct, 9/11 others rejected. Both remaining false
+positives are bicycle footage shot in city traffic, which passes on the *object*
+signal — they contain real cars — and did so before egomotion existed.
 
 It is a heuristic and reports itself as one. The signals behind the verdict are
 returned alongside it so a person can disagree. It is not turned into a tag,

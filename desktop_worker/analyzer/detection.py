@@ -11,6 +11,11 @@ vehicles in snow badly enough to flip the dashcam verdict -- two winter clips
 scored a road-object share of 0.21 and 0.08 and were classified "not dashcam".
 The same clips score 0.71 and 0.67 here. The driving vocabulary is also why the
 hallucinations cannot recur: there is no airplane class to predict.
+
+Two signals, not one. Detection answers "what is in frame"; egomotion answers
+"is the camera moving the way a camera bolted to a car moves". Neither is
+sufficient alone -- an empty rural road contains nothing to detect, and a clip
+of gridlock barely moves -- so the dashcam verdict takes either.
 """
 
 from __future__ import annotations
@@ -96,6 +101,123 @@ ROAD_CLASSES = frozenset({
 # glimpsed once is a parked car in the background; a car in most frames is the
 # road ahead.
 DASHCAM_ROAD_SHARE = 0.5
+
+# --- Egomotion -------------------------------------------------------------
+#
+# What makes footage dashcam footage is not only what it sees but how it moves.
+# A camera fixed to a moving vehicle produces a flow field that radiates from a
+# focus on the horizon, and that is true of an empty road, which the object
+# signal cannot describe at all: two clips in our corpus contain no detectable
+# object in any frame and were judged "not dashcam" for the whole of detect-2.0.
+#
+# The sign is deliberately discarded. A rear-facing camera, and a vehicle
+# reversing, produce the same field converging inward instead of outward --
+# measured at -0.975 against +0.974 on the same clip played backwards. Scoring
+# the signed value would reject every rear-facing dashcam.
+EGOMOTION_MIN_RADIALITY = 0.70
+
+# Radial consistency alone is not enough, and this threshold is what does most
+# of the work. A slow synthetic zoom scored 0.998 radiality -- higher than any
+# real dashcam clip -- on 0.51 pixels per frame, and an aerial drone shot
+# scored 0.87 on 1.67, because a drone flying forward is radial in exactly the
+# way a car is. What separates them is speed: the two clips that depend on
+# egomotion alone (empty roads, no object to count) move 3.7 and 8.9 pixels
+# per frame, against 1.67 and 1.73 for the drone and a cycling helmet camera.
+#
+# 2.5 sits between those, with roughly 40% margin either side. That is a real
+# margin but a small sample -- 14 driving clips and 11 others -- so treat this
+# as the number to revisit first if either kind of mistake shows up.
+EGOMOTION_MIN_PIXELS = 2.5
+
+# Flow is measured between adjacent frames, not between the samples: at road
+# speed a second of travel moves features tens of metres and sparse tracking
+# loses them entirely.
+EGOMOTION_MIN_VECTORS = 10
+EGOMOTION_MIN_RADIUS = 30.0     # ignore points near the focus, where direction is noise
+EGOMOTION_MIN_VECTOR_PIXELS = 0.4   # and points that did not really move
+
+
+def frame_pair_radiality(first, second) -> tuple[float, float] | None:
+    """How radial the motion between two adjacent frames is, and how fast.
+
+    Returns (radiality, median pixels moved), or None when the pair carries too
+    little trackable texture to say anything -- a blown-out sky or a tunnel
+    wall should abstain rather than vote zero.
+
+    Radiality is the median agreement between each motion vector and the
+    direction away from the focus, mapped to [0, 1] by absolute value so that
+    inward (rear-facing, reversing) and outward (forward) score alike.
+    """
+    import cv2
+    import numpy as np
+
+    grey_first = cv2.cvtColor(first, cv2.COLOR_BGR2GRAY)
+    grey_second = cv2.cvtColor(second, cv2.COLOR_BGR2GRAY)
+
+    points = cv2.goodFeaturesToTrack(
+        grey_first, maxCorners=300, qualityLevel=0.01, minDistance=8)
+    if points is None:
+        return None
+
+    moved, status, _ = cv2.calcOpticalFlowPyrLK(grey_first, grey_second, points, None)
+    if moved is None:
+        return None
+
+    tracked = status.reshape(-1) == 1
+    start = points.reshape(-1, 2)[tracked]
+    end = moved.reshape(-1, 2)[tracked]
+    if len(start) < EGOMOTION_MIN_VECTORS:
+        return None
+
+    height, width = grey_first.shape
+    # The focus is approximated by the frame centre. Fitting it per clip would
+    # be more correct -- a camera mounted off-centre, or a bend in the road,
+    # moves it -- but the approximation already separates driving from walking
+    # by a wide margin, and a bad fit fails quietly in a way a fixed centre
+    # does not.
+    focus = np.array([width / 2.0, height / 2.0])
+
+    vectors = end - start
+    radial = start - focus
+    radius = np.linalg.norm(radial, axis=1)
+    speed = np.linalg.norm(vectors, axis=1)
+
+    usable = (radius > EGOMOTION_MIN_RADIUS) & (speed > EGOMOTION_MIN_VECTOR_PIXELS)
+    if usable.sum() < EGOMOTION_MIN_VECTORS:
+        return None
+
+    alignment = (vectors[usable] * radial[usable]).sum(axis=1) / (
+        radius[usable] * speed[usable])
+    return abs(float(np.median(alignment))), float(np.median(speed[usable]))
+
+
+def summarize_egomotion(pairs: Iterable[tuple[float, float]]) -> dict:
+    """Reduce per-pair scores to one verdict for the clip.
+
+    The median, not the mean: a few frames of a wiper crossing the lens or a
+    car passing close should not drag the clip's score, and they are exactly
+    the frames that produce wild values.
+    """
+    import statistics
+
+    scored = [pair for pair in pairs if pair is not None]
+    if not scored:
+        return {
+            'radiality': 0.0,
+            'pixels_per_frame': 0.0,
+            'pairs_measured': 0,
+            'looks_like_driving': False,
+        }
+
+    radiality = statistics.median(value for value, _ in scored)
+    pixels = statistics.median(speed for _, speed in scored)
+    return {
+        'radiality': round(radiality, 3),
+        'pixels_per_frame': round(pixels, 2),
+        'pairs_measured': len(scored),
+        'looks_like_driving': (
+            radiality >= EGOMOTION_MIN_RADIALITY and pixels >= EGOMOTION_MIN_PIXELS),
+    }
 
 
 def resolve_device() -> str:
@@ -229,6 +351,8 @@ def detect(
     # When each label was actually on screen, in seconds. Recorded per sampled
     # frame so events can carry real timestamps rather than invented ones.
     appearances: dict[str, list[float]] = defaultdict(list)
+    # One entry per sampled frame that had a readable neighbour.
+    egomotion_pairs: list[tuple[float, float] | None] = []
     sampled = 0
 
     try:
@@ -238,6 +362,14 @@ def detect(
             if not ok:
                 # Seeking past a damaged region is normal; skip rather than abort.
                 continue
+
+            # The frame immediately after this one, for egomotion. It costs a
+            # sequential read rather than another seek, and it has to be the
+            # adjacent frame: the samples themselves are a second apart, which
+            # is far enough at road speed that nothing tracks between them.
+            ok_next, next_frame = capture.read()
+            if ok_next:
+                egomotion_pairs.append(frame_pair_radiality(frame, next_frame))
 
             sampled += 1
             predictions = model.predict(
@@ -277,6 +409,7 @@ def detect(
         'counts': {label: kept[label] for label in tags},
         'confidence': {label: round(best_confidence[label], 3) for label in tags},
         'discarded': sorted(set(frames_with_class) - set(kept)),
+        'egomotion': summarize_egomotion(egomotion_pairs),
         'frames_sampled': sampled,
         'frames_requested': len(indices),
         'model': os.path.basename(model_name),
@@ -292,6 +425,7 @@ def _empty_result(model_name: str, device: str, confidence: float, sampled: int)
         'counts': {},
         'confidence': {},
         'discarded': [],
+        'egomotion': summarize_egomotion([]),
         'frames_sampled': sampled,
         'frames_requested': 0,
         'model': os.path.basename(model_name),
@@ -317,19 +451,29 @@ def classify_footage(metadata: dict, detection: dict) -> dict:
     """Does this look like dashcam footage?
 
     A heuristic, and reported as one: the signals it was derived from are
-    returned alongside the verdict so a human can disagree with it. Two
-    independent pieces of evidence, both cheap and already computed:
+    returned alongside the verdict so a human can disagree with it. Landscape
+    orientation is required -- dashcams are fixed and wide, portrait video is
+    almost always a phone held by a person -- and then either of two
+    independent pieces of evidence will do:
 
     - road objects present across most of the video. A mounted camera pointed
       at a road sees vehicles and traffic furniture continuously.
-    - landscape orientation. Dashcams are fixed and wide; portrait video is
-      almost always a phone held by a person.
+    - forward (or rearward) egomotion. A camera fixed to a moving vehicle
+      moves the whole scene in a way a handheld one does not.
 
-    Both must hold. Either alone is too easy to trip: a passenger filming out
-    of a window is landscape with cars in it, and a phone in a car mount is
-    portrait footage of a road. Requiring both keeps false positives low at
-    the cost of missing unusual-but-real dashcam setups, which is the right
-    trade for something that might drive moderation.
+    Either, not both, because the two fail in opposite situations and the
+    corpus contains both failures. An empty rural road has no object to count
+    and scored 0.97 radiality; a clip of gridlock is full of cars and scored
+    0.07, because the vehicle is barely moving. Requiring both would have
+    rejected each of them, and requiring egomotion alone -- as the original
+    plan proposed -- would have broken the gridlock clip, which classifies
+    correctly today.
+
+    The cost of `or` is that a false positive on either signal is now enough.
+    Measured against 11 non-driving clips (walking, hiking, cycling, panning,
+    static), none reach the egomotion threshold; the closest is a cycling
+    helmet camera at 0.51 against a threshold of 0.70, which is the case to
+    watch.
     """
     counts = detection.get('counts') or {}
     sampled = max(1, detection.get('frames_sampled') or 0)
@@ -341,25 +485,44 @@ def classify_footage(metadata: dict, detection: dict) -> dict:
     }
     strongest = max(road_shares.values(), default=0.0)
     orientation = orientation_of(metadata)
+    egomotion = detection.get('egomotion') or {}
 
     has_road_scene = strongest >= DASHCAM_ROAD_SHARE
+    is_driving = bool(egomotion.get('looks_like_driving'))
     is_landscape = orientation == 'landscape'
+    looks_like_dashcam = is_landscape and (has_road_scene or is_driving)
 
-    if has_road_scene and is_landscape:
+    if looks_like_dashcam and has_road_scene and is_driving:
+        reason = 'road objects across most frames and camera moving with the road'
+    elif looks_like_dashcam and is_driving:
+        # The case the object signal cannot describe, so say so plainly.
+        reason = 'camera moving with the road, though few road objects were detected'
+    elif looks_like_dashcam:
         reason = 'road objects across most frames, landscape orientation'
+    elif not is_landscape:
+        # Orientation is the hard gate, so it leads -- but a portrait clip full
+        # of cars and one of a living room fail for different reasons, and the
+        # reason string is what a human reads when disagreeing with the verdict.
+        evidence = ('road objects present' if has_road_scene
+                    else 'road objects present intermittently' if road_shares
+                    else 'no road objects detected')
+        reason = f'{evidence}, but orientation is {orientation}'
     elif not road_shares:
-        reason = 'no road objects detected'
-    elif not has_road_scene:
-        reason = 'road objects present but only intermittently'
+        reason = 'no road objects detected and no consistent camera motion'
     else:
-        reason = f'road objects present but orientation is {orientation}'
+        reason = 'road objects present but only intermittently, and no consistent camera motion'
 
     return {
-        'looks_like_dashcam': has_road_scene and is_landscape,
+        'looks_like_dashcam': looks_like_dashcam,
         'reason': reason,
         'orientation': orientation,
         'road_classes_detected': sorted(road_shares),
         'strongest_road_class_share': round(strongest, 3),
+        'egomotion': {
+            'radiality': egomotion.get('radiality', 0.0),
+            'pixels_per_frame': egomotion.get('pixels_per_frame', 0.0),
+            'looks_like_driving': is_driving,
+        },
     }
 
 

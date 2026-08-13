@@ -12,12 +12,25 @@ import unittest
 import detection
 
 
-def _detection(counts: dict, sampled: int) -> dict:
+def _detection(counts: dict, sampled: int, egomotion: dict | None = None) -> dict:
     """A detection result shaped like detect() returns."""
     return {
         'tags': sorted(counts, key=lambda label: (-counts[label], label)),
         'counts': counts,
         'frames_sampled': sampled,
+        'egomotion': egomotion if egomotion is not None else _egomotion(0.0, 0.0),
+    }
+
+
+def _egomotion(radiality: float, pixels: float) -> dict:
+    """An egomotion summary, as summarize_egomotion builds it."""
+    return {
+        'radiality': radiality,
+        'pixels_per_frame': pixels,
+        'pairs_measured': 12,
+        'looks_like_driving': (
+            radiality >= detection.EGOMOTION_MIN_RADIALITY
+            and pixels >= detection.EGOMOTION_MIN_PIXELS),
     }
 
 
@@ -80,7 +93,9 @@ class ClassifyFootageTests(unittest.TestCase):
             self.PORTRAIT, _detection({'teddy bear': 12}, 12))
 
         self.assertFalse(result['looks_like_dashcam'])
-        self.assertEqual(result['reason'], 'no road objects detected')
+        # Wording changed with detect-3.0: orientation is the hard gate, so it
+        # is named, and the object evidence is kept alongside it.
+        self.assertEqual(result['reason'], 'no road objects detected, but orientation is portrait')
         self.assertEqual(result['road_classes_detected'], [])
 
     def test_road_objects_in_portrait_are_refused(self):
@@ -250,3 +265,95 @@ class ConfidenceDefaultTests(unittest.TestCase):
         """
         self.assertEqual(detection.DEFAULT_CONFIDENCE, 0.35)
 
+
+class EgomotionTests(unittest.TestCase):
+    """The second signal, and the cases that made it necessary."""
+
+    LANDSCAPE = {'width': 1920, 'height': 1080}
+    PORTRAIT = {'width': 576, 'height': 1024}
+
+    # Measured on real clips, so a threshold change has to face them.
+    EMPTY_ROAD = _egomotion(0.96, 8.89)        # road-day-1: no objects at all
+    SLOWER_EMPTY_ROAD = _egomotion(0.95, 3.70)  # road-day-2: the weaker of the two
+    GRIDLOCK = _egomotion(0.16, 9.03)           # dusk-traffic: full of cars, barely radial
+    DRONE = _egomotion(0.87, 1.67)              # aerial: radial, but far too slow
+    SLOW_ZOOM = _egomotion(0.998, 0.48)         # synthetic: perfectly radial, barely moving
+    WALKING = _egomotion(0.55, 1.16)
+
+    def test_an_empty_road_is_dashcam_footage_on_motion_alone(self):
+        """The failure this signal exists for: nothing to detect, clearly driving."""
+        result = detection.classify_footage(
+            self.LANDSCAPE, _detection({}, 22, self.EMPTY_ROAD))
+
+        self.assertTrue(result['looks_like_dashcam'])
+        self.assertIn('camera moving with the road', result['reason'])
+
+    def test_the_slower_empty_road_also_clears_the_bar(self):
+        result = detection.classify_footage(
+            self.LANDSCAPE, _detection({}, 22, self.SLOWER_EMPTY_ROAD))
+
+        self.assertTrue(result['looks_like_dashcam'])
+
+    def test_gridlock_still_passes_on_objects_when_the_camera_is_not_moving(self):
+        """Why the two signals are OR'd: requiring motion would break this."""
+        result = detection.classify_footage(
+            self.LANDSCAPE, _detection({'car': 16}, 16, self.GRIDLOCK))
+
+        self.assertTrue(result['looks_like_dashcam'])
+        self.assertFalse(result['egomotion']['looks_like_driving'])
+
+    def test_an_aerial_shot_is_radial_but_too_slow_to_count(self):
+        result = detection.classify_footage(
+            self.LANDSCAPE, _detection({'car': 2}, 14, self.DRONE))
+
+        self.assertFalse(result['looks_like_dashcam'])
+
+    def test_a_slow_zoom_is_more_radial_than_any_dashcam_and_still_rejected(self):
+        result = detection.classify_footage(
+            self.LANDSCAPE, _detection({}, 12, self.SLOW_ZOOM))
+
+        self.assertFalse(result['looks_like_dashcam'])
+
+    def test_walking_does_not_look_like_driving(self):
+        result = detection.classify_footage(
+            self.LANDSCAPE, _detection({}, 20, self.WALKING))
+
+        self.assertFalse(result['looks_like_dashcam'])
+
+    def test_portrait_is_rejected_however_convincing_the_motion(self):
+        """Orientation stays a hard gate: a phone in a car mount is not a dashcam."""
+        result = detection.classify_footage(
+            self.PORTRAIT, _detection({}, 22, self.EMPTY_ROAD))
+
+        self.assertFalse(result['looks_like_dashcam'])
+        self.assertIn('portrait', result['reason'])
+
+    def test_a_rear_facing_camera_scores_like_a_forward_one(self):
+        """Radiality is unsigned: inward flow is a reversing or rear camera.
+
+        Measured +0.974 forward and -0.975 on the same clip reversed, so
+        scoring the sign would reject every rear-facing dashcam.
+        """
+        summary = detection.summarize_egomotion([(0.96, 8.0), (0.95, 8.2)])
+
+        self.assertTrue(summary['looks_like_driving'])
+        self.assertGreater(summary['radiality'], 0)
+
+    def test_pairs_that_could_not_be_measured_are_ignored_not_counted_as_zero(self):
+        """A few untrackable frames should not drag a clip below the threshold."""
+        summary = detection.summarize_egomotion([None, (0.96, 8.0), None, (0.94, 7.5)])
+
+        self.assertEqual(summary['pairs_measured'], 2)
+        self.assertTrue(summary['looks_like_driving'])
+
+    def test_no_measurable_pairs_is_not_driving(self):
+        summary = detection.summarize_egomotion([None, None])
+
+        self.assertFalse(summary['looks_like_driving'])
+        self.assertEqual(summary['radiality'], 0.0)
+
+    def test_a_missing_egomotion_block_does_not_break_the_verdict(self):
+        """Older stored results have no egomotion key at all."""
+        result = detection.classify_footage(self.LANDSCAPE, {'counts': {'car': 9}, 'frames_sampled': 9})
+
+        self.assertTrue(result['looks_like_dashcam'])
