@@ -43,7 +43,7 @@ namespace CaughtOnDash.Worker.Services
             State = new WorkerSessionState
             {
                 BackendUrl = _config.IsConfigured ? _config.BackendUrl : "Not configured",
-                Status = _config.IsConfigured ? "Stopped" : "Missing config",
+                Status = _config.IsConfigured ? "Disconnected" : "Missing config",
                 IsConfigured = _config.IsConfigured,
                 CanStart = _config.IsConfigured,
                 CanStop = false,
@@ -128,8 +128,8 @@ namespace CaughtOnDash.Worker.Services
                     state.CanStop = true;
                 });
 
-                Log($"Connected to backend: {_config.BackendUrl}");
-                Log("Starting worker...");
+                
+                Log("Connecting...");
 
                 await _loop.StartAsync();
             }
@@ -149,7 +149,7 @@ namespace CaughtOnDash.Worker.Services
         {
             try
             {
-                Log("Stopping worker...");
+                Log("Disconnecting...");
 
                 if (_loop != null)
                 {
@@ -160,7 +160,8 @@ namespace CaughtOnDash.Worker.Services
 
                 Mutate(state =>
                 {
-                    state.Status = "Stopped";
+                    state.Status = "Disconnected";
+                    state.HeartbeatOk = null;
                     state.Stage = "Idle";
                     state.CurrentJob = "None";
                     state.Progress = 0;
@@ -169,7 +170,7 @@ namespace CaughtOnDash.Worker.Services
                     state.CanCancelJob = false;
                 });
 
-                Log("Worker stopped");
+                Log("Disconnected");
             }
             catch (Exception ex)
             {
@@ -419,14 +420,26 @@ namespace CaughtOnDash.Worker.Services
                         state.Status = "Error";
                         break;
 
+                    case "heartbeat":
+                        // Connection health only. It does not touch Status, so a
+                        // beat arriving mid-job cannot overwrite "Processing".
+                        break;
+
                     case "stopped":
-                        state.Status = "Stopped";
+                        state.Status = "Disconnected";
                         state.Progress = 0;
                         state.CanCancelJob = false;
+                        state.HeartbeatOk = null;
                         break;
                 }
 
-                state.LastHeartbeat = DateTime.Now;
+                if (evt.HeartbeatOk.HasValue)
+                {
+                    state.HeartbeatOk = evt.HeartbeatOk;
+                    // Only a real beat moves the timestamp. Stamping it on every
+                    // event made "Last heartbeat" mean "last anything".
+                    state.LastHeartbeat = DateTime.Now;
+                }
             });
 
             if (!string.IsNullOrWhiteSpace(evt.Message))
@@ -447,11 +460,14 @@ namespace CaughtOnDash.Worker.Services
     public class WorkerSessionState
     {
         public string BackendUrl { get; set; } = "Not configured";
-        public string Status { get; set; } = "Stopped";
+        public string Status { get; set; } = "Disconnected";
         public string Stage { get; set; } = "Idle";
         public string CurrentJob { get; set; } = "None";
         public int Progress { get; set; }
         public DateTime? LastHeartbeat { get; set; }
+        /// <summary>Connection health for the indicator: true after a delivered
+        /// heartbeat, false after a rejected one, null while disconnected.</summary>
+        public bool? HeartbeatOk { get; set; }
         public bool IsConfigured { get; set; }
         public bool CanStart { get; set; }
         public bool CanStop { get; set; }
@@ -459,6 +475,21 @@ namespace CaughtOnDash.Worker.Services
 
         public string LastHeartbeatDisplay =>
             LastHeartbeat.HasValue ? LastHeartbeat.Value.ToString("HH:mm:ss") : "Never";
+
+        /// <summary>Green connected, red failing, grey disconnected.</summary>
+        public string ConnectionColour => HeartbeatOk switch
+        {
+            true => "#27AE60",
+            false => "#E74C3C",
+            _ => "#B0B0B0",
+        };
+
+        public string ConnectionTooltip => HeartbeatOk switch
+        {
+            true => $"Connected. Last heartbeat {LastHeartbeatDisplay}.",
+            false => "Connected, but the backend is rejecting heartbeats.",
+            _ => "Disconnected.",
+        };
 
         public string ProgressDisplay => $"{Progress}%";
 
