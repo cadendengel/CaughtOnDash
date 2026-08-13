@@ -35,6 +35,7 @@ from .worker_views import (
     requeue_stale_version_view,
     moderation_overview,
     all_videos,
+    worker_reset_stale_view,
     reset_stale_jobs_view,
 )
 
@@ -103,6 +104,8 @@ urlpatterns = [
     path('admin/moderation/', moderation_overview, name='admin-moderation'),
     # GET /api/videos/admin/all/ - every video with its state, for the all-videos table.
     path('admin/all/', all_videos, name='admin-all-videos'),
+    # POST /api/videos/worker/jobs/reset-stale/ - free jobs whose worker died.
+    path('worker/jobs/reset-stale/', worker_reset_stale_view, name='worker-jobs-reset-stale'),
     # POST /api/videos/admin/jobs/<job_id>/retry/ - admin retry a job
     path('admin/jobs/<uuid:job_id>/retry/', admin_retry_job_view, name='admin-job-retry'),
     # POST /api/videos/admin/jobs/reset-stale/ - admin reset stale jobs

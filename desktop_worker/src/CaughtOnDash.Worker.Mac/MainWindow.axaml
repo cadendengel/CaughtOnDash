@@ -129,6 +129,9 @@
                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
                         <TextBlock x:Name="QueueHeading" Text="Not started" FontWeight="Bold" FontSize="14"/>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="ResetStaleButton" Content="Free stuck"
+                                    Click="ResetStaleButton_Click" Padding="10,3"
+                                    ToolTip.Tip="Put jobs back in the queue when the worker that claimed them died"/>
                             <Button x:Name="RequeueOutdatedButton" Content="Requeue outdated"
                                     Click="RequeueOutdatedButton_Click" Padding="10,3"
                                     ToolTip.Tip="Re-run every video not on the current analyzer version"/>

@@ -248,6 +248,43 @@ namespace CaughtOnDash.Worker.Services
         }
 
         /// <summary>
+        /// Free jobs whose worker died mid-analysis, putting them back in the queue.
+        /// </summary>
+        /// <remarks>
+        /// A worker that crashes leaves its video claimed and "processing"
+        /// forever. Requeue deliberately skips that state -- it must not take a
+        /// job from a worker that is genuinely running it -- so nothing ever
+        /// cleared it and the site showed a progress bar that would never move.
+        ///
+        /// The timeout guards against freeing a job a live worker still holds:
+        /// only videos whose worker has been silent that long are touched.
+        /// </remarks>
+        public async Task<string> ResetStaleJobsAsync(
+            int timeoutMinutes = 5, CancellationToken cancellationToken = default)
+        {
+            if (!_config.IsConfigured)
+            {
+                Log("Worker not configured; cannot reset stale jobs.", Logger.LogLevel.Warning);
+                return "Worker not configured.";
+            }
+
+            Log($"Freeing jobs whose worker has been silent for {timeoutMinutes} minutes...");
+            var result = await _apiClient.ResetStaleJobs(timeoutMinutes, cancellationToken);
+            if (result == null)
+            {
+                Log("Reset failed. See the log for the API error.", Logger.LogLevel.Error);
+                return "Reset failed.";
+            }
+
+            var summary = result.ResetCount == 0
+                ? "No stuck jobs found."
+                : $"Freed {result.ResetCount} stuck job(s); they are queued again.";
+            Log(summary);
+            await RefreshQueuesAsync(cancellationToken);
+            return summary;
+        }
+
+        /// <summary>
         /// Approve the given videos, in the order supplied, and start the worker.
         /// </summary>
         /// <remarks>

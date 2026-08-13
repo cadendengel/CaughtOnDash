@@ -245,6 +245,27 @@ namespace CaughtOnDash.Worker.Services
                 cancellationToken);
         }
 
+        public class ResetStaleResult
+        {
+            [JsonProperty("reset_count")]
+            public int ResetCount { get; set; }
+        }
+
+        /// <summary>Free jobs whose worker died mid-analysis.</summary>
+        /// <remarks>
+        /// A crashed worker leaves its video claimed and "processing" forever:
+        /// requeue skips that state so it cannot take a job from a worker that is
+        /// genuinely running one, and nothing else clears it.
+        /// </remarks>
+        public async Task<ResetStaleResult?> ResetStaleJobs(
+            int timeoutMinutes, CancellationToken cancellationToken = default)
+        {
+            return await SendRequest<ResetStaleResult>(
+                "POST",
+                $"/api/videos/worker/jobs/reset-stale/?timeout_minutes={timeoutMinutes}",
+                cancellationToken: cancellationToken);
+        }
+
         public async Task<JobDto?> GetNextPendingJob(CancellationToken cancellationToken = default)
         {
             try

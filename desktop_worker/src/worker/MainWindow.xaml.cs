@@ -42,6 +42,20 @@ namespace CaughtOnDash.Worker
         private void RefreshQueueButton_Click(object sender, RoutedEventArgs e)
             => _viewModel?.RefreshQueues();
 
+        private async void ResetStaleButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_viewModel is null) return;
+            ResetStaleButton.IsEnabled = false;
+            try
+            {
+                await _viewModel.ResetStaleJobsAsync();
+            }
+            finally
+            {
+                ResetStaleButton.IsEnabled = true;
+            }
+        }
+
         private async void RequeueOutdatedButton_Click(object sender, RoutedEventArgs e)
         {
             if (_viewModel is null) return;
