@@ -357,3 +357,104 @@ class EgomotionTests(unittest.TestCase):
         result = detection.classify_footage(self.LANDSCAPE, {'counts': {'car': 9}, 'frames_sampled': 9})
 
         self.assertTrue(result['looks_like_dashcam'])
+
+
+class ConditionsTests(unittest.TestCase):
+    """Visibility, which is how half the corpus is titled.
+
+    Values are the medians measured on real clips, so a threshold change has to
+    face the footage it was derived from.
+    """
+
+    NIGHT_BRIDGE = (16.6, 34.3, 227.7)      # "Bridge at night, heavy traffic"
+    WRONG_WAY_NIGHT = (50.7, 42.2, 69.9)    # night by eye; the darkest "day" reading
+    DUSK = (39.6, 37.0, 93.1)
+    WHITEOUT = (107.9, 55.9, 31.2)          # "Whiteout conditions, zero visibility"
+    ORDINARY_DAY = (99.2, 77.3, 154.9)      # "Stop-and-go traffic on Main"
+    SNOW_BRIGHT = (119.8, 78.6, 61.5)       # bright snow, but plenty of contrast
+    NEAREST_DAY = (83.3, 68.0, 71.8)        # the dimmest true daylight clip
+
+    def _conditions(self, *frames):
+        return detection.summarize_conditions(frames)['conditions']
+
+    def test_a_night_clip_is_low_light(self):
+        self.assertEqual(self._conditions(self.NIGHT_BRIDGE), ['low light'])
+
+    def test_dusk_is_low_light_too(self):
+        self.assertEqual(self._conditions(self.DUSK), ['low light'])
+
+    def test_a_night_clip_full_of_streetlights_is_still_low_light(self):
+        """The brightest night clip must not read as day: 50.7 against 83.3."""
+        self.assertEqual(self._conditions(self.WRONG_WAY_NIGHT), ['low light'])
+
+    def test_the_dimmest_daylight_clip_is_not_low_light(self):
+        self.assertEqual(self._conditions(self.NEAREST_DAY), [])
+
+    def test_whiteout_is_fog(self):
+        self.assertEqual(self._conditions(self.WHITEOUT), ['fog'])
+
+    def test_bright_snow_with_contrast_is_not_fog(self):
+        """Brighter than the whiteout clip, but the detail is still there."""
+        self.assertEqual(self._conditions(self.SNOW_BRIGHT), [])
+
+    def test_ordinary_daylight_gets_no_condition(self):
+        self.assertEqual(self._conditions(self.ORDINARY_DAY), [])
+
+    def test_a_dark_clip_is_never_called_fog(self):
+        """Darkness lowers contrast on its own, which says nothing about fog."""
+        self.assertNotIn('fog', self._conditions(self.NIGHT_BRIDGE))
+
+    def test_the_median_decides_not_a_single_frame(self):
+        """One tunnel, or one blast of headlights, must not relabel a clip."""
+        day = self.ORDINARY_DAY
+        conditions = self._conditions(day, day, self.NIGHT_BRIDGE, day, day)
+
+        self.assertEqual(conditions, [])
+
+    def test_no_frames_means_no_claim(self):
+        summary = detection.summarize_conditions([])
+
+        self.assertEqual(summary['conditions'], [])
+        self.assertEqual(summary['brightness'], 0.0)
+
+
+class LetterboxTests(unittest.TestCase):
+    """Padding, which was making bright daylight read as night.
+
+    Two clips are 1280x854 with the image in a 968x648 box. Whole-frame they
+    measure 59 brightness and 54% near-black pixels; the content measures 109
+    and 17%.
+    """
+
+    def test_no_box_leaves_a_frame_alone(self):
+        frame = [[1, 2], [3, 4]]
+
+        self.assertIs(detection.crop_to_content(frame, None), frame)
+
+    def test_a_box_trims_to_the_content(self):
+        import numpy as np
+
+        frame = np.zeros((100, 200, 3), dtype=np.uint8)
+        box = {'x': 20, 'y': 10, 'width': 160, 'height': 80}
+
+        cropped = detection.crop_to_content(frame, box)
+
+        self.assertEqual(cropped.shape[:2], (80, 160))
+
+    def test_orientation_prefers_the_content_over_the_container(self):
+        """A padded landscape video must not be judged on its padded shape."""
+        squarish = {'width': 1280, 'height': 854}
+        detected = {'content_box': {'width': 968, 'height': 648}}
+
+        self.assertEqual(detection.orientation_of(squarish, detected), 'landscape')
+
+    def test_orientation_falls_back_to_the_container_when_unpadded(self):
+        self.assertEqual(
+            detection.orientation_of({'width': 576, 'height': 1024}, {}), 'portrait')
+
+    def test_a_padded_portrait_video_is_still_portrait(self):
+        """Cropping must not turn a phone video into a dashcam one."""
+        detected = {'content_box': {'width': 500, 'height': 900}}
+
+        self.assertEqual(
+            detection.orientation_of({'width': 576, 'height': 1024}, detected), 'portrait')
