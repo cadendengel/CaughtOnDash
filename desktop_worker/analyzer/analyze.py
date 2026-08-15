@@ -25,7 +25,7 @@ import os
 import sys
 import time
 
-ANALYZER_VERSION = 'detect-3.0'
+ANALYZER_VERSION = 'detect-4.0'
 
 
 def emit(payload: dict) -> None:

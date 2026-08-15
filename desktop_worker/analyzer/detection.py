@@ -137,6 +137,179 @@ EGOMOTION_MIN_RADIUS = 30.0     # ignore points near the focus, where direction 
 EGOMOTION_MIN_VECTOR_PIXELS = 0.4   # and points that did not really move
 
 
+# Letterbox / pillarbox padding. Two clips in the corpus are 1280x854 with
+# roughly 260 black rows and 320 black columns around a smaller image, and the
+# padding is not cosmetic: judged whole-frame they read as night footage
+# (brightness 59, 54% of pixels near-black) when the actual content is bright
+# daylight (brightness 109). The detector also spends part of every inference
+# on the bars, and orientation is derived from the padded dimensions.
+#
+# Padding is identified by being CONSTANT, not by being dark. A night clip is
+# 84% near-black pixels, so darkness alone would crop real content; a row of
+# real footage changes between frames and a black bar does not.
+LETTERBOX_LEVEL = 12          # a pixel this dark is background, not content
+LETTERBOX_MAX_SHARE = 0.45    # never crop away more than this much of a side
+# Below this, padding is not worth acting on. Real letterboxing here is 30% of
+# the frame; the incidental finds were a 2-pixel column and a 16-pixel band,
+# where cropping changes nothing and the only effect is a needless difference
+# between the frame the detector sees and the file on disk.
+LETTERBOX_MIN_SHARE = 0.03
+
+
+def _constant_dark_edges(frames) -> tuple[int, int, int, int]:
+    """Rows and columns of padding, as (top, bottom, left, right)."""
+    import numpy as np
+
+    greys = [cv2_grey(frame) for frame in frames]
+    height, width = greys[0].shape
+
+    # A band is padding only if it is dark in EVERY sampled frame. The max is
+    # used rather than the mean: one headlight in an otherwise black row means
+    # the row carries content.
+    dark_rows = np.ones(height, dtype=bool)
+    dark_cols = np.ones(width, dtype=bool)
+    for grey in greys:
+        if grey.shape != (height, width):
+            return (0, 0, 0, 0)
+        dark_rows &= grey.max(axis=1) <= LETTERBOX_LEVEL
+        dark_cols &= grey.max(axis=0) <= LETTERBOX_LEVEL
+
+    def leading(mask):
+        count = 0
+        for value in mask:
+            if not value:
+                break
+            count += 1
+        return count
+
+    top = leading(dark_rows)
+    bottom = leading(dark_rows[::-1])
+    left = leading(dark_cols)
+    right = leading(dark_cols[::-1])
+
+    # Only edges count. A dark band in the middle of the frame is content.
+    if top + bottom >= height * LETTERBOX_MAX_SHARE:
+        top = bottom = 0
+    if left + right >= width * LETTERBOX_MAX_SHARE:
+        left = right = 0
+
+    # Ignore trims too small to matter.
+    if top + bottom < height * LETTERBOX_MIN_SHARE:
+        top = bottom = 0
+    if left + right < width * LETTERBOX_MIN_SHARE:
+        left = right = 0
+    return top, bottom, left, right
+
+
+def cv2_grey(frame):
+    import cv2
+    return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+
+def content_box(capture, indices, samples: int = 5) -> dict | None:
+    """Where the real image sits inside a padded frame, or None if unpadded.
+
+    Sampled across the clip rather than taken from one frame: a fade-in or a
+    tunnel would make a single frame look entirely like padding.
+    """
+    frames = []
+    for index in indices[:: max(1, len(indices) // samples)][:samples]:
+        capture.set(1, index)  # cv2.CAP_PROP_POS_FRAMES
+        ok, frame = capture.read()
+        if ok:
+            frames.append(frame)
+
+    if len(frames) < 2:
+        return None
+
+    top, bottom, left, right = _constant_dark_edges(frames)
+    if not any((top, bottom, left, right)):
+        return None
+
+    height, width = frames[0].shape[:2]
+    return {
+        'x': left,
+        'y': top,
+        'width': width - left - right,
+        'height': height - top - bottom,
+        'padded_width': width,
+        'padded_height': height,
+    }
+
+
+def crop_to_content(frame, box: dict | None):
+    """Trim a frame to its content box. A no-op when there is no padding."""
+    if not box:
+        return frame
+    return frame[box['y']:box['y'] + box['height'], box['x']:box['x'] + box['width']]
+
+
+# --- Conditions -------------------------------------------------------------
+#
+# Half the corpus is titled by visibility rather than content -- "Whiteout
+# conditions", "Night drive, high beams everywhere", "Low winter sun" -- and the
+# analyzer described all of them as "car, traffic sign, truck". These are
+# histogram statistics over frames already decoded and already cropped, so they
+# cost nothing beyond the arithmetic.
+#
+# Measured on the 18-clip corpus, brightness separates with a wide margin:
+# night clips run 17-51 and daylight clips 85-119, with nothing between. The
+# threshold sits in that gap rather than near either group.
+LOW_LIGHT_BRIGHTNESS = 65.0
+
+# Dusk (42) and night (17-32) are not separable by brightness alone here -- a
+# night clip full of streetlights outscores an overcast dusk -- so both get the
+# one label that is true of each rather than a guess about which.
+#
+# Fog washes contrast out while staying bright. The one clip titled "Whiteout
+# conditions" measures 55.8 contrast against 67-80 for every other daylight
+# clip. One positive example is thin evidence, so this is deliberately the
+# single strongest discriminator rather than a combination tuned to fit it.
+FOG_MAX_CONTRAST = 62.0
+
+
+def frame_appearance(frame) -> tuple[float, float, float]:
+    """Brightness, contrast and saturation for one frame."""
+    import cv2
+    import numpy as np
+
+    grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    saturation = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)[:, :, 1]
+    return float(np.mean(grey)), float(np.std(grey)), float(np.mean(saturation))
+
+
+def summarize_conditions(appearances: Iterable[tuple[float, float, float]]) -> dict:
+    """What the footage looked like, as conditions a person would name.
+
+    Medians across the clip: a tunnel, or one frame of oncoming headlights,
+    should not decide what the whole video was like.
+    """
+    import statistics
+
+    rows = list(appearances)
+    if not rows:
+        return {'conditions': [], 'brightness': 0.0, 'contrast': 0.0, 'saturation': 0.0}
+
+    brightness = statistics.median(row[0] for row in rows)
+    contrast = statistics.median(row[1] for row in rows)
+    saturation = statistics.median(row[2] for row in rows)
+
+    conditions = []
+    if brightness < LOW_LIGHT_BRIGHTNESS:
+        conditions.append('low light')
+    elif contrast < FOG_MAX_CONTRAST:
+        # Only checked in daylight. A dark clip is low-contrast because it is
+        # dark, which says nothing about fog.
+        conditions.append('fog')
+
+    return {
+        'conditions': conditions,
+        'brightness': round(brightness, 1),
+        'contrast': round(contrast, 1),
+        'saturation': round(saturation, 1),
+    }
+
+
 def frame_pair_radiality(first, second) -> tuple[float, float] | None:
     """How radial the motion between two adjacent frames is, and how fast.
 
@@ -345,6 +518,15 @@ def detect(
     if not capture.isOpened():
         raise RuntimeError(f'Could not reopen the video for detection: {video_path}')
 
+    # Padding is found once and applied to every frame: it does not move, and
+    # probing it per frame would cost a decode for no information. Everything
+    # downstream -- detection, egomotion, orientation -- then sees the image
+    # rather than the bars around it.
+    # Named for what it is, and not `box`: the detection loop below already
+    # binds `box` to each predicted bounding box, which would silently replace
+    # this after the first frame.
+    content_area = content_box(capture, indices)
+
     # Highest confidence seen per class, and how many sampled frames it appeared in.
     frames_with_class: dict[str, int] = defaultdict(int)
     best_confidence: dict[str, float] = defaultdict(float)
@@ -353,6 +535,8 @@ def detect(
     appearances: dict[str, list[float]] = defaultdict(list)
     # One entry per sampled frame that had a readable neighbour.
     egomotion_pairs: list[tuple[float, float] | None] = []
+    # Brightness/contrast/saturation per sampled frame, for the conditions.
+    appearances_seen: list[tuple[float, float, float]] = []
     sampled = 0
 
     try:
@@ -368,8 +552,12 @@ def detect(
             # adjacent frame: the samples themselves are a second apart, which
             # is far enough at road speed that nothing tracks between them.
             ok_next, next_frame = capture.read()
+
+            frame = crop_to_content(frame, content_area)
+            appearances_seen.append(frame_appearance(frame))
             if ok_next:
-                egomotion_pairs.append(frame_pair_radiality(frame, next_frame))
+                egomotion_pairs.append(
+                    frame_pair_radiality(frame, crop_to_content(next_frame, content_area)))
 
             sampled += 1
             predictions = model.predict(
@@ -410,6 +598,10 @@ def detect(
         'confidence': {label: round(best_confidence[label], 3) for label in tags},
         'discarded': sorted(set(frames_with_class) - set(kept)),
         'egomotion': summarize_egomotion(egomotion_pairs),
+        'appearance': summarize_conditions(appearances_seen),
+        # Present only when the video was padded, so a reader can tell the
+        # analyzer looked at a smaller image than the file's dimensions.
+        'content_box': content_area,
         'frames_sampled': sampled,
         'frames_requested': len(indices),
         'model': os.path.basename(model_name),
@@ -426,6 +618,7 @@ def _empty_result(model_name: str, device: str, confidence: float, sampled: int)
         'confidence': {},
         'discarded': [],
         'egomotion': summarize_egomotion([]),
+        'appearance': summarize_conditions([]),
         'frames_sampled': sampled,
         'frames_requested': 0,
         'model': os.path.basename(model_name),
@@ -434,9 +627,19 @@ def _empty_result(model_name: str, device: str, confidence: float, sampled: int)
     }
 
 
-def orientation_of(metadata: dict) -> str:
-    width = metadata.get('width') or 0
-    height = metadata.get('height') or 0
+def orientation_of(metadata: dict, detection: dict | None = None) -> str:
+    """Landscape or portrait, from the content rather than the container.
+
+    A padded video reports the padded shape, which is not the shape of the
+    footage: pillarboxing can make landscape content sit in a squarer frame,
+    and orientation is a hard gate on the dashcam verdict.
+    """
+    box = (detection or {}).get('content_box')
+    if box and box.get('width') and box.get('height'):
+        width, height = box['width'], box['height']
+    else:
+        width = metadata.get('width') or 0
+        height = metadata.get('height') or 0
 
     if width <= 0 or height <= 0:
         return 'unknown'
@@ -484,7 +687,7 @@ def classify_footage(metadata: dict, detection: dict) -> dict:
         if label in ROAD_CLASSES
     }
     strongest = max(road_shares.values(), default=0.0)
-    orientation = orientation_of(metadata)
+    orientation = orientation_of(metadata, detection)
     egomotion = detection.get('egomotion') or {}
 
     has_road_scene = strongest >= DASHCAM_ROAD_SHARE
@@ -539,10 +742,16 @@ def summarize(metadata: dict, detection: dict) -> str:
     minutes, seconds = divmod(int(duration), 60)
     length = f'{minutes}m {seconds:02d}s' if minutes else f'{seconds}s'
 
+    # Conditions lead when there are any: "shot in low light" is the first
+    # thing a person says about a night clip, and on a clip with nothing
+    # detectable it is the only thing the analyzer can honestly offer.
+    conditions = (detection.get('appearance') or {}).get('conditions') or []
+    shot_in = f' Shot in {" and ".join(conditions)}.' if conditions else ''
+
     counts = detection.get('counts') or {}
     if not counts:
         return (f'{size} clip, {length}. No recognisable objects were '
-                f'detected in the sampled frames.')
+                f'detected in the sampled frames.{shot_in}')
 
     def phrase(label: str) -> str:
         share = counts[label] / max(1, detection['frames_sampled'])
@@ -552,4 +761,4 @@ def summarize(metadata: dict, detection: dict) -> str:
     leading = [phrase(label) for label in detection['tags'][:4]]
     detected = ', '.join(leading)
     return (f'{size} clip, {length}. Detected across '
-            f"{detection['frames_sampled']} sampled frames: {detected}.")
+            f"{detection['frames_sampled']} sampled frames: {detected}.{shot_in}")
