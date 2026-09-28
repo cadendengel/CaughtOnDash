@@ -143,6 +143,24 @@ class QueueEndpointTests(TestCase):
         payload = self._get('/api/videos/worker/jobs/review/').json()
         self.assertEqual([i['title'] for i in payload['items']], ['waiting'])
 
+    def test_board_lists_every_group_at_once(self):
+        _video('queued')
+        _video('waiting', approved=False)
+        _video('broke', analysis_status='failed')
+        _video('live', analysis_status='processing', worker_last_seen_at=timezone.now())
+        quiet = _video('quiet', analysis_status='processing',
+                       worker_last_seen_at=timezone.now() - timedelta(hours=2))
+        _video('skipped', approved=False, approval_status='rejected')
+
+        response = self._get('/api/videos/worker/jobs/board/')
+        self.assertEqual(response.status_code, 200)
+        board = response.json()
+        titles = {group: [i['title'] for i in board[group]] for group in ('running', 'queued', 'review', 'failed')}
+        self.assertEqual(titles, {'running': ['live', 'quiet'], 'queued': ['queued'],
+                                  'review': ['waiting'], 'failed': ['broke']})
+        self.assertEqual(board['stuck'], [str(quiet.id)])
+        self.assertEqual(Client().get('/api/videos/worker/jobs/board/').status_code, 401)
+
     def test_rows_carry_what_is_needed_to_decide(self):
         _video('clip', duration_seconds=42, playback_url='https://cdn/clip.mp4')
 

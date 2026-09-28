@@ -234,6 +234,15 @@ namespace CaughtOnDash.Worker.Services
         public Task<List<QueueEntry>> GetRunQueue(CancellationToken cancellationToken = default)
             => GetQueue("/api/videos/worker/jobs/", cancellationToken);
 
+        /// <summary>
+        /// Everything the queue window lists, in one request: running, queued,
+        /// awaiting review and failed. Null when the request failed, or when the
+        /// backend predates the endpoint, so the caller can fall back to the two
+        /// separate queue calls.
+        /// </summary>
+        public Task<QueueBoard?> GetQueueBoard(CancellationToken cancellationToken = default)
+            => SendRequest<QueueBoard>("GET", "/api/videos/worker/jobs/board/", cancellationToken: cancellationToken);
+
         private async Task<List<QueueEntry>> GetQueue(string endpoint, CancellationToken cancellationToken)
         {
             var result = await SendRequest<QueueResponse>("GET", endpoint, cancellationToken: cancellationToken);

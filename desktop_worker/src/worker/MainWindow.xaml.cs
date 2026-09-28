@@ -70,12 +70,6 @@ namespace CaughtOnDash.Worker
             }
         }
 
-        private void ReviewTab_Click(object sender, RoutedEventArgs e)
-            => _viewModel?.ShowReviewQueue();
-
-        private void QueuedTab_Click(object sender, RoutedEventArgs e)
-            => _viewModel?.ShowRunQueue();
-
         private void SelectAll_Click(object sender, RoutedEventArgs e)
             => _viewModel?.SelectAll();
 
