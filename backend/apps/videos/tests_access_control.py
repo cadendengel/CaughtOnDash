@@ -144,3 +144,53 @@ class CommentsMethodHandlingTests(TestCase):
         self.assertEqual(get.status_code, 200)
         self.assertEqual(get.json()['count'], 1)
         self.assertEqual(VideoComment.objects.count(), 1)
+
+
+class UploadOwnershipTests(TestCase):
+    """The file behind a video can be set only by its owner.
+
+    It is fingerprinted as incident evidence, so a stranger replacing it would
+    replace the evidence behind someone else's report.
+    """
+
+    def setUp(self):
+        self.video = Video.objects.create(owner_clerk_user_id=OWNER, title='Clip', status='pending')
+
+    def _upload(self, caller):
+        from unittest.mock import patch
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        with patch('apps.videos.views.upload_bytes_to_supabase', return_value='https://cdn.example.com/c.mp4') as store:
+            response = self.client.post('/api/videos/upload/', {
+                'video_id': str(self.video.id),
+                'file': SimpleUploadedFile('dash.mp4', b'bytes', content_type='video/mp4'),
+            }, HTTP_X_CLERK_USER_ID=caller)
+        return response, store
+
+    def test_a_stranger_cannot_upload_or_replace_the_file(self):
+        response, store = self._upload(STRANGER)
+        self.assertEqual(response.status_code, 403)
+        store.assert_not_called()
+        self.video.refresh_from_db()
+        self.assertEqual(self.video.status, 'pending')
+
+    def test_an_admin_cannot_either(self):
+        # Admins moderate; they do not supply footage for other people's videos.
+        AdminUser.objects.create(clerk_user_id=ADMIN)
+        self.assertEqual(self._upload(ADMIN)[0].status_code, 403)
+
+    def test_the_owner_can(self):
+        response, store = self._upload(OWNER)
+        self.assertEqual(response.status_code, 200)
+        store.assert_called_once()
+
+    def test_visibility_is_validated_when_the_record_is_created(self):
+        for visibility, expected in (('private', 200), ('unlisted', 200), ('secret', 400)):
+            with self.subTest(visibility=visibility):
+                response = self.client.post(
+                    '/api/videos/upload-url/', data=json.dumps({'title': 'x', 'visibility': visibility}),
+                    content_type='application/json', HTTP_X_CLERK_USER_ID=OWNER)
+                self.assertEqual(response.status_code, expected)
+                if expected == 200:
+                    self.assertEqual(response.json()['video']['visibility'], visibility)

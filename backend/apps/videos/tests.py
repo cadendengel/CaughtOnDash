@@ -142,6 +142,7 @@ class VideoUploadFlowTests(TestCase):
         response = self.client.post(
             '/api/videos/upload/',
             data={'video_id': video_id, 'file': upload_file},
+            HTTP_X_CLERK_USER_ID='test-user',
         )
 
         self.assertEqual(response.status_code, 200)

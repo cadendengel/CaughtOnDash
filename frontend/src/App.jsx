@@ -115,6 +115,13 @@ const UPLOAD_FIELDS =
   '[&_textarea]:border-ink/15 [&_textarea]:bg-white/90 [&_textarea]:px-4 [&_textarea]:py-3 ' +
   '[&_textarea]:font-normal'
 
+// The three visibilities the backend accepts, in the order a poster weighs them.
+const VISIBILITY_OPTIONS = [
+  ['public', 'Public', 'In the feed and search for everyone.'],
+  ['unlisted', 'Unlisted', 'Anyone with the link can watch; not in the feed or search.'],
+  ['private', 'Private', 'Only you and admins. Best for an incident you may report -- plates and your location stay off the site.'],
+]
+
 // Tag editing, shared by the admin editor on a feed card and the tag section
 // of the upload form.
 const CHIP_LIST = 'mt-2 flex flex-wrap gap-2'
@@ -183,6 +190,7 @@ function App() {
   const [replyLoadingByCommentId, setReplyLoadingByCommentId] = useState({})
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadDescription, setUploadDescription] = useState('')
+  const [uploadVisibility, setUploadVisibility] = useState('public')
   const [uploadFile, setUploadFile] = useState(null)
   const [uploadError, setUploadError] = useState('')
   const [uploadSuccess, setUploadSuccess] = useState('')
@@ -2432,6 +2440,7 @@ const MODERATION_ACCENT = {
           ...identityPayload,
           title: uploadTitle || uploadFile.name,
           description: uploadDescription,
+          visibility: uploadVisibility,
           original_filename: uploadFile.name,
           duration_seconds: durationSeconds,
           tags: uploadTags,
@@ -2467,6 +2476,7 @@ const MODERATION_ACCENT = {
       setUploadSuccess('Video uploaded successfully.')
       setUploadTitle('')
       setUploadDescription('')
+      setUploadVisibility('public')
       setUploadFile(null)
       setUploadTags([])
       setUploadTagDraft('')
@@ -2695,6 +2705,29 @@ const MODERATION_ACCENT = {
             rows="4"
           />
         </label>
+
+        {/* Every upload used to be public, with no way to say otherwise --
+            including footage showing another driver's plate and your own GPS
+            burned into every frame. */}
+        <fieldset className="grid gap-2">
+          <legend className="mb-1 font-semibold text-ink">Who can see it</legend>
+          {VISIBILITY_OPTIONS.map(([value, label, note]) => (
+            <label key={value} className="flex cursor-pointer items-start gap-3 rounded-control border border-ink/10 bg-white/70 px-4 py-3">
+              <input
+                type="radio"
+                name="visibility"
+                value={value}
+                checked={uploadVisibility === value}
+                onChange={() => setUploadVisibility(value)}
+                className="mt-1"
+              />
+              <span className="grid gap-0.5">
+                <span className="font-semibold text-ink">{label}</span>
+                <span className="text-[0.86rem] font-normal text-muted">{note}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
 
           <div className="mt-2 grid gap-2">
             <span className={TAG_FIELD_LABEL}>Tags</span>
