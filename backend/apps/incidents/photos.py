@@ -46,14 +46,60 @@ def sniff(data: bytes) -> tuple[str, str] | None:
     return None
 
 
-def _open(data: bytes):
+MAX_PREVIEW_BYTES = 8 * 1024 * 1024
+
+
+def _open(data: bytes, load: bool = True):
+    """The photo as a Pillow image. With load=False the pixels are not decoded:
+    the header, size and EXIF are available, at a fraction of the memory."""
     from PIL import Image
     import pillow_heif
 
     pillow_heif.register_heif_opener()
     image = Image.open(io.BytesIO(data))
-    image.load()
+    if load:
+        image.load()
     return image
+
+
+def _upright_size(image, exif) -> tuple[int, int]:
+    """Displayed dimensions: EXIF orientations 5-8 swap width and height."""
+    width, height = image.size
+    return (height, width) if exif.get(0x0112) in (5, 6, 7, 8) else (width, height)
+
+
+def read_metadata(data: bytes) -> dict:
+    """EXIF and upright dimensions, without decoding a single pixel."""
+    image = _open(data, load=False)
+    try:
+        exif = image.getexif()
+        metadata = read_exif(exif)
+        metadata['width'], metadata['height'] = _upright_size(image, exif)
+        return metadata
+    finally:
+        image.close()
+
+
+def check_preview(data: bytes) -> bytes:
+    """Accept a browser-made preview, or raise ValueError saying why not.
+
+    It must be a JPEG no larger than a preview should be. Only its header is
+    read (and its structure verified), never its pixels, so checking it costs
+    almost nothing. It is for display only: the original is what is
+    fingerprinted and kept.
+    """
+    from PIL import Image
+
+    if not data or len(data) > MAX_PREVIEW_BYTES:
+        raise ValueError('preview missing or too large')
+    if not data.startswith(b'\xff\xd8\xff'):
+        raise ValueError('preview is not a JPEG')
+    image = Image.open(io.BytesIO(data))
+    width, height = image.size
+    if not (0 < width <= PREVIEW_MAX_SIDE and 0 < height <= PREVIEW_MAX_SIDE):
+        raise ValueError(f'preview is {width}x{height}; at most {PREVIEW_MAX_SIDE} per side')
+    image.verify()
+    return data
 
 
 def _number(value) -> float | None:
@@ -149,9 +195,7 @@ def _process(data: bytes) -> dict:
     image = _open(data)
     exif = image.getexif()
     metadata = read_exif(exif)
-    # Upright dimensions without rotating anything: orientations 5-8 swap them.
-    width, height = image.size
-    metadata['width'], metadata['height'] = (height, width) if exif.get(0x0112) in (5, 6, 7, 8) else (width, height)
+    metadata['width'], metadata['height'] = _upright_size(image, exif)
 
     # Shrink in place first, then rotate and convert the small image.
     # Rotating and converting at full size made two more full-size copies: a

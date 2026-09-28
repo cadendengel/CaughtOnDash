@@ -119,6 +119,97 @@ class PhotoUploadTests(TestCase):
         self.assertNotIn('97.58', text)
         self.assertNotIn('iPhone', text)
 
+    def _post_with_preview(self, data, preview):
+        with patch('apps.incidents.views.upload_private_bytes') as store, \
+                patch('apps.incidents.photos.process', side_effect=AssertionError('decoded on the server')) as process:
+            response = self.client.post(
+                f'/api/videos/{self.video.id}/incident/photos/',
+                {'file': SimpleUploadedFile('IMG_3110.jpg', data, content_type='image/jpeg'),
+                 'preview': SimpleUploadedFile('preview.jpg', preview, content_type='image/jpeg')},
+                HTTP_X_CLERK_USER_ID=OWNER)
+        return response, store, process
+
+    @patch('apps.incidents.views.signed_object_url', return_value='https://signed/x')
+    def test_a_browser_preview_means_the_photo_is_never_decoded(self, _sign):
+        # The point of the browser preview: a 24 MP photo decoded here peaked
+        # at +165 MB on a 512 MB instance.
+        original = _jpeg(size=(4000, 3000), orientation=6)
+        preview = _jpeg(exif=False, size=(1536, 2048))
+        response, store, process = self._post_with_preview(original, preview)
+
+        self.assertEqual(response.status_code, 201, response.content)
+        process.assert_not_called()
+        (_, stored_original, _), (_, stored_preview, _) = [c.args for c in store.call_args_list]
+        self.assertEqual((stored_original, stored_preview), (original, preview))
+        artifact = EvidenceArtifact.objects.get()
+        # EXIF still read, and the upright size from the orientation tag alone.
+        self.assertEqual(artifact.metadata['exif']['gps']['heading_deg'], 47.2)
+        self.assertEqual((artifact.width, artifact.height), (3000, 4000))
+
+    @patch('apps.incidents.views.signed_object_url', return_value='https://signed/x')
+    def test_an_unusable_preview_falls_back_to_the_server(self, _sign):
+        for bad in (b'<html>', _jpeg(exif=False, size=(4000, 3000))):   # not a JPEG; too big
+            with self.subTest(size=len(bad)):
+                EvidenceArtifact.objects.all().delete()
+                with patch('apps.incidents.views.upload_private_bytes'):
+                    response = self.client.post(
+                        f'/api/videos/{self.video.id}/incident/photos/',
+                        {'file': SimpleUploadedFile('a.jpg', _jpeg(), content_type='image/jpeg'),
+                         'preview': SimpleUploadedFile('p.jpg', bad, content_type='image/jpeg')},
+                        HTTP_X_CLERK_USER_ID=OWNER)
+                self.assertEqual(response.status_code, 201, response.content)
+                self.assertEqual(EvidenceArtifact.objects.get().metadata['exif']['focal_length_35mm'], 177)
+
+    def test_read_metadata_matches_the_full_decode(self):
+        data = _jpeg(size=(400, 300), orientation=6)
+        full = photos.process(data)['metadata']
+        self.assertEqual(photos.read_metadata(data), full)
+
+
+@override_settings(INCIDENT_ENCRYPTION_KEYS=[generate_key()])
+class PhotoDeleteTests(TestCase):
+    def setUp(self):
+        self.video = Video.objects.create(owner_clerk_user_id=OWNER, status='ready')
+        self.photo = EvidenceArtifact.objects.create(
+            video=self.video, kind='photo', storage_path='v/p.heic', preview_path='v/p.preview.jpg', sha256='b' * 64)
+        self.crop = EvidenceArtifact.objects.create(
+            video=self.video, kind='plate_crop', storage_path='v/crop.jpg', sha256='c' * 64,
+            metadata={'source_artifact_id': str(self.photo.id)})
+        self.frame = EvidenceArtifact.objects.create(
+            video=self.video, kind='frame', storage_path='v/frame.jpg', sha256='d' * 64)
+
+    def _delete(self, artifact, caller=OWNER, fail=False):
+        with patch('apps.incidents.views.delete_private_objects',
+                   side_effect=RuntimeError('storage down') if fail else None) as remove:
+            response = self.client.delete(
+                f'/api/videos/{self.video.id}/incident/photos/{artifact.id}/', HTTP_X_CLERK_USER_ID=caller)
+        return response, remove
+
+    def test_owner_removes_a_photo_with_its_crops_and_it_is_logged(self):
+        from apps.incidents.models import IncidentAccessLog
+
+        response, remove = self._delete(self.photo)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(sorted(remove.call_args.args[0]), sorted(['v/p.heic', 'v/p.preview.jpg', 'v/crop.jpg']))
+        self.assertEqual(list(EvidenceArtifact.objects.values_list('kind', flat=True)), ['frame'])
+        self.assertTrue(IncidentAccessLog.objects.filter(action='delete', clerk_user_id=OWNER).exists())
+
+    def test_the_analysis_evidence_cannot_be_deleted(self):
+        response, remove = self._delete(self.frame)
+        self.assertEqual(response.status_code, 404)
+        remove.assert_not_called()
+
+    def test_strangers_cannot_delete(self):
+        response, remove = self._delete(self.photo, caller=STRANGER)
+        self.assertEqual(response.status_code, 404)
+        remove.assert_not_called()
+        self.assertEqual(EvidenceArtifact.objects.count(), 3)
+
+    def test_a_storage_failure_removes_nothing(self):
+        response, _ = self._delete(self.photo, fail=True)
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(EvidenceArtifact.objects.count(), 3)
+
 
 @patch.dict('os.environ', {'WORKER_API_TOKEN': TOKEN})
 @override_settings(INCIDENT_ENCRYPTION_KEYS=[generate_key()])

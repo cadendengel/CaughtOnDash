@@ -48,6 +48,9 @@ namespace CaughtOnDash.Worker.Services
         // without one, which is a race that had simply not been noticed yet.
         private static readonly object _gate = new();
 
+        /// <summary>Environment variable that overrides the log directory.</summary>
+        public const string LogDirectoryVariable = "CAUGHTONDASH_LOG_DIR";
+
         private const long DefaultMaxBytes = 2 * 1024 * 1024;
         private const int DefaultMaxFiles = 5;
         private const int FailuresBeforeGivingUp = 3;
@@ -82,6 +85,16 @@ namespace CaughtOnDash.Worker.Services
         /// </summary>
         public static string DefaultLogDirectory()
         {
+            // An explicit directory wins. The test suite sets it so its lines --
+            // "Thumbnail too large: https://example.com/huge.jpg" -- stop landing
+            // in the real worker's log, and it lets a second worker on the same
+            // machine keep its own log.
+            var configured = Environment.GetEnvironmentVariable(LogDirectoryVariable);
+            if (!string.IsNullOrWhiteSpace(configured))
+            {
+                return configured;
+            }
+
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

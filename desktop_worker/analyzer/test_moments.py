@@ -91,29 +91,69 @@ class FusionTests(unittest.TestCase):
     def test_signals_more_than_a_second_apart_do_not_combine(self):
         self.assertEqual(moments.find_moments([_audio(10.0, 5, 0.4)], [_jolt(12.0, 9, 0.6)]), [])
 
-    def test_one_strong_signal_is_enough(self):
-        found = moments.find_moments([], [_jolt(26.2, 15.2, 1.0)])
-        self.assertEqual([m['t_seconds'] for m in found], [26.2])
+    def test_one_signal_alone_is_only_possible(self):
+        # The production corpus: every jolt-only "moment" was a turn, a bump, a
+        # cut or a stutter. The collision's jolt with its sound stripped is
+        # still listed -- as worth a glance, not as a moment.
+        self.assertEqual(moments.find_moments([], [_jolt(26.2, 15.2, 1.0)]), [])
+        possible = moments.find_moments([], [_jolt(26.2, 15.2, 1.0)], 3, moments.MIN_POSSIBLE_SCORE)
+        self.assertEqual([(m['t_seconds'], m['score']) for m in possible], [(26.2, 0.7)])
+        # And a loud sound alone -- a TikTok end-card jingle -- likewise.
+        self.assertEqual(moments.find_moments([_audio(7.6, 10.6, 1.0)], []), [])
+
+    def test_the_collision_still_scores_high(self):
+        found = moments.find_moments([_audio(26.1, 6.6, 0.717)], [_jolt(26.2, 15.2, 1.0)])
+        self.assertEqual([(m['t_seconds'], m['score']) for m in found], [(26.1, 0.91)])
 
     def test_nearby_candidates_collapse_to_the_strongest(self):
         # 21.5 is backed by both signals and outscores 20.0, three seconds or
         # less away, which is dropped rather than reported as a second moment.
         audio = [_audio(20.0, 5, 0.5), _audio(21.5, 6, 0.6), _audio(40.0, 8, 0.9)]
-        jolt = [_jolt(21.4, 12, 1.0)]
+        jolt = [_jolt(21.4, 12, 1.0), _jolt(40.2, 12, 1.0)]
         found = moments.find_moments(audio, jolt)
         self.assertEqual([m['t_seconds'] for m in found], [21.5, 40.0])
 
     def test_possible_list_skips_what_was_already_reported(self):
         audio = [_audio(20.0, 8, 1.0), _audio(21.0, 4, 0.55)]
-        reported = moments.find_moments(audio, [])
-        possible = moments.find_moments(audio, [], 3, moments.MIN_POSSIBLE_SCORE, exclude=reported)
+        jolt = [_jolt(20.1, 12, 1.0)]
+        reported = moments.find_moments(audio, jolt)
+        possible = moments.find_moments(audio, jolt, 3, moments.MIN_POSSIBLE_SCORE, exclude=reported)
         self.assertEqual(possible, [])
 
     def test_at_most_max_moments_ordered_by_time(self):
-        audio = [_audio(t, 8, 1.0) for t in (50.0, 10.0, 30.0)]
-        found = moments.find_moments(audio, [], max_moments=2)
+        times = (50.0, 10.0, 30.0)
+        found = moments.find_moments([_audio(t, 8, 1.0) for t in times], [_jolt(t, 12, 1.0) for t in times],
+                                     max_moments=2)
         self.assertEqual(len(found), 2)
         self.assertEqual(found, sorted(found, key=lambda m: m['t_seconds']))
+
+
+class CorpusFailureModeTests(unittest.TestCase):
+    """The false alarms found reviewing the production corpus, one each."""
+
+    def test_the_first_second_and_last_half_second_are_ignored(self):
+        events = [_jolt(t, 12, 1.0) for t in (0.2, 0.4, 0.9, 1.2, 23.4, 23.7)]
+        kept = moments.usable_events(events, duration=24.0, cuts=[])
+        self.assertEqual([e['t_seconds'] for e in kept], [1.2, 23.4])
+
+    def test_events_beside_a_scene_cut_are_ignored(self):
+        events = [_jolt(5.81, 43.7, 1.0), _audio(7.6, 10.6, 1.0), _jolt(12.0, 12, 1.0)]
+        kept = moments.usable_events(events, duration=20.0, cuts=[5.9, 7.7])
+        self.assertEqual([e['t_seconds'] for e in kept], [12.0])
+
+    def test_no_jerk_is_measured_across_a_gap(self):
+        # Steady motion, then a sample dropped (duplicate, cut or unreliable
+        # pair), then steady motion in another direction. Compared across the
+        # gap that would look like a jolt; it is not measured.
+        before = [(i / 10, 1.0, 0.0, 0.5) for i in range(20)]
+        after = [(3.0 + i / 10, -3.0, 2.0, 0.5) for i in range(20)]
+        self.assertEqual(moments.jolt_scores(before + after), [])
+
+    def test_the_burst_window_shifts_at_the_edges(self):
+        self.assertEqual(moments.burst_window(0.3, 24.0), (0.0, 2.0))      # not 0.0 repeated
+        self.assertEqual(moments.burst_window(12.0, 24.0), (11.0, 13.0))
+        self.assertEqual(moments.burst_window(23.8, 24.0), (22.0, 24.0))
+        self.assertEqual(moments.burst_window(0.5, 1.2), (0.0, 1.2))
 
 
 class _Box:

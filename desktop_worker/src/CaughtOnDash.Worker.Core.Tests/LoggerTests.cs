@@ -212,17 +212,38 @@ namespace CaughtOnDash.Worker.Core.Tests
         [Fact]
         public void The_default_location_is_the_one_for_this_platform()
         {
-            var directory = Logger.DefaultLogDirectory();
+            // The suite runs with the override set (TestLogDirectory), so the
+            // platform default is checked with it cleared for the moment.
+            var configured = Environment.GetEnvironmentVariable(Logger.LogDirectoryVariable);
+            Environment.SetEnvironmentVariable(Logger.LogDirectoryVariable, null);
+            try
+            {
+                var directory = Logger.DefaultLogDirectory();
 
-            Assert.Contains("CaughtOnDash", directory);
-            if (OperatingSystem.IsMacOS())
-            {
-                Assert.Contains(Path.Combine("Library", "Logs"), directory);
+                Assert.Contains("CaughtOnDash", directory);
+                if (OperatingSystem.IsMacOS())
+                {
+                    Assert.Contains(Path.Combine("Library", "Logs"), directory);
+                }
+                else if (OperatingSystem.IsWindows())
+                {
+                    Assert.Contains("logs", directory);
+                }
             }
-            else if (OperatingSystem.IsWindows())
+            finally
             {
-                Assert.Contains("logs", directory);
+                Environment.SetEnvironmentVariable(Logger.LogDirectoryVariable, configured);
             }
+        }
+
+        [Fact]
+        public void An_explicit_directory_overrides_the_default()
+        {
+            // How the suite keeps out of the real worker's log -- and how a
+            // second worker on one machine could keep its own.
+            var directory = Logger.DefaultLogDirectory();
+            Assert.Equal(Environment.GetEnvironmentVariable(Logger.LogDirectoryVariable), directory);
+            Assert.Contains("caught_on_dash_worker_tests", directory);
         }
     }
 }

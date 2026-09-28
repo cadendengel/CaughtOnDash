@@ -23,6 +23,7 @@ import {
   mapLinks,
 } from './incidentHelpers'
 import PlateReading from './PlateReading'
+import { makePreview } from './photoPreview'
 
 // The incident report: everything the analysis found about one video that is
 // too sensitive for the public page -- when and where it happened, how fast,
@@ -146,6 +147,10 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
       for (const file of files) {
         const form = new FormData()
         form.append('file', file)
+        // The preview is made here so the server does not have to decode the
+        // photo; see photoPreview.js. Without one it falls back to doing so.
+        const preview = await makePreview(file)
+        if (preview) form.append('preview', preview, 'preview.jpg')
         const response = await authFetch(`${base}/incident/photos/`, { method: 'POST', body: form })
         const data = await response.json().catch(() => ({}))
         if (!response.ok) throw new Error(`${file.name}: ${data.detail || 'upload failed.'}`)
@@ -157,6 +162,20 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
       )
       if (fileInput.current) fileInput.current.value = ''
     })
+
+  const removePhoto = (photo) => {
+    const name = photo.original_filename || 'this photo'
+    if (!window.confirm(`Remove ${name} from the report? Its fingerprint and any plate crops read from it go too.`)) {
+      return undefined
+    }
+    return run('remove', async () => {
+      const response = await authFetch(`${base}/incident/photos/${photo.id}/`, { method: 'DELETE' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.detail || 'Could not remove the photo.')
+      await load()
+      setMessage(`Removed ${name}.`)
+    })
+  }
 
   const readPhotos = () =>
     run('read', async () => {
@@ -283,7 +302,17 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
       <article key={photo.id} className="mt-4 grid gap-4 border-t border-ink/10 pt-4 md:grid-cols-[minmax(0,280px)_1fr]" data-testid="photo">
         <Image artifact={photo} alt={photo.original_filename || 'Photo'} />
         <div className="min-w-0">
-          <h4 className="font-semibold text-ink">{photo.original_filename || 'Photo'}</h4>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="font-semibold text-ink">{photo.original_filename || 'Photo'}</h4>
+            <button
+              type="button"
+              className="cursor-pointer text-[0.85rem] font-semibold text-bad hover:underline disabled:cursor-wait disabled:opacity-60"
+              onClick={() => removePhoto(photo)}
+              disabled={busy === 'remove'}
+            >
+              Remove photo
+            </button>
+          </div>
           <dl className={FACTS}>
             <dt>Taken</dt><dd>{exif.taken_at ? formatClock(exif.taken_at) : 'no time in file'}</dd>
             <dt>Position</dt>
