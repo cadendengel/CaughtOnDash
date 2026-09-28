@@ -1,5 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { SignIn, UserButton, useAuth, useUser } from '@clerk/react'
+import IncidentReport from './IncidentReport'
+import {
+  ACTION_ROW,
+  CARD,
+  EYEBROW,
+  FORM_ACTIONS,
+  FORM_MESSAGE_ERROR,
+  FORM_MESSAGE_SUCCESS,
+  GHOST_BTN,
+  PAGE_CONTENT,
+  PAGE_HEADING,
+  PRIMARY_BTN,
+  SECONDARY_BTN,
+} from './ui'
 
 // Re-analysis is only offered on your own videos, and only from a state the
 // backend will accept, so the button mirrors its rules rather than inviting a
@@ -28,12 +42,6 @@ const isStaleProcessing = (post) => {
   return Date.now() - lastSeen > STALE_PROCESSING_MS
 }
 
-// Shared card chrome. One definition rather than three: this was a grouped
-// CSS rule covering feed cards, empty-state cards and the upload form, so
-// migrating any one of them alone would have duplicated it and let the three
-// drift apart.
-const CARD = 'rounded-card border border-ink/10 bg-white/[0.86] shadow-card'
-
 // The author line, shared by the feed card, the admin card and the detail
 // page. Same reasoning: three consumers, one definition.
 const AUTHOR_NAME = 'font-bold text-ink'
@@ -57,13 +65,6 @@ const VIDEO = 'mt-4 aspect-video max-h-[72vh] w-full rounded-card bg-black ' +
 const VIDEO_PLACEHOLDER = 'mt-4 grid min-h-[240px] place-items-center rounded-card ' +
   'border border-ink/10 bg-ink/[0.04] text-sm font-medium text-muted'
 
-// Buttons. The most reused classes in the app -- 17 call sites for the ghost
-// variant alone -- so they are constants rather than repeated strings.
-const GHOST_BTN = 'cursor-pointer rounded-full border border-ink/15 bg-white/80 px-4 py-2 ' +
-  'font-semibold text-ink transition-[background,transform,border-color] duration-200 ' +
-  'hover:-translate-y-px hover:bg-white/95 ' +
-  'disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60'
-
 // The lifted shadow previously applied only inside the feed and detail action
 // rows, so an active Like in a comment thread looked flatter than the same
 // control elsewhere. Unified deliberately rather than reproducing the
@@ -75,8 +76,6 @@ const DANGER_BTN = 'cursor-pointer rounded-full border border-red-700/20 bg-red-
   'font-bold text-bad transition-[background,transform,border-color] duration-200 ' +
   'hover:-translate-y-px hover:bg-red-600/15 ' +
   'disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60'
-
-const ACTION_ROW = 'mt-3 flex flex-wrap items-center gap-2 max-[640px]:gap-2'
 
 // Comments render in two places and are deliberately styled differently: the
 // detail thread is compact with the handle beside the name, while the admin
@@ -116,11 +115,6 @@ const UPLOAD_FIELDS =
   '[&_textarea]:border-ink/15 [&_textarea]:bg-white/90 [&_textarea]:px-4 [&_textarea]:py-3 ' +
   '[&_textarea]:font-normal'
 
-const FORM_ACTIONS = 'mt-1 flex flex-wrap gap-3'
-const FORM_MESSAGE = 'rounded-control px-4 py-3 font-semibold'
-const FORM_MESSAGE_ERROR = `${FORM_MESSAGE} bg-red-600/10 text-[#991b1b]`
-const FORM_MESSAGE_SUCCESS = `${FORM_MESSAGE} bg-green-600/10 text-good`
-
 // Tag editing, shared by the admin editor on a feed card and the tag section
 // of the upload form.
 const CHIP_LIST = 'mt-2 flex flex-wrap gap-2'
@@ -130,11 +124,6 @@ const TAG_INPUT = 'min-w-0 flex-[1_1_240px] rounded-control border border-ink/15
   'px-3 py-2 font-normal text-ink'
 
 const SCREEN = 'grid min-h-svh place-items-center p-8 max-[640px]:p-5'
-const PAGE_CONTENT = 'grid w-[min(1040px,100%)] gap-4'
-const PAGE_HEADING = '[&>h2]:font-heading [&>h2]:text-[clamp(1.8rem,3vw,2.8rem)] ' +
-  '[&>h2]:tracking-[-0.03em] [&>h2]:text-ink [&>p]:mt-1 [&>p]:text-muted'
-const EYEBROW = 'inline-flex items-center gap-2 text-[0.72rem] font-bold uppercase ' +
-  'tracking-[0.24em] text-muted'
 
 // Empty-state and upload cards style their own heading and copy.
 const CARD_COPY = '[&>h3]:mt-2 [&>h3]:font-heading [&>h3]:text-2xl [&>h3]:text-ink ' +
@@ -143,10 +132,6 @@ const CARD_COPY = '[&>h3]:mt-2 [&>h3]:font-heading [&>h3]:text-2xl [&>h3]:text-i
 const VIDEO_META = 'mt-3 flex flex-wrap gap-2 max-[640px]:gap-2 ' +
   '[&>span]:rounded-full [&>span]:bg-ink/[0.06] [&>span]:px-2.5 [&>span]:py-1 ' +
   '[&>span]:text-[0.86rem] [&>span]:text-ink'
-
-const BTN_BASE = 'mt-4 cursor-pointer rounded-full px-4 py-2 font-semibold'
-const PRIMARY_BTN = BTN_BASE + ' border-none bg-gradient-to-br from-ink to-brand text-white'
-const SECONDARY_BTN = BTN_BASE + ' border border-ink/15 bg-white/70 text-ink'
 
 const COMMENT_INPUT = 'w-full resize-y rounded-control border border-ink/15 bg-white/90 ' +
   'px-4 py-3 font-normal text-ink'
@@ -1348,6 +1333,11 @@ function App() {
   }
 
   // Reviewing is offered to the owner and to admins, matching the backend.
+  // The incident report holds other people's details and the owner's location,
+  // so the button appears only where the backend would answer.
+  const canOpenIncident = (post) =>
+    Boolean(post && user?.id && (post.owner_clerk_user_id === user.id || isAdmin))
+
   const canReview = (post) => {
     if (!post || !user?.id) {
       return false
@@ -2602,6 +2592,11 @@ const MODERATION_ACCENT = {
           <button type="button" className={SECONDARY_BTN} onClick={closeDetail}>
             Back to Feed
           </button>
+          {canOpenIncident(video) ? (
+            <button type="button" className={GHOST_BTN} onClick={() => setActivePage('incident')}>
+              Incident report
+            </button>
+          ) : null}
           {canRequestAnalysis(video) ? (
             <button
               type="button"
@@ -2801,7 +2796,17 @@ const MODERATION_ACCENT = {
           ? renderPostVideoPage()
           : activePage === 'admin'
             ? renderAdminPage()
-            : renderDetailPage()}
+            : activePage === 'incident' && currentVideo
+              ? (
+                <IncidentReport
+                  videoId={currentVideo.id}
+                  videoTitle={currentVideo.title}
+                  apiBase={API_BASE}
+                  authFetch={authFetch}
+                  onBack={() => setActivePage('detail')}
+                />
+              )
+              : renderDetailPage()}
     </main>
   )
 }
