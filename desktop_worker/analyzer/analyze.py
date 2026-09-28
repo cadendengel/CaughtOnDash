@@ -31,7 +31,7 @@ import os
 import sys
 import time
 
-ANALYZER_VERSION = 'detect-4.3'
+ANALYZER_VERSION = 'detect-4.4'
 
 
 def emit(payload: dict) -> None:
@@ -124,6 +124,8 @@ def main(argv: list[str]) -> int:
                         help='Minimum detection confidence (default 0.5)')
     parser.add_argument('--out-dir', default=None,
                         help='Directory for evidence images. Omitted, none are written.')
+    parser.add_argument('--photo', action='append', default=[], metavar='ID=PATH',
+                        help="An owner's photo from the incident report, to read text from. Repeatable.")
     args = parser.parse_args(argv)
 
     started = time.monotonic()
@@ -243,6 +245,23 @@ def main(argv: list[str]) -> int:
     except Exception as exc:
         log(f'Overlay reading skipped: {exc}')
         private['overlay'] = {'available': False, 'reason': str(exc)}
+
+    # Text on the owner's photos: where plates and fleet markings are actually
+    # legible. Each photo on its own, so one unreadable file costs only itself.
+    if args.photo:
+        import photo_text
+
+        private['photo_text'] = {}
+        for spec in args.photo:
+            artifact_id, _, path = spec.partition('=')
+            progress('analyzing', 89)
+            try:
+                findings, crops = photo_text.read(path, args.out_dir, artifact_id, log=log)
+            except Exception as exc:
+                log(f'Photo {artifact_id} skipped: {exc}')
+                findings, crops = {'available': False, 'reason': str(exc)}, []
+            private['photo_text'][artifact_id] = findings
+            artifacts.extend(crops)
 
     progress('uploading_results', 90)
 

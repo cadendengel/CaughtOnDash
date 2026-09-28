@@ -5,6 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from apps.accounts.auth import admin_required
+from apps.incidents.services import photos_for_worker
 from apps.videos.models import AnalysisRun, Video
 from apps.videos.worker_auth import worker_required
 from apps.videos.worker_serializers import (
@@ -101,8 +102,11 @@ def get_next_job(request):
         })
     
     serializer = JobDto(job)
+    # Photos the owner attached to the incident report, for the analyzer to
+    # read text from. Signed URLs, so none of it is reachable afterwards.
+    job_data = {**serializer.data, 'photos': photos_for_worker(job.id)}
     return JsonResponse({
-        'job': serializer.data,
+        'job': job_data,
         'message': 'Job available for claiming'
     })
 

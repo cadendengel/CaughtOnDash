@@ -118,6 +118,31 @@ namespace CaughtOnDash.Worker.Core.Tests
         }
 
         [Fact]
+        public void PlateCropsNameThePhotoTheyCameFrom()
+        {
+            var result = Assert.IsType<AnalyzerProtocol.ResultLine>(AnalyzerProtocol.Parse(
+                "{\"type\":\"result\",\"summary\":\"s\",\"artifacts\":[{\"path\":\"/a/p.jpg\",\"kind\":\"plate_crop\"," +
+                "\"source_artifact_id\":\"8f1c2d3e-0000-4000-8000-000000000001\"}]}")).Result;
+
+            Assert.Equal("8f1c2d3e-0000-4000-8000-000000000001", Assert.Single(result.Artifacts).SourceArtifactId);
+        }
+
+        [Fact]
+        public void JobsCarryTheirPhotosAndOlderBackendsNone()
+        {
+            var job = Newtonsoft.Json.JsonConvert.DeserializeObject<CaughtOnDash.Worker.Models.JobDto>(
+                "{\"job_id\":\"00000000-0000-0000-0000-000000000001\",\"photos\":[{\"artifact_id\":\"a\"," +
+                "\"url\":\"https://signed/p.heic\",\"sha256\":\"bb\",\"content_type\":\"image/heic\"}]}")!;
+            var photo = Assert.Single(job.Photos);
+            Assert.Equal("image/heic", photo.ContentType);
+            Assert.Equal("bb", photo.Sha256);
+
+            var older = Newtonsoft.Json.JsonConvert.DeserializeObject<CaughtOnDash.Worker.Models.JobDto>(
+                "{\"job_id\":\"00000000-0000-0000-0000-000000000001\"}")!;
+            Assert.Empty(older.Photos);
+        }
+
+        [Fact]
         public void OlderAnalyzersWithoutEvidenceStillParse()
         {
             var result = Assert.IsType<AnalyzerProtocol.ResultLine>(AnalyzerProtocol.Parse(

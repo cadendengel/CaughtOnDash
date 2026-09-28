@@ -69,6 +69,29 @@ namespace CaughtOnDash.Worker.Models
 
         [JsonProperty("analysis_status")]
         public string AnalysisStatus { get; set; } = "pending";
+
+        /// <summary>
+        /// Photos the owner attached to the incident report, for the analyzer
+        /// to read text from. Signed, short-lived URLs; empty for most videos.
+        /// </summary>
+        [JsonProperty("photos")]
+        public List<JobPhoto> Photos { get; set; } = new();
+    }
+
+    public class JobPhoto
+    {
+        [JsonProperty("artifact_id")]
+        public string ArtifactId { get; set; } = "";
+
+        [JsonProperty("url")]
+        public string Url { get; set; } = "";
+
+        /// <summary>Fingerprint taken at upload; the download must match it.</summary>
+        [JsonProperty("sha256")]
+        public string Sha256 { get; set; } = "";
+
+        [JsonProperty("content_type")]
+        public string ContentType { get; set; } = "";
     }
 
     /// <summary>A row in the review or run queue.</summary>
@@ -226,6 +249,10 @@ namespace CaughtOnDash.Worker.Models
         /// <summary>[x, y, w, h] in the video's pixels, for a crop; null otherwise.</summary>
         [JsonProperty("bbox")]
         public List<int>? Bbox { get; set; }
+
+        /// <summary>For a crop of an owner's photo, the photo it was cut from.</summary>
+        [JsonProperty("source_artifact_id")]
+        public string? SourceArtifactId { get; set; }
     }
 
     public class AnalysisEvent

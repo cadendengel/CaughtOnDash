@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
 from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
@@ -17,7 +18,9 @@ from apps.incidents.models import (
     IncidentReport,
     OtherParty,
 )
-from apps.storage import signed_object_url
+from apps.incidents import photos
+from apps.incidents.services import sha256_hex
+from apps.storage import signed_object_url, upload_private_bytes
 from apps.store import MalformedJSON, current_clerk_user_id, parse_json_request_strict, response_envelope
 from apps.videos.models import Video
 
@@ -33,17 +36,29 @@ def _not_found() -> JsonResponse:
     return JsonResponse({'detail': 'Not found.'}, status=404)
 
 
-def _serialize_artifact(artifact: EvidenceArtifact) -> dict:
+def _sign(path: str, artifact_id) -> str | None:
+    if not path:
+        return None
     try:
-        url = signed_object_url(artifact.storage_path)
+        return signed_object_url(path)
     except Exception as exc:
         # One unsignable image must not take down the whole report.
-        logger.warning('Could not sign artifact %s: %s', artifact.id, exc)
-        url = None
+        logger.warning('Could not sign artifact %s: %s', artifact_id, exc)
+        return None
+
+
+def _serialize_artifact(artifact: EvidenceArtifact) -> dict:
+    original_url = _sign(artifact.storage_path, artifact.id)
     return {
         'id': str(artifact.id),
         'kind': artifact.kind,
-        'url': url,
+        # What to display: the JPEG preview when there is one (a HEIC
+        # original will not render), otherwise the file itself.
+        'url': _sign(artifact.preview_path, artifact.id) if artifact.preview_path else original_url,
+        'original_url': original_url,
+        'original_filename': artifact.original_filename,
+        'content_type': artifact.content_type,
+        'metadata': artifact.metadata,
         'sha256': artifact.sha256,
         't_seconds': artifact.t_seconds,
         'bbox': artifact.bbox,
@@ -181,3 +196,75 @@ def incident_view(request, video_id):
         return JsonResponse({'detail': 'Incident storage is not configured on this server.'}, status=503)
 
     return JsonResponse(response_envelope('incident-report', payload))
+
+
+@csrf_exempt
+def incident_photos_view(request, video_id):
+    """POST /api/videos/<video_id>/incident/photos/ -- add a photo to the report.
+
+    Multipart, field `file`: JPEG, PNG or HEIC, judged by content. The
+    original is stored untouched and fingerprinted; a JPEG preview goes
+    beside it; EXIF is read now. Text on the photo is read by the next worker
+    to analyze this video.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'detail': 'Method not allowed.', 'allowed': ['POST']}, status=405)
+
+    caller = current_clerk_user_id(request)
+    if not caller:
+        return JsonResponse({'detail': 'Authentication required.'}, status=401)
+    video = Video.objects.filter(id=video_id, deleted_at__isnull=True).first()
+    if video is None:
+        return _not_found()
+    is_owner = caller == video.owner_clerk_user_id
+    is_admin = AdminUser.is_admin_for(caller)
+    if not (is_owner or is_admin):
+        return _not_found()
+
+    upload = request.FILES.get('file')
+    if upload is None:
+        return JsonResponse({'detail': 'file is required.'}, status=400)
+    if upload.size > photos.MAX_PHOTO_BYTES:
+        return JsonResponse({'detail': f'Photos are limited to {photos.MAX_PHOTO_BYTES // (1024 * 1024)} MB.'}, status=400)
+
+    data = upload.read()
+    sniffed = photos.sniff(data)
+    if sniffed is None:
+        return JsonResponse({'detail': 'Only JPEG, PNG and HEIC photos are accepted.'}, status=400)
+    content_type, extension = sniffed
+
+    try:
+        processed = photos.process(data)
+    except Exception as exc:
+        logger.warning('Photo for %s could not be read: %s', video.id, exc)
+        return JsonResponse({'detail': 'The photo could not be read. It may be damaged.'}, status=400)
+
+    artifact_id = uuid.uuid4()
+    original_path = f'{video.id}/photos/{artifact_id}.{extension}'
+    preview_path = f'{video.id}/photos/{artifact_id}.preview.jpg'
+    try:
+        upload_private_bytes(original_path, data, content_type)
+        upload_private_bytes(preview_path, processed['preview'], 'image/jpeg')
+    except Exception as exc:
+        logger.error('Photo upload failed for %s: %s', video.id, exc)
+        return JsonResponse({'detail': 'Storage rejected the photo.'}, status=502)
+
+    metadata = processed['metadata']
+    taken = metadata.get('taken_at', '')
+    artifact = EvidenceArtifact.objects.create(
+        id=artifact_id,
+        video=video,
+        kind='photo',
+        storage_path=original_path,
+        preview_path=preview_path,
+        content_type=content_type,
+        sha256=sha256_hex(data),
+        width=metadata.get('width', 0),
+        height=metadata.get('height', 0),
+        original_filename=(upload.name or '')[:255],
+        label=f'Photo {taken}'.strip()[:255],
+        metadata={'exif': {k: v for k, v in metadata.items() if k not in ('width', 'height')}},
+    )
+    IncidentAccessLog.objects.create(
+        video=video, clerk_user_id=caller, action='update', as_admin=is_admin and not is_owner)
+    return JsonResponse(response_envelope('incident-photo', {'artifact': _serialize_artifact(artifact)}), status=201)

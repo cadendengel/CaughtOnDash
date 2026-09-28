@@ -387,6 +387,10 @@ namespace CaughtOnDash.Worker.Services
                 form.Add(new StringContent(analyzerVersion ?? ""), "analyzer_version");
                 form.Add(new StringContent(artifact.Width.ToString(CultureInfo.InvariantCulture)), "width");
                 form.Add(new StringContent(artifact.Height.ToString(CultureInfo.InvariantCulture)), "height");
+                if (!string.IsNullOrEmpty(artifact.SourceArtifactId))
+                {
+                    form.Add(new StringContent(artifact.SourceArtifactId), "source_artifact_id");
+                }
                 if (artifact.Bbox is { Count: 4 } bbox)
                 {
                     form.Add(new StringContent(JsonConvert.SerializeObject(bbox)), "bbox");

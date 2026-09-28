@@ -232,6 +232,29 @@ reported and skipped.
   80 mph, N30.2286 W97.6197 -- the case timeline, to the overlay's 1-second
   and 1-arcsecond resolution. About 0.4 s per sampled second, capped at 120
   samples.
+- *Photo text* (`private.photo_text`, per photo): the owner's photos from the
+  incident report, passed as `--photo ID=PATH` (HEIC via pillow-heif). The
+  dashcam never resolves writing on another vehicle at 720p; a phone photo
+  does. Each photo is read in tiles at two scales, and yields:
+  - `identifiers` -- USDOT and MC numbers (with FMCSA SAFER lookup links),
+    phone numbers, web domains (flagged `may_be_truncated` when they start
+    their line), and US state names;
+  - `legible` -- lines that look like signage: mostly capitals, real word
+    lengths, near-duplicate readings collapsed;
+  - `plates` -- plate-shaped rectangles read with several dark-pixel masks and
+    combined character by character. Characters from a confusable set (S 5 8 9,
+    0 O D Q, 1 I 7, 2 Z, B 8, G 6) are listed in `uncertain` with what they
+    could be, and each candidate's crop is written as a `plate_crop` artifact
+    tied to its photo. A plate reading is a lead to check against the crop,
+    never an answer.
+
+  On the case photo: Utah, cotrucks.com (truncated -- the sign says
+  barcotrucks.com), RENT-A-TRUCK, COMMERCIAL DUTY, BARCQ, and the plate as
+  `S39 SCA` with position 4 flagged "could be 5, 8, 9 or O" -- the plate says
+  S39 9CA, and every read agreed on S there, which is why confusable
+  characters are flagged even when the reads agree. About 15 s per photo.
+  Photos are read when the video is next analyzed: after adding photos to a
+  report, request analysis again.
 
 ## Tests
 

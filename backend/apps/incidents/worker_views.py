@@ -58,6 +58,20 @@ def _bbox(value) -> list[int] | None:
     return None
 
 
+def _source_photo(video, value) -> dict:
+    """Link a crop to the owner's photo it was cut from -- only if that
+    photo belongs to this video."""
+    if not value:
+        return {}
+    try:
+        source = uuid.UUID(str(value))
+    except ValueError:
+        return {}
+    if EvidenceArtifact.objects.filter(id=source, video=video, kind='photo').exists():
+        return {'source_artifact_id': str(source)}
+    return {}
+
+
 def _optional_int(value) -> int:
     try:
         return max(0, int(value))
@@ -133,5 +147,6 @@ def upload_artifact_view(request, job_id):
         height=_optional_int(request.POST.get('height')),
         label=(request.POST.get('label') or '')[:255],
         analyzer_version=(request.POST.get('analyzer_version') or '')[:50],
+        metadata=_source_photo(video, request.POST.get('source_artifact_id')),
     )
     return JsonResponse({'success': True, 'artifact_id': str(artifact_id), 'sha256': digest})

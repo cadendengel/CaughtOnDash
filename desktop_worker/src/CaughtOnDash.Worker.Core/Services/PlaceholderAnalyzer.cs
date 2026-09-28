@@ -12,9 +12,14 @@ namespace CaughtOnDash.Worker.Services
         /// Where the analyzer may write evidence images. The worker uploads
         /// them privately and deletes the directory afterwards.
         /// </param>
+        /// <param name="photos">
+        /// The owner's photos, as artifact id to local path, for the analyzer to
+        /// read text from. Null or empty for most videos.
+        /// </param>
         Task<AnalysisResult> AnalyzeAsync(
             string videoPath, string outputDirectory,
-            IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken);
+            IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken,
+            IReadOnlyDictionary<string, string>? photos = null);
 
         /// <summary>
         /// The analyzer's version string -- the same value it stamps into each
@@ -40,7 +45,8 @@ namespace CaughtOnDash.Worker.Services
 
         public async Task<AnalysisResult> AnalyzeAsync(
             string videoPath, string outputDirectory,
-            IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken)
+            IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken,
+            IReadOnlyDictionary<string, string>? photos = null)
         {
             Logger.Log($"Starting placeholder analysis of: {videoPath}");
 

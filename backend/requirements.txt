@@ -5,6 +5,10 @@ python-dotenv>=1.0,<2.0
 PyJWT[crypto]>=2.8,<3.0
 # Named directly, not left to PyJWT's extra: incident fields are encrypted with it.
 cryptography>=42.0
+# Owner photos on incident reports: EXIF and a JPEG preview, including from
+# iPhone HEIC, which browsers cannot display.
+Pillow>=10.0
+pillow-heif>=0.16
 psycopg[binary]>=3.1,<4.0
 dj-database-url>=2.1,<3.0
 requests>=2.0,<3.0

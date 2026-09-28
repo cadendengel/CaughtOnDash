@@ -42,6 +42,15 @@ namespace CaughtOnDash.Worker.Services
             return Path.Combine(_workDirectory, $"artifacts_{videoId}");
         }
 
+        /// <summary>
+        /// Per-job directory for the owner's photos. Separate from the artifact
+        /// directory: these are inputs, and nothing in here is uploaded back.
+        /// </summary>
+        public string GetPhotoDirectory(Guid videoId)
+        {
+            return Path.Combine(_workDirectory, $"photos_{videoId}");
+        }
+
         public void CleanupDirectory(string directory)
         {
             try

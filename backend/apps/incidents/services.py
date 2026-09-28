@@ -109,6 +109,8 @@ def record_private_evidence(video_id, private: dict | None) -> None:
     if not isinstance(private, dict):
         return
 
+    record_photo_text(video_id, private.get('photo_text'))
+
     now = timezone.now()
     fields = {}
     for key in ('provenance', 'moments', 'overlay'):
@@ -123,3 +125,64 @@ def record_private_evidence(video_id, private: dict | None) -> None:
     for name, value in fields.items():
         setattr(record, name, value)
     record.save(update_fields=list(fields))
+
+
+# Text read from each photo, per photo, as the analyzer reports it. Bounded
+# so a runaway OCR result cannot bloat the row.
+PHOTO_TEXT_MAX_ITEMS = 200
+
+
+def photos_for_worker(video_id) -> list[dict]:
+    """The report's photos, as the worker needs them: a short-lived signed URL
+    and the fingerprint to check the download against."""
+    from apps.incidents.models import EvidenceArtifact
+    from apps.storage import signed_object_url
+
+    photos = []
+    for artifact in EvidenceArtifact.objects.filter(video_id=video_id, kind='photo').order_by('created_at'):
+        try:
+            url = signed_object_url(artifact.storage_path, expires_in=60 * 60)
+        except Exception as exc:
+            logger.warning('Could not sign photo %s for the worker: %s', artifact.id, exc)
+            continue
+        photos.append({
+            'artifact_id': str(artifact.id),
+            'url': url,
+            'sha256': artifact.sha256,
+            'content_type': artifact.content_type,
+        })
+    return photos
+
+
+def record_photo_text(video_id, photo_text) -> int:
+    """Store what the analyzer read on each photo. Returns photos updated.
+
+    Keyed by artifact id; ids that are not this video's photos are ignored,
+    so a worker cannot write into another video's evidence.
+    """
+    from apps.incidents.models import EvidenceArtifact
+
+    if not isinstance(photo_text, dict):
+        return 0
+    updated = 0
+    for artifact in EvidenceArtifact.objects.filter(
+            video_id=video_id, kind='photo', id__in=[k for k in photo_text if _is_uuid(k)]):
+        found = photo_text.get(str(artifact.id))
+        if not isinstance(found, dict):
+            continue
+        artifact.metadata = {**artifact.metadata, 'text': {
+            key: value[:PHOTO_TEXT_MAX_ITEMS] if isinstance(value, list) else value
+            for key, value in found.items()
+        }, 'text_at': timezone.now().isoformat()}
+        artifact.save(update_fields=['metadata'])
+        updated += 1
+    return updated
+
+
+def _is_uuid(value) -> bool:
+    import uuid
+    try:
+        uuid.UUID(str(value))
+        return True
+    except ValueError:
+        return False

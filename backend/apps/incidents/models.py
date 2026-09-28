@@ -180,6 +180,12 @@ class EvidenceArtifact(models.Model):
     height = models.IntegerField(default=0)
     label = models.CharField(max_length=255, blank=True, default='')
     analyzer_version = models.CharField(max_length=50, blank=True, default='')
+    # For an owner's photo: the uploaded file's name, a browser-viewable JPEG
+    # beside the untouched original (HEIC does not display), and what was
+    # read from it -- EXIF on upload, text once a worker has looked.
+    original_filename = models.CharField(max_length=255, blank=True, default='')
+    preview_path = models.CharField(max_length=512, blank=True, default='')
+    metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
