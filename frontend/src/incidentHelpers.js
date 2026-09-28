@@ -56,6 +56,9 @@ export const mapLinks = (lat, lon) => [
   ['Mapillary street imagery', `https://www.mapillary.com/app/?lat=${lat}&lng=${lon}&z=17`],
 ]
 
+// Scores come from the analyzer at three decimals; two are all a person needs.
+export const formatScore = (score) => (Number.isFinite(Number(score)) ? Number(score).toFixed(2) : '--')
+
 export const formatSeconds = (seconds) => {
   const total = Number(seconds) || 0
   const minutes = Math.floor(total / 60)

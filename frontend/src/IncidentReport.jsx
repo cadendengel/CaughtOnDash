@@ -17,6 +17,7 @@ import {
   OTHER_PARTY_FIELDS,
   formatClock,
   formatPlace,
+  formatScore,
   formatSeconds,
   latestAttempt,
   mapLinks,
@@ -228,7 +229,7 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
       <article key={`${moment.t_seconds}`} className="mt-4 grid gap-3 border-t border-ink/10 pt-4" data-testid="moment">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h4 className="font-heading text-lg text-ink">Moment {number} · {formatSeconds(moment.t_seconds)}</h4>
-          <span className={`${BADGE} bg-ink/[0.06] text-ink`}>score {moment.score}</span>
+          <span className={`${BADGE} bg-ink/[0.06] text-ink`}>score {formatScore(moment.score)}</span>
         </div>
         <dl className={FACTS}>
           <dt>Dashcam clock</dt><dd>{formatClock(seen.clock) || 'not read'}</dd>
@@ -248,8 +249,12 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
             <>
               <dt>Closest vehicle</dt>
               <dd>
-                {moment.closest_vehicle.label} at {formatSeconds(moment.closest_vehicle.t_seconds)}, filling{' '}
-                {Math.round(moment.closest_vehicle.largest_frame_share * 100)}% of the frame
+                A vehicle filling {Math.round(moment.closest_vehicle.largest_frame_share * 100)}% of the frame at{' '}
+                {formatSeconds(moment.closest_vehicle.t_seconds)}
+                {/* The detector has no class for work or utility trucks -- it
+                    called the case's service truck a bus -- so its class is
+                    shown as a guess, not as what the vehicle is. */}
+                <span className="text-muted"> (detector's guess: {moment.closest_vehicle.label})</span>
               </dd>
             </>
           ) : null}
@@ -406,7 +411,7 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
         {(moments.possible || []).length ? (
           <p className="mt-4 text-[0.9rem] text-body">
             <span className="font-semibold">Worth a glance: </span>
-            {moments.possible.map((m) => `${formatSeconds(m.t_seconds)} (${m.score})`).join(', ')}
+            {moments.possible.map((m) => `${formatSeconds(m.t_seconds)} (${formatScore(m.score)})`).join(', ')}
           </p>
         ) : null}
         {current.find((a) => a.kind === 'contact_sheet') ? (

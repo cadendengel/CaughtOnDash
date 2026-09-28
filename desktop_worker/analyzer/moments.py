@@ -66,6 +66,10 @@ KEY_FRAME_OFFSETS = (-0.5, 0.0, 0.5)
 APPROACH_SPAN_SECONDS = 2.0
 APPROACH_FPS = 5.0
 VEHICLE_CLASSES = frozenset({'car', 'truck', 'bus', 'motorcycle'})
+# Below this share of the frame the "closest" vehicle is just the biggest
+# thing in a distant scene -- 3% on the first production QA clip, which told a
+# reader nothing. The collision's truck filled 40%.
+MIN_CLOSEST_SHARE = 0.10
 
 
 # --- Pure scoring -----------------------------------------------------------
@@ -294,6 +298,8 @@ def closest_approach(capture, model, device: str, moment: dict, metadata: dict, 
     if not seen:
         return None
     largest = max(share for share, *_ in seen)
+    if largest < MIN_CLOSEST_SHARE:
+        return None
     # Among detections at least 80% as large as the largest, the sharpest.
     share, sharpness, label, confidence, at, (x1, y1, x2, y2), frame = max(
         (s for s in seen if s[0] >= largest * 0.8), key=lambda s: s[1])

@@ -139,6 +139,13 @@ class SummarizeTests(unittest.TestCase):
         self.assertNotIn('dashcam', summary)
         self.assertIn('576x1024 clip', summary)
 
+    def test_low_contrast_is_described_as_what_it_could_be(self):
+        found = _detection({'car': 8}, 8)
+        found['appearance'] = {'conditions': ['low contrast']}
+        summary = detection.summarize(self.METADATA, found)
+        self.assertIn('Shot in low contrast (fog, snow or an overcast sky).', summary)
+        self.assertNotIn('Shot in fog', summary)
+
     def test_says_so_when_nothing_was_detected(self):
         summary = detection.summarize(self.METADATA, _detection({}, 8))
         self.assertIn('No recognisable objects', summary)
@@ -390,19 +397,27 @@ class ConditionsTests(unittest.TestCase):
     def test_the_dimmest_daylight_clip_is_not_low_light(self):
         self.assertEqual(self._conditions(self.NEAREST_DAY), [])
 
-    def test_whiteout_is_fog(self):
-        self.assertEqual(self._conditions(self.WHITEOUT), ['fog'])
+    def test_whiteout_is_low_contrast(self):
+        self.assertEqual(self._conditions(self.WHITEOUT), ['low contrast'])
 
-    def test_bright_snow_with_contrast_is_not_fog(self):
+    def test_overcast_is_low_contrast_and_not_called_fog(self):
+        """The 2026-09-26 highway clip under a flat grey sky: bright, and at
+        58.6 as washed out as the whiteout clip. It is low contrast; whether
+        that is fog is not something this measures."""
+        conditions = self._conditions((142.2, 58.6, 23.7))
+        self.assertEqual(conditions, ['low contrast'])
+        self.assertNotIn('fog', conditions)
+
+    def test_bright_snow_with_contrast_is_not_low_contrast(self):
         """Brighter than the whiteout clip, but the detail is still there."""
         self.assertEqual(self._conditions(self.SNOW_BRIGHT), [])
 
     def test_ordinary_daylight_gets_no_condition(self):
         self.assertEqual(self._conditions(self.ORDINARY_DAY), [])
 
-    def test_a_dark_clip_is_never_called_fog(self):
+    def test_a_dark_clip_is_never_called_low_contrast(self):
         """Darkness lowers contrast on its own, which says nothing about fog."""
-        self.assertNotIn('fog', self._conditions(self.NIGHT_BRIDGE))
+        self.assertNotIn('low contrast', self._conditions(self.NIGHT_BRIDGE))
 
     def test_the_median_decides_not_a_single_frame(self):
         """One tunnel, or one blast of headlights, must not relabel a clip."""

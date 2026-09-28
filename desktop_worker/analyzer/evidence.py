@@ -39,6 +39,7 @@ ISO6709 = re.compile(r'^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)')
 CONTACT_SHEET_MAX_TILES = 24
 CONTACT_SHEET_TILE_WIDTH = 320
 CONTACT_SHEET_JPEG_QUALITY = 85
+SHEET_BACKGROUND = 238
 
 
 # --- Provenance -------------------------------------------------------------
@@ -220,7 +221,9 @@ def write_sheet(frames: list, target: str, max_columns: int = 6,
 
     columns, rows = grid_shape(len(tiles), max_columns)
     tile_height = tiles[0].shape[0]
-    sheet = np.zeros((rows * tile_height, columns * tile_width, 3), dtype=np.uint8)
+    # Unused cells in the last row are a light neutral grey rather than black,
+    # which read as missing frames on the report page.
+    sheet = np.full((rows * tile_height, columns * tile_width, 3), SHEET_BACKGROUND, dtype=np.uint8)
     for position, tile in enumerate(tiles):
         row, column = divmod(position, columns)
         tile = tile[:tile_height]

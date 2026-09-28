@@ -185,6 +185,20 @@ class ClosestApproachTests(unittest.TestCase):
         self.assertEqual(result['crop'].shape[:2], (h, w))
         self.assertLessEqual(observation['frame_share'], observation['largest_frame_share'])
 
+    def test_a_distant_vehicle_is_not_reported_as_the_closest(self):
+        import cv2
+
+        class Tiny:
+            def predict(self, frame, **kwargs):
+                return [_Prediction([_Box(0, 0.9, (5, 5, 25, 20))])]   # ~1.6% of the frame
+
+        capture = cv2.VideoCapture(self.path)
+        try:
+            self.assertIsNone(moments.closest_approach(
+                capture, Tiny(), 'cpu', {'t_seconds': 3.0}, self.metadata, None))
+        finally:
+            capture.release()
+
     def test_no_vehicles_means_no_observation(self):
         import cv2
 
