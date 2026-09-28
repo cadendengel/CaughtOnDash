@@ -202,6 +202,9 @@ class IncidentAccessLog(models.Model):
     ACTION_CHOICES = (
         ('view', 'Viewed'),
         ('update', 'Updated'),
+        # A download of everything, other party included: the access that
+        # matters most, so it is named rather than folded into 'view'.
+        ('export', 'Exported'),
     )
 
     video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='incident_access_log')

@@ -7,7 +7,8 @@ import uuid
 
 from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.accounts.models import AdminUser
@@ -18,9 +19,9 @@ from apps.incidents.models import (
     IncidentReport,
     OtherParty,
 )
-from apps.incidents import photos
+from apps.incidents import export, photos
 from apps.incidents.services import sha256_hex
-from apps.storage import signed_object_url, upload_private_bytes
+from apps.storage import download_private_bytes, signed_object_url, upload_private_bytes
 from apps.store import MalformedJSON, current_clerk_user_id, parse_json_request_strict, response_envelope
 from apps.videos.models import Video
 
@@ -268,3 +269,46 @@ def incident_photos_view(request, video_id):
     IncidentAccessLog.objects.create(
         video=video, clerk_user_id=caller, action='update', as_admin=is_admin and not is_owner)
     return JsonResponse(response_envelope('incident-photo', {'artifact': _serialize_artifact(artifact)}), status=201)
+
+
+def incident_export_view(request, video_id):
+    """GET /api/videos/<video_id>/incident/export/ -- the evidence package.
+
+    Owner and admins only, and logged as its own action: it carries the other
+    party's details off the site in one file.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'detail': 'Method not allowed.', 'allowed': ['GET']}, status=405)
+
+    caller = current_clerk_user_id(request)
+    if not caller:
+        return JsonResponse({'detail': 'Authentication required.'}, status=401)
+    video = Video.objects.filter(id=video_id, deleted_at__isnull=True).first()
+    if video is None:
+        return _not_found()
+    is_owner = caller == video.owner_clerk_user_id
+    is_admin = AdminUser.is_admin_for(caller)
+    if not (is_owner or is_admin):
+        return _not_found()
+
+    IncidentAccessLog.objects.create(
+        video=video, clerk_user_id=caller, action='export', as_admin=is_admin and not is_owner)
+
+    try:
+        payload = _report_payload(video)
+    except ImproperlyConfigured as exc:
+        logger.error('Incident export refused for %s: %s', video.id, exc)
+        return JsonResponse({'detail': 'Incident storage is not configured on this server.'}, status=503)
+
+    paths = dict(EvidenceArtifact.objects.filter(video=video).values_list('id', 'storage_path'))
+    for artifact in payload['artifacts']:
+        artifact['storage_path'] = paths.get(uuid.UUID(artifact['id']), '')
+
+    data, missing = export.build_zip(video, payload, download_private_bytes)
+    if missing:
+        logger.warning('Export for %s left out %d file(s)', video.id, len(missing))
+
+    response = HttpResponse(data, content_type='application/zip')
+    stamp = timezone.now().strftime('%Y%m%d-%H%M%S')
+    response['Content-Disposition'] = f'attachment; filename="incident-{video.id}-{stamp}.zip"'
+    return response
