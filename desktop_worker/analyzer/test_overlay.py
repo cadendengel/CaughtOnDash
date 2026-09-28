@@ -120,5 +120,22 @@ class TrackTests(unittest.TestCase):
         self.assertEqual(built['track'], [])
 
 
+class ConsistencyTests(unittest.TestCase):
+    def test_a_real_overlay_frame_has_two_of_clock_position_speed(self):
+        self.assertTrue(overlay.is_overlay_frame(overlay.readings_from(CLEAN)))
+        self.assertTrue(overlay.is_overlay_frame([{'speed': 80, 'clock': 'x'}]))
+
+    def test_stray_text_is_not_an_overlay_frame(self):
+        # What a QA clip without an overlay produced: a lone "7 MPH".
+        self.assertFalse(overlay.is_overlay_frame(overlay.readings_from('7MPH')))
+        self.assertFalse(overlay.is_overlay_frame([]))
+
+    def test_the_collision_clip_passes_and_the_qa_clip_does_not(self):
+        self.assertTrue(overlay.is_consistent_overlay(49, 49))
+        self.assertTrue(overlay.is_consistent_overlay(25, 49))   # heavy OCR misses still pass
+        self.assertFalse(overlay.is_consistent_overlay(2, 20))
+        self.assertFalse(overlay.is_consistent_overlay(0, 0))
+
+
 if __name__ == '__main__':
     unittest.main()

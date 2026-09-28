@@ -50,6 +50,7 @@ NEIGHBOURS = 3
 MEDIAN_WINDOW = 5
 MAX_SPEED = 250                       # in the overlay's own unit
 MAX_AMBIGUOUS = 3                     # S-for-8/9 slips expanded per line
+MIN_OVERLAY_SHARE = 0.5               # share of frames that must read as an overlay
 
 WINDOWS_TESSERACT = (
     r'C:\Program Files\Tesseract-OCR\tesseract.exe',
@@ -294,6 +295,19 @@ def build_track(samples: list[tuple[float, list[dict]]]) -> dict:
     return {'clock': clock, 'track': track, 'corrected': corrected}
 
 
+def is_overlay_frame(readings: list[dict]) -> bool:
+    """A frame whose reading looks like a dashcam overlay: at least two of
+    clock, position and speed. One field alone is too easily found in stray
+    text -- a sign, a watermark, the edge of the dash."""
+    return any(sum(key in reading for key in ('clock', 'lat', 'speed')) >= 2 for reading in readings)
+
+
+def is_consistent_overlay(overlay_frames: int, frames_read: int) -> bool:
+    """An overlay is on every frame; OCR misses some. Half is the bar: the
+    2026-09-26 clip reads on 49 of 49, a QA clip with stray text on 2 of 20."""
+    return frames_read > 0 and overlay_frames / frames_read >= MIN_OVERLAY_SHARE
+
+
 def clock_at(clock: dict, t_seconds: float) -> str:
     start = datetime.fromisoformat(clock['start'])
     return (start + timedelta(seconds=t_seconds)).isoformat(timespec='seconds')
@@ -450,6 +464,19 @@ def read(path: str, metadata: dict, log=lambda message: None) -> dict:
             samples.append((t, readings))
     finally:
         capture.release()
+
+    consistent = sum(1 for _, readings in samples if is_overlay_frame(readings))
+    if not is_consistent_overlay(consistent, len(samples)):
+        # Text somewhere in the band is not a dashcam overlay. A real one is
+        # on every frame; stray text read as "7 MPH" on 2 of 20 frames is not.
+        log(f'Overlay: no consistent overlay ({consistent} of {len(samples)} frames looked like one)')
+        return {
+            'available': False,
+            'reason': f'text in the {band} band read as an overlay on only {consistent} of '
+                      f'{len(samples)} frames, so it is not treated as one',
+            'band': band,
+            'samples_read': len(samples),
+        }
 
     built = build_track(samples)
     speeds = [p['speed'] for p in built['track'] if 'speed' in p]
