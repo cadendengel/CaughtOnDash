@@ -182,6 +182,24 @@ reported and skipped.
   should be preserved before loop recording overwrites it.
 - *Contact sheet*, written to `--out-dir`: up to 24 evenly spaced frames, one
   per second on short clips, letterbox-cropped and stamped with their time.
+- *Candidate moments* (`private.moments`): when something probably happened.
+  Two signals that fail differently -- the audio *peak* per 100 ms against the
+  surrounding three seconds (an impact is brief; road noise is loud but
+  steady), and a sudden change in whole-image shift at 10 fps (a jolted mount).
+  Agreement within a second scores high; one signal alone must be strong.
+  Each moment gets a 20-frame burst sheet over two seconds, three full-res
+  frames, and -- when the detection model is loaded -- the closest vehicle
+  measured and cropped with its box in the file's pixels. Weaker candidates
+  are listed as `possible`, without images. `signals` says which were
+  measured, so no moments on a muted clip is not read as "nothing happened".
+
+  Calibrated on one labelled clip, the 2026-09-26 collision: it reports one
+  moment at 26.1 s (score 1.0) -- the audio peak the manual investigation
+  found, -12.7 dBFS over a -19.3 median -- and lists a close car-carrier pass
+  at 15.7 s as possible (0.58). With the audio stripped, the jolt alone still
+  finds 26.2 s; a 20 s stretch with a semi passing close finds nothing. The
+  closest-vehicle step is exercised only with a stand-in model in tests. Label
+  more clips before trusting the thresholds.
 
 ## Tests
 

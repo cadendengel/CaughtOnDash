@@ -31,7 +31,7 @@ import os
 import sys
 import time
 
-ANALYZER_VERSION = 'detect-4.1'
+ANALYZER_VERSION = 'detect-4.2'
 
 
 def emit(payload: dict) -> None:
@@ -203,6 +203,28 @@ def main(argv: list[str]) -> int:
     except ImportError as exc:
         log(f'Evidence skipped, missing dependency: {exc}')
         private, artifacts = {}, []
+
+    # Candidate incident moments. Private too: "something happened at 0:26"
+    # belongs with the evidence, not on the public video. Never fails the job.
+    try:
+        import moments
+
+        model, device = None, 'cpu'
+        if not args.no_detect:
+            try:
+                model, device = detection.load_model()
+            except Exception as exc:
+                log(f'Closest-vehicle measurement skipped: {exc}')
+        progress('analyzing', 89)
+        private['moments'], moment_artifacts = moments.find(
+            args.video_path, metadata, args.out_dir, model=model, device=device, log=log)
+        artifacts.extend(moment_artifacts)
+        found = private['moments'].get('moments') or []
+        log(f'Found {len(found)} candidate moment(s)'
+            + (': ' + ', '.join(f"{m['t_seconds']}s ({m['score']})" for m in found) if found else ''))
+    except Exception as exc:
+        log(f'Moment detection skipped: {exc}')
+        private['moments'] = {'available': False, 'reason': str(exc)}
 
     progress('uploading_results', 90)
 

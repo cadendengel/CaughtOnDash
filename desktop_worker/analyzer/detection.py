@@ -478,6 +478,25 @@ def build_events(
     return sorted(events, key=lambda event: (event['timestamp_seconds'], event['label']))
 
 
+def load_model(model_name: str = DEFAULT_MODEL):
+    """(model, device), refusing to fall back to other weights.
+
+    A missing custom checkpoint is a deployment mistake, not a runtime
+    condition to paper over. Falling back to COCO weights here would produce
+    plausible-looking results under the detect-2.0 version string, and the
+    requeue-outdated pass would mark the corpus current on a model it never
+    actually ran.
+    """
+    from ultralytics import YOLO
+
+    if not os.path.exists(model_name):
+        raise RuntimeError(
+            f'Detection weights not found: {model_name}. These are custom '
+            'weights and are not downloaded automatically -- see the "Model '
+            'weights" section of analyzer/README.md.')
+    return YOLO(model_name), resolve_device()
+
+
 def detect(
     video_path: str,
     metadata: dict,
@@ -494,20 +513,8 @@ def detect(
     genuine failure; the caller turns that into an exit code.
     """
     import cv2
-    from ultralytics import YOLO
 
-    device = resolve_device()
-    # A missing custom checkpoint is a deployment mistake, not a runtime
-    # condition to paper over. Falling back to COCO weights here would produce
-    # plausible-looking results under the detect-2.0 version string, and the
-    # requeue-outdated pass would mark the corpus current on a model it never
-    # actually ran.
-    if not os.path.exists(model_name):
-        raise RuntimeError(
-            f'Detection weights not found: {model_name}. These are custom '
-            'weights and are not downloaded automatically -- see the "Model '
-            'weights" section of analyzer/README.md.')
-    model = YOLO(model_name)
+    model, device = load_model(model_name)
 
     indices = frame_indices(
         metadata.get('frame_count', 0), metadata.get('fps', 0.0), sample_fps, max_frames)

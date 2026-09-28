@@ -222,6 +222,10 @@ namespace CaughtOnDash.Worker.Models
 
         [JsonProperty("height")]
         public int Height { get; set; }
+
+        /// <summary>[x, y, w, h] in the video's pixels, for a crop; null otherwise.</summary>
+        [JsonProperty("bbox")]
+        public List<int>? Bbox { get; set; }
     }
 
     public class AnalysisEvent

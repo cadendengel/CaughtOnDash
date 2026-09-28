@@ -126,6 +126,25 @@ class ArtifactUploadTests(TestCase):
         self.assertEqual(record.worker_sha256, 'a' * 64)
         self.assertEqual(record.custody_status, 'unverified')
 
+    def test_crop_bounding_box_is_kept_and_bad_ones_dropped(self):
+        self._upload(kind='vehicle_crop', bbox='[1480, 310, 420, 390]', t_seconds='25.7')
+        self._upload(kind='vehicle_crop', bbox='[1, 2, "x", 4]')
+        boxes = list(EvidenceArtifact.objects.order_by('created_at').values_list('bbox', 't_seconds'))
+        self.assertEqual(boxes, [([1480, 310, 420, 390], 25.7), (None, None)])
+
+    def test_moments_are_stored_privately_on_complete(self):
+        moments = {'available': True, 'moments': [{'t_seconds': 26.1, 'score': 1.0,
+                                                   'reasons': ['sharp sound at 26.1s']}], 'possible': []}
+        self.client.post(
+            f'/api/videos/worker/jobs/{self.video.id}/complete/',
+            data=json.dumps({'worker_id': 'w1', 'summary': 's', 'private': {'moments': moments}}),
+            content_type='application/json', **self.auth)
+
+        record = EvidenceRecord.objects.get(video=self.video)
+        self.assertEqual(record.moments, moments)
+        self.assertEqual(record.provenance, {})  # a key that was not sent is left alone
+        self.assertNotIn('sharp sound', self.client.get(f'/api/videos/{self.video.id}/').content.decode())
+
     @patch('apps.incidents.views.signed_object_url', return_value='https://signed.example/x')
     def test_report_lists_images_with_their_attempt(self, _sign):
         self._upload()

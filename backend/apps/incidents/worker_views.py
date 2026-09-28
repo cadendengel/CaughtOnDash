@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import uuid
@@ -43,6 +44,18 @@ def _optional_float(value) -> float | None:
         return float(value) if value not in (None, '') else None
     except (TypeError, ValueError):
         return None
+
+
+def _bbox(value) -> list[int] | None:
+    """[x, y, w, h] from the form's JSON, or None if absent or malformed."""
+    try:
+        box = json.loads(value) if value else None
+    except (TypeError, ValueError):
+        return None
+    if (isinstance(box, list) and len(box) == 4
+            and all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in box)):
+        return box
+    return None
 
 
 def _optional_int(value) -> int:
@@ -115,6 +128,7 @@ def upload_artifact_view(request, job_id):
         content_type=content_type,
         sha256=digest,
         t_seconds=_optional_float(request.POST.get('t_seconds')),
+        bbox=_bbox(request.POST.get('bbox')),
         width=_optional_int(request.POST.get('width')),
         height=_optional_int(request.POST.get('height')),
         label=(request.POST.get('label') or '')[:255],
