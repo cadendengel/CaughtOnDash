@@ -59,3 +59,56 @@ def upload_bytes_to_supabase(object_path: str, data: bytes, content_type: str | 
         ) from exc
 
     return public_object_url(SUPABASE_BUCKET, object_path)
+
+
+# Private evidence bucket. Separate from SUPABASE_BUCKET, which is public: frames
+# and crops of other people's vehicles must not be one guessable URL away. The
+# bucket has to be created as *private* in Supabase; objects in it are only
+# reachable through the signed URLs below.
+SUPABASE_EVIDENCE_BUCKET = os.getenv('SUPABASE_EVIDENCE_BUCKET', 'evidence')
+
+# Long enough to view a report and open its images, short enough that a link
+# copied out of the page stops working the same day.
+SIGNED_URL_SECONDS = 15 * 60
+
+
+def upload_private_bytes(object_path: str, data: bytes, content_type: str | None = None) -> str:
+    """Upload to the private evidence bucket. Returns the object path, not a URL.
+
+    There is no lasting URL to return: callers store the path and sign it at
+    read time.
+    """
+    if SUPABASE_SERVICE_KEY is None:
+        raise RuntimeError('SUPABASE_SERVICE_KEY is not configured')
+
+    resp = requests.post(
+        _storage_upload_endpoint(SUPABASE_EVIDENCE_BUCKET, object_path),
+        headers={'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}'},
+        files={'file': (object_path, data, content_type or 'application/octet-stream')},
+    )
+    if not resp.ok:
+        raise RuntimeError(
+            f'Failed uploading to private bucket "{SUPABASE_EVIDENCE_BUCKET}": '
+            f'{resp.status_code} {resp.text}'
+        )
+    return object_path
+
+
+def signed_object_url(object_path: str, expires_in: int = SIGNED_URL_SECONDS) -> str:
+    """A time-limited URL for one object in the private evidence bucket."""
+    if not SUPABASE_URL:
+        raise RuntimeError('SUPABASE_URL is not configured')
+    if SUPABASE_SERVICE_KEY is None:
+        raise RuntimeError('SUPABASE_SERVICE_KEY is not configured')
+
+    encoded_path = '/'.join(quote(part, safe='') for part in object_path.split('/'))
+    resp = requests.post(
+        f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/sign/{SUPABASE_EVIDENCE_BUCKET}/{encoded_path}",
+        headers={'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}'},
+        json={'expiresIn': expires_in},
+    )
+    if not resp.ok:
+        raise RuntimeError(f'Could not sign {object_path}: {resp.status_code} {resp.text}')
+
+    # Supabase answers with a path relative to /storage/v1.
+    return f"{SUPABASE_URL.rstrip('/')}/storage/v1{resp.json()['signedURL']}"

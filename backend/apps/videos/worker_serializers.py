@@ -142,6 +142,10 @@ class JobCompleteSerializer(serializers.Serializer):
     tags = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     events = AnalysisEventSerializer(many=True, required=False, default=list)
     metadata = serializers.JSONField(required=False, default=dict)
+    # SHA-256 of the downloaded file, for the chain of custody. Optional so a
+    # worker built before it existed can still complete jobs.
+    source_sha256 = serializers.RegexField(
+        r'^[0-9a-fA-F]{64}$', required=False, allow_blank=True, default='')
 
 
 class JobFailSerializer(serializers.Serializer):

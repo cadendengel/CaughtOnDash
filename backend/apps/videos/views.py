@@ -35,6 +35,7 @@ from apps.store import (
 
 def _auth_required() -> JsonResponse:
     return JsonResponse({'detail': 'Authentication required.'}, status=401)
+from apps.incidents.services import record_upload
 from apps.storage import upload_bytes_to_supabase
 from apps.videos.worker_services import decide_approval, open_analysis_run, request_analysis
 
@@ -346,10 +347,17 @@ def upload_file_view(request):
     object_path = f"{video.id}/{upload_file.name}"
     content_type = upload_file.content_type if hasattr(upload_file, 'content_type') else None
 
+    data = upload_file.read()
     try:
-        public_url = upload_bytes_to_supabase(object_path, upload_file.read(), content_type)
+        public_url = upload_bytes_to_supabase(object_path, data, content_type)
     except Exception as exc:
         return JsonResponse({'detail': f'Upload failed: {exc}'}, status=500)
+
+    # Fingerprinted from the same bytes that were stored, after storage
+    # accepted them, so the record never describes a file that is not there.
+    record_upload(
+        video, data, upload_file.name, content_type or '',
+        resolve_current_clerk_user_id(request) or video.owner_clerk_user_id)
 
     # A poster frame captured in the browser, if one came with the upload.
     # Analysis cannot supply this: approval happens first, and you cannot

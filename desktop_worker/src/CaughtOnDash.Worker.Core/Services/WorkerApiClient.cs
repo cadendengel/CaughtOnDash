@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -77,8 +78,12 @@ namespace CaughtOnDash.Worker.Services
         /// dashcam clips are large enough that ReadAsByteArrayAsync would be a
         /// problem. No Authorization header: playback URLs point at Supabase
         /// public storage, not at our API.
+        ///
+        /// Returns the SHA-256 of the bytes written, hashed as they stream past so
+        /// the file is never read twice. The backend compares it with the hash it
+        /// took at upload: a match proves the analysis ran on the uploaded file.
         /// </remarks>
-        public async Task DownloadVideo(
+        public async Task<string> DownloadVideo(
             string videoUrl,
             string destinationPath,
             IProgress<int>? progress = null,
@@ -112,6 +117,7 @@ namespace CaughtOnDash.Worker.Services
                 destinationPath, FileMode.Create, FileAccess.Write, FileShare.None,
                 bufferSize: 81920, useAsync: true);
 
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[81920];
             long received = 0;
             var lastReported = -1;
@@ -120,6 +126,7 @@ namespace CaughtOnDash.Worker.Services
             while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
             {
                 await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                hash.AppendData(buffer, 0, read);
                 received += read;
 
                 // Without Content-Length we cannot compute a percentage, so hold
@@ -142,7 +149,9 @@ namespace CaughtOnDash.Worker.Services
                 throw new InvalidOperationException($"Downloaded an empty file from {videoUrl}");
             }
 
-            Logger.Log($"Downloaded {received:N0} bytes to {destinationPath}");
+            var sha256 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+            Logger.Log($"Downloaded {received:N0} bytes to {destinationPath} (sha256 {sha256})");
+            return sha256;
         }
 
         public async Task<bool> GetWorkerStatus(CancellationToken cancellationToken = default)
@@ -320,7 +329,9 @@ namespace CaughtOnDash.Worker.Services
             return result?["success"] == true;
         }
 
-        public async Task<bool> CompleteJob(Guid jobId, string workerId, AnalysisResult analysisResult, CancellationToken cancellationToken = default)
+        public async Task<bool> CompleteJob(
+            Guid jobId, string workerId, AnalysisResult analysisResult, string sourceSha256 = "",
+            CancellationToken cancellationToken = default)
         {
             var completeRequest = new
             {
@@ -328,7 +339,10 @@ namespace CaughtOnDash.Worker.Services
                 summary = analysisResult.Summary,
                 tags = analysisResult.Tags,
                 events = analysisResult.Events,
-                metadata = analysisResult.Metadata
+                metadata = analysisResult.Metadata,
+                // The chain-of-custody check. Sent beside the metadata, not in
+                // it: metadata is public, and this is between worker and backend.
+                source_sha256 = sourceSha256
             };
 
             var result = await SendRequest<dynamic>("POST", $"/api/videos/worker/jobs/{jobId}/complete/", completeRequest, cancellationToken);

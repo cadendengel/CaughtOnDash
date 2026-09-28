@@ -332,7 +332,9 @@ def complete_job_view(request, job_id):
     events = validated_data.get('events', [])
     metadata = validated_data.get('metadata', {})
     
-    result = complete_job(job_id, worker_id, summary, tags, events, metadata)
+    result = complete_job(
+        job_id, worker_id, summary, tags, events, metadata,
+        source_sha256=validated_data.get('source_sha256', ''))
     
     if not result['success']:
         return JsonResponse(result, status=400)

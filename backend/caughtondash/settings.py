@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'apps.accounts',
     'apps.videos',
     'apps.feed',
+    'apps.incidents',
 ]
 
 MIDDLEWARE = [
@@ -251,6 +252,13 @@ CLERK_ISSUER = os.getenv('CLERK_ISSUER', '').strip().rstrip('/')
 # X-Clerk-User-Id header is ignored. Leave False until the frontend ships tokens,
 # then flip it -- the header is trivially forgeable and must not remain accepted.
 REQUIRE_CLERK_JWT = os.getenv('REQUIRE_CLERK_JWT', 'False').lower() in {'1', 'true', 'yes'}
+
+# Fernet keys for incident details (other-party names, licence numbers, notes),
+# comma-separated, newest first. Unset leaves the rest of the site working and
+# refuses to read or store those fields -- see apps/incidents/crypto.py.
+INCIDENT_ENCRYPTION_KEYS = [
+    key.strip() for key in os.getenv('INCIDENT_ENCRYPTION_KEYS', '').split(',') if key.strip()
+]
 
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-clerk-user-id',
