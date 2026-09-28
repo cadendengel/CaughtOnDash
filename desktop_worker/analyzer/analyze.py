@@ -6,7 +6,13 @@ Usage:
 Protocol -- one JSON object per line on stdout:
 
     {"type": "progress", "stage": "analyzing", "progress": 45}
-    {"type": "result", "summary": "...", "tags": [...], "events": [...], "metadata": {...}}
+    {"type": "result", "summary": "...", "tags": [...], "events": [...], "metadata": {...},
+     "private": {...}, "artifacts": [{"path": "...", "kind": "contact_sheet", ...}]}
+
+`metadata` is published with the video. `private` and `artifacts` are not: the
+worker sends them to the backend's private evidence store, because provenance
+can carry the uploader's GPS and the pictures show other people's vehicles.
+Artifact paths are always inside --out-dir.
 
 Exactly one `result` line, last. Anything human-readable goes to stderr, which
 the worker surfaces in its activity log. A non-zero exit fails the job and the
@@ -25,7 +31,7 @@ import os
 import sys
 import time
 
-ANALYZER_VERSION = 'detect-4.0'
+ANALYZER_VERSION = 'detect-4.1'
 
 
 def emit(payload: dict) -> None:
@@ -116,6 +122,8 @@ def main(argv: list[str]) -> int:
                         help='Ceiling on sampled frames regardless of duration')
     parser.add_argument('--confidence', type=float, default=None,
                         help='Minimum detection confidence (default 0.5)')
+    parser.add_argument('--out-dir', default=None,
+                        help='Directory for evidence images. Omitted, none are written.')
     args = parser.parse_args(argv)
 
     started = time.monotonic()
@@ -186,6 +194,16 @@ def main(argv: list[str]) -> int:
             log(f'Object detection failed: {exc}')
             return 5
 
+    # Private evidence. Never fails the job: see evidence.py.
+    try:
+        import evidence
+
+        progress('analyzing', 88)
+        private, artifacts = evidence.collect(args.video_path, metadata, args.out_dir, log=log)
+    except ImportError as exc:
+        log(f'Evidence skipped, missing dependency: {exc}')
+        private, artifacts = {}, []
+
     progress('uploading_results', 90)
 
     metadata['analyzer_version'] = ANALYZER_VERSION
@@ -200,6 +218,8 @@ def main(argv: list[str]) -> int:
         # a different problem, and nothing here claims to have solved it.
         'events': events,
         'metadata': metadata,
+        'private': private,
+        'artifacts': artifacts,
     })
     return 0
 

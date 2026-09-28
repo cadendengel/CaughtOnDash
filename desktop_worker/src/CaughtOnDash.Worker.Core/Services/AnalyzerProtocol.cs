@@ -77,6 +77,14 @@ namespace CaughtOnDash.Worker.Services
                         Tags = payload["tags"]?.ToObject<List<string>>() ?? new List<string>(),
                         Events = payload["events"]?.ToObject<List<AnalysisEvent>>() ?? new List<AnalysisEvent>(),
                         Metadata = payload["metadata"]?.ToObject<Dictionary<string, object>>() ?? new Dictionary<string, object>(),
+                        // Absent from analyzers older than detect-4.1, which is fine:
+                        // there is simply no private evidence to forward.
+                        PrivateData = payload["private"] is JObject privateData
+                            ? privateData.ToObject<Dictionary<string, object>>() ?? new Dictionary<string, object>()
+                            : new Dictionary<string, object>(),
+                        Artifacts = payload["artifacts"] is JArray artifacts
+                            ? artifacts.ToObject<List<AnalysisArtifact>>() ?? new List<AnalysisArtifact>()
+                            : new List<AnalysisArtifact>(),
                     }
                 };
             }

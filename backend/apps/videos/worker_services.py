@@ -7,7 +7,7 @@ from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
-from apps.incidents.services import record_worker_check
+from apps.incidents.services import record_private_evidence, record_worker_check
 from apps.videos.consumers import publish_analysis_state
 from apps.videos.models import AnalysisRun, Video, Worker
 from apps.videos.tagging import normalize_video_tags
@@ -401,11 +401,14 @@ def update_job_progress(job_id: uuid.UUID, worker_id: str, stage: str, progress:
 def complete_job(
     job_id: uuid.UUID, worker_id: str, summary: str, tags: list, events: list, metadata: dict,
     source_sha256: str = '',
+    private_evidence: dict | None = None,
 ) -> dict:
     """Mark a job as complete with analysis results.
 
     source_sha256 is the worker's fingerprint of the file it downloaded. Older
     workers do not send one, and the job completes the same either way.
+    private_evidence is the analyzer's private output (file provenance), stored
+    on the evidence record and never on the video.
     """
     try:
         job = Video.objects.select_for_update().get(id=job_id)
@@ -455,6 +458,7 @@ def complete_job(
     # Did the worker analyze the bytes that were uploaded? Recorded privately
     # on the evidence record, never in ai_metadata, which is public.
     record_worker_check(job_id, worker_id, source_sha256)
+    record_private_evidence(job_id, private_evidence)
 
     # After the save, so the push carries the merged tags and the final
     # duration rather than the state part-way through this function.

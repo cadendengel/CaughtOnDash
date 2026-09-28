@@ -64,10 +64,12 @@ default, so a misconfigured worker still runs rather than failing to start.
 
 1. Poll `/api/videos/worker/jobs/next/` every 15 seconds
 2. Claim it — the backend rejects a second claim on the same job
-3. Download the video to a temp working directory
+3. Download the video to a temp working directory, hashing it as it arrives
 4. Run the analyzer, forwarding progress to the backend as it goes
-5. Report results, or report the failure with the stage it happened at
-6. Delete the downloaded file, including after a failure
+5. Upload any evidence images the analyzer wrote to the backend's private store
+6. Report results — with the download's SHA-256 and the private provenance
+   beside the public metadata — or report the failure with its stage
+7. Delete the downloaded file and the evidence images, including after a failure
 
 A heartbeat goes out every 10 seconds throughout, carrying the current stage and
 progress. A worker that dies mid-job leaves its video in `processing`; the

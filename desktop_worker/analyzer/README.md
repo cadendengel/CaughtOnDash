@@ -41,6 +41,17 @@ speedup. Nothing else changes — the analyzer detects the device at runtime.
 
 `.venv/` is gitignored. Each host provisions its own.
 
+### ffmpeg (recommended)
+
+The analyzer calls `ffprobe` to read where a file came from (see *Private
+evidence* below). Without it analysis still runs and the report says provenance
+was unavailable.
+
+```bash
+brew install ffmpeg          # macOS
+winget install ffmpeg        # Windows -- open a new terminal afterwards
+```
+
 ## Point the worker at it
 
 In the worker's `appsettings.json` (also gitignored):
@@ -74,8 +85,15 @@ One JSON object per line on stdout:
 
 ```
 {"type":"progress","stage":"analyzing","progress":45}
-{"type":"result","summary":"...","tags":[],"events":[],"metadata":{...}}
+{"type":"result","summary":"...","tags":[],"events":[],"metadata":{...},
+ "private":{"provenance":{...}},"artifacts":[{"path":"...","kind":"contact_sheet",...}]}
 ```
+
+`metadata` is published with the video. `private` and `artifacts` are not: the
+worker sends them to the backend's private evidence store, readable only by the
+video's owner and admins. Anything that could identify a person or place goes
+there, never in `metadata`. Artifact paths are always inside `--out-dir`, and
+the worker refuses to upload any that are not.
 
 Exactly one `result`, last. Anything human-readable goes to stderr and is
 surfaced in the worker's activity log. Non-JSON lines on stdout are ignored, so
@@ -153,6 +171,18 @@ because it is a judgement about the upload rather than an observation of it.
 recognising objects, and inventing timestamps would be exactly the placeholder
 behaviour this replaced.
 
+**Private evidence** — reported under `private` and `artifacts`, never in
+`metadata`. Never fails a job: a missing ffprobe or unwritable directory is
+reported and skipped.
+
+- *Provenance*, from ffprobe: container tags, codecs, bitrates, embedded GPS if
+  any, and plain-language hints. An iPhone export is recognised by Apple's
+  `Core Media` handler, and a file written long after its recording began is
+  flagged -- both mean the dashcam's own original is still on its card and
+  should be preserved before loop recording overwrites it.
+- *Contact sheet*, written to `--out-dir`: up to 24 evenly spaced frames, one
+  per second on short clips, letterbox-cropped and stamped with their time.
+
 ## Tests
 
 ```bash
@@ -168,6 +198,7 @@ so these need no model, no weights and no video file.
 ./.venv/bin/python analyze.py video.mp4 --sample-fps 2 --max-frames 500
 ./.venv/bin/python analyze.py video.mp4 --confidence 0.4
 ./.venv/bin/python analyze.py video.mp4 --no-detect     # metadata only
+./.venv/bin/python analyze.py video.mp4 --out-dir out/  # also write evidence images
 ```
 
 `--no-detect` is the fallback for a host without the ML dependencies installed:

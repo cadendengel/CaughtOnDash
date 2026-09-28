@@ -36,6 +36,28 @@ namespace CaughtOnDash.Worker.Services
             return Path.Combine(_workDirectory, $"video_{videoId}.mp4");
         }
 
+        /// <summary>Per-job directory the analyzer writes evidence images into.</summary>
+        public string GetArtifactDirectory(Guid videoId)
+        {
+            return Path.Combine(_workDirectory, $"artifacts_{videoId}");
+        }
+
+        public void CleanupDirectory(string directory)
+        {
+            try
+            {
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                    Logger.Log($"Cleaned up artifact directory: {directory}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to cleanup artifact directory: {ex.Message}", Logger.LogLevel.Warning);
+            }
+        }
+
         public void CleanupVideoFile(string filePath)
         {
             try

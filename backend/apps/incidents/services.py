@@ -61,6 +61,9 @@ def record_upload(video, data: bytes, filename: str, content_type: str, uploaded
     record.worker_sha256 = ''
     record.worker_id = ''
     record.worker_checked_at = None
+    # Provenance described the old file too.
+    record.provenance = {}
+    record.provenance_at = None
     record.save()
     return record
 
@@ -68,8 +71,8 @@ def record_upload(video, data: bytes, filename: str, content_type: str, uploaded
 def record_worker_check(video_id, worker_id: str, sha256: str) -> str | None:
     """Store the worker's fingerprint of what it downloaded and analyzed.
 
-    Returns the resulting custody status, or None when there is nothing to
-    check against -- videos uploaded before fingerprinting existed. A mismatch
+    Returns the resulting custody status, or None when the worker sent no
+    usable hash (workers built before this existed). A mismatch
     does not fail the job: the analysis still describes a real file, and the
     report surfaces the mismatch for a person to judge.
     """
@@ -77,10 +80,10 @@ def record_worker_check(video_id, worker_id: str, sha256: str) -> str | None:
     if not SHA256_PATTERN.match(sha256):
         return None
 
-    record = EvidenceRecord.objects.filter(video_id=video_id).first()
-    if record is None:
-        return None
-
+    # A video uploaded before fingerprinting has no record yet. One is made so
+    # the worker's hash is kept -- it still says what was analyzed -- though
+    # with nothing to compare against it stays unverified.
+    record, _ = EvidenceRecord.objects.get_or_create(video_id=video_id)
     record.worker_sha256 = sha256
     record.worker_id = worker_id
     record.worker_checked_at = timezone.now()
@@ -91,3 +94,21 @@ def record_worker_check(video_id, worker_id: str, sha256: str) -> str | None:
             'Video %s: worker %s analyzed %s but %s was uploaded',
             video_id, worker_id, sha256, record.sha256)
     return record.custody_status
+
+
+def record_private_evidence(video_id, private: dict | None) -> None:
+    """Store the analyzer's private findings on the evidence record.
+
+    Only known keys are kept, so an analyzer bug cannot fill this table with
+    whatever it happened to emit.
+    """
+    if not isinstance(private, dict):
+        return
+    provenance = private.get('provenance')
+    if not isinstance(provenance, dict) or not provenance:
+        return
+
+    record, _ = EvidenceRecord.objects.get_or_create(video_id=video_id)
+    record.provenance = provenance
+    record.provenance_at = timezone.now()
+    record.save(update_fields=['provenance', 'provenance_at'])

@@ -291,6 +291,7 @@ namespace CaughtOnDash.Worker.Services
             // Set before the download so the finally block cleans up a partial
             // file if the download is cancelled or fails part-way through.
             var downloadedPath = _storageService.GetVideoPath(job.VideoId);
+            var artifactDirectory = _storageService.GetArtifactDirectory(job.VideoId);
             var stage = "downloading";
             ResetProgressThrottle();
             _jobFinishing = false;
@@ -308,9 +309,14 @@ namespace CaughtOnDash.Worker.Services
                     cancellationToken);
 
                 stage = "analyzing";
-                var result = await _analyzer.AnalyzeAsync(downloadedPath, progress, cancellationToken);
+                // Cleared first: an earlier run of the same video may have died
+                // before its cleanup, and its images must not be sent as this run's.
+                _storageService.CleanupDirectory(artifactDirectory);
+                var result = await _analyzer.AnalyzeAsync(downloadedPath, artifactDirectory, progress, cancellationToken);
 
                 stage = "uploading_results";
+                ReportProgress(job, stage, 92, cancellationToken);
+                await UploadArtifacts(job, result, artifactDirectory, cancellationToken);
                 ReportProgress(job, stage, 95, cancellationToken);
 
                 // From here the job's progress is the backend's to record.
@@ -348,7 +354,43 @@ namespace CaughtOnDash.Worker.Services
             finally
             {
                 _storageService.CleanupVideoFile(downloadedPath);
+                _storageService.CleanupDirectory(artifactDirectory);
             }
+        }
+
+        /// <summary>
+        /// Upload the analyzer's evidence images before completing the job, so
+        /// the report is whole by the time the video shows as done. A failed
+        /// image is logged and skipped: the analysis itself is still good.
+        /// </summary>
+        private async Task UploadArtifacts(
+            JobDto job, AnalysisResult result, string artifactDirectory, CancellationToken cancellationToken)
+        {
+            if (result.Artifacts.Count == 0)
+            {
+                return;
+            }
+
+            var version = result.Metadata.TryGetValue("analyzer_version", out var value) ? value?.ToString() ?? "" : "";
+            var uploaded = 0;
+            foreach (var artifact in result.Artifacts)
+            {
+                if (!ArtifactUploads.IsInsideDirectory(artifactDirectory, artifact.Path))
+                {
+                    Logger.Log($"Refusing to upload {artifact.Path}: outside the job's output directory", Logger.LogLevel.Warning);
+                    continue;
+                }
+                if (!File.Exists(artifact.Path) || new FileInfo(artifact.Path).Length > ArtifactUploads.MaxBytes)
+                {
+                    Logger.Log($"Skipping artifact {artifact.Path}: missing or over {ArtifactUploads.MaxBytes:N0} bytes", Logger.LogLevel.Warning);
+                    continue;
+                }
+                if (await _apiClient.UploadArtifact(job.JobId, _config.WorkerId, artifact, version, cancellationToken))
+                {
+                    uploaded++;
+                }
+            }
+            Logger.Log($"Uploaded {uploaded} of {result.Artifacts.Count} evidence image(s)");
         }
 
         /// <summary>
