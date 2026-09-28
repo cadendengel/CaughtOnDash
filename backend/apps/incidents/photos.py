@@ -13,6 +13,7 @@ preview is stored beside it because browsers cannot show HEIC.
 from __future__ import annotations
 
 import io
+import threading
 from datetime import datetime
 
 MAX_PHOTO_BYTES = 40 * 1024 * 1024
@@ -21,6 +22,12 @@ PREVIEW_QUALITY = 85
 
 # ISO BMFF brands that mean HEIF/HEIC: the ftyp box names one of these.
 HEIF_BRANDS = {b'heic', b'heix', b'hevc', b'hevx', b'heim', b'heis', b'mif1', b'msf1'}
+
+# One photo decoded at a time. A 24 MP HEIC still peaks around +165 MB while
+# it is shrunk, and the web process runs several request threads: two uploads
+# at once would double that on an instance with 512 MB. Uploads are rare and
+# take about a second each, so queueing them costs nothing.
+_DECODE = threading.Lock()
 
 EXIF_IFD, GPS_IFD = 0x8769, 0x8825
 MAKE, MODEL, SOFTWARE = 271, 272, 305
@@ -132,13 +139,29 @@ def process(data: bytes) -> dict:
     Returns {'metadata', 'preview', 'width', 'height'}; preview is JPEG bytes,
     rotated upright, at most PREVIEW_MAX_SIDE on its longer side.
     """
-    from PIL import ImageOps
+    with _DECODE:
+        return _process(data)
+
+
+def _process(data: bytes) -> dict:
+    from PIL import Image, ImageOps
 
     image = _open(data)
-    metadata = read_exif(image.getexif())
-    upright = ImageOps.exif_transpose(image).convert('RGB')
-    metadata['width'], metadata['height'] = upright.size
-    upright.thumbnail((PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE))
+    exif = image.getexif()
+    metadata = read_exif(exif)
+    # Upright dimensions without rotating anything: orientations 5-8 swap them.
+    width, height = image.size
+    metadata['width'], metadata['height'] = (height, width) if exif.get(0x0112) in (5, 6, 7, 8) else (width, height)
+
+    # Shrink in place first, then rotate and convert the small image.
+    # Rotating and converting at full size made two more full-size copies: a
+    # 24 MP iPhone photo peaked at +278 MB, which took down a 512 MB web
+    # instance in the first production run. thumbnail() replaces the pixels
+    # but keeps the EXIF, so the orientation still applies afterwards.
+    image.thumbnail((PREVIEW_MAX_SIDE, PREVIEW_MAX_SIDE), Image.Resampling.LANCZOS)
+    upright = ImageOps.exif_transpose(image)
+    if upright.mode != 'RGB':
+        upright = upright.convert('RGB')
     buffer = io.BytesIO()
     # No EXIF in the preview: it is for looking at, and the metadata that
     # matters is already extracted and stored beside it.
