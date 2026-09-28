@@ -20,6 +20,10 @@ namespace CaughtOnDash.Worker.Services
         private readonly HttpClient _httpClient;
         private string _backendUrl = "";
         private string _apiToken = "";
+        private readonly Backoff _backoff = new();
+
+        /// <summary>Attempts per request when the backend is throttling, before giving up.</summary>
+        private const int ThrottledAttempts = 4;
 
         public WorkerApiClient()
         {
@@ -38,37 +42,81 @@ namespace CaughtOnDash.Worker.Services
             return $"Bearer {_apiToken}";
         }
 
-        private async Task<T?> SendRequest<T>(string method, string endpoint, object? body = null, CancellationToken cancellationToken = default)
+        private async Task<T?> SendRequest<T>(
+            string method, string endpoint, object? body = null, CancellationToken cancellationToken = default,
+            Func<string, bool>? isExpected = null)
         {
             try
             {
                 var url = $"{_backendUrl}{endpoint}";
-                var request = new HttpRequestMessage(new HttpMethod(method), url);
-                request.Headers.Add("Authorization", GetAuthorizationHeader());
-
-                if (body != null)
+                for (var attempt = 1; ; attempt++)
                 {
-                    var json = JsonConvert.SerializeObject(body);
-                    request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    await WaitOutBackoff(cancellationToken);
+
+                    using var request = new HttpRequestMessage(new HttpMethod(method), url);
+                    request.Headers.Add("Authorization", GetAuthorizationHeader());
+                    if (body != null)
+                    {
+                        var json = JsonConvert.SerializeObject(body);
+                        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    }
+
+                    using var response = await _httpClient.SendAsync(request, cancellationToken);
+                    var content = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                    if (Backoff.IsThrottle(response.StatusCode))
+                    {
+                        // Wait and retry rather than report failure: a completed
+                        // job must not be marked failed because the server was
+                        // briefly overloaded when the worker said so.
+                        var delay = _backoff.OnThrottled(
+                            Backoff.ParseRetryAfter(response.Headers.RetryAfter, DateTimeOffset.UtcNow), DateTimeOffset.UtcNow);
+                        if (attempt >= ThrottledAttempts)
+                        {
+                            Logger.Log($"Backend still throttling ({(int)response.StatusCode}) after {attempt} attempts at {endpoint}; giving up on this request",
+                                Logger.LogLevel.Error);
+                            return default;
+                        }
+                        Logger.Log($"Backend throttling ({(int)response.StatusCode}); waiting {delay.TotalSeconds:0}s before retrying {endpoint}",
+                            Logger.LogLevel.Warning);
+                        continue;
+                    }
+
+                    _backoff.OnSuccess();
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        if (isExpected?.Invoke(content) == true)
+                        {
+                            Logger.Log($"{endpoint}: {Backoff.Summarize(content)} (expected; ignored)");
+                        }
+                        else
+                        {
+                            Logger.Log($"API Error ({response.StatusCode}): {Backoff.Summarize(content)}", Logger.LogLevel.Error);
+                        }
+                        return default;
+                    }
+
+                    return JsonConvert.DeserializeObject<T>(content);
                 }
-
-                var response = await _httpClient.SendAsync(request, cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    Logger.Log($"API Error ({response.StatusCode}): {errorContent}", Logger.LogLevel.Error);
-                    return default;
-                }
-
-                var content = await response.Content.ReadAsStringAsync(cancellationToken);
-                var result = JsonConvert.DeserializeObject<T>(content);
-                return result;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
                 Logger.Log($"Failed to send request to {endpoint}: {ex.Message}", Logger.LogLevel.Error);
                 return default;
+            }
+        }
+
+        private async Task WaitOutBackoff(CancellationToken cancellationToken)
+        {
+            var remaining = _backoff.Remaining(DateTimeOffset.UtcNow);
+            if (remaining > TimeSpan.Zero)
+            {
+                await Task.Delay(remaining, cancellationToken);
             }
         }
 
@@ -327,7 +375,12 @@ namespace CaughtOnDash.Worker.Services
                 progress = progress
             };
 
-            var result = await SendRequest<dynamic>("POST", $"/api/videos/worker/jobs/{jobId}/progress/", updateRequest, cancellationToken);
+            // Progress is sent without waiting for it, so the last update can land
+            // just after the job was completed -- which the backend rightly
+            // refuses. That is expected, not an error worth a red log line.
+            var result = await SendRequest<dynamic>(
+                "POST", $"/api/videos/worker/jobs/{jobId}/progress/", updateRequest, cancellationToken,
+                isExpected: body => body.Contains("Cannot update job in state"));
             return result?["success"] == true;
         }
 
@@ -404,18 +457,24 @@ namespace CaughtOnDash.Worker.Services
                 file.Headers.ContentType = new MediaTypeHeaderValue(ArtifactUploads.ContentTypeFor(artifact.Path));
                 form.Add(file, "file", Path.GetFileName(artifact.Path));
 
+                await WaitOutBackoff(cancellationToken);
                 using var request = new HttpRequestMessage(
                     HttpMethod.Post, $"{_backendUrl}/api/videos/worker/jobs/{jobId}/artifacts/");
                 request.Headers.Add("Authorization", GetAuthorizationHeader());
                 request.Content = form;
 
                 using var response = await _httpClient.SendAsync(request, cancellationToken);
+                if (Backoff.IsThrottle(response.StatusCode))
+                {
+                    _backoff.OnThrottled(Backoff.ParseRetryAfter(response.Headers.RetryAfter, DateTimeOffset.UtcNow), DateTimeOffset.UtcNow);
+                }
                 if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync(cancellationToken);
-                    Logger.Log($"Artifact {artifact.Kind} rejected ({(int)response.StatusCode}): {error}", Logger.LogLevel.Warning);
+                    Logger.Log($"Artifact {artifact.Kind} rejected ({(int)response.StatusCode}): {Backoff.Summarize(error)}", Logger.LogLevel.Warning);
                     return false;
                 }
+                _backoff.OnSuccess();
 
                 Logger.Log($"Uploaded {artifact.Kind} ({bytes.Length:N0} bytes, sha256 {sha256})");
                 return true;

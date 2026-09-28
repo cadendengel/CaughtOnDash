@@ -18,6 +18,7 @@ with pillow-heif for iPhone HEIC.
 from __future__ import annotations
 
 import difflib
+import math
 import re
 import subprocess
 from collections import Counter
@@ -162,7 +163,11 @@ def plate_consensus(reads: list[str]) -> dict | None:
     for index in range(length):
         votes = Counter(c[index] for c in same)
         char, count = votes.most_common(1)[0]
-        seen_alternatives = sorted(v for v in votes if v != char)
+        # A disagreeing character counts once it is not a one-off: with many
+        # reads, a single stray read is noise (the case plate had 11, and one
+        # read a 3 as 9); with three or fewer, any disagreement matters.
+        support = 1 if len(same) <= 3 else max(2, math.ceil(len(same) * 0.2))
+        seen_alternatives = sorted(v for v, n in votes.items() if v != char and n >= support)
         alternatives = sorted(set(seen_alternatives) | set(_alternatives(char)))
         chars.append(char)
         if seen_alternatives or _alternatives(char):

@@ -148,6 +148,10 @@ const COMMENTS_EMPTY = 'text-[0.82rem] text-muted'
 const COMMENT_FORM = 'grid gap-2'
 const ANALYSIS_ERROR = 'mt-2 text-[0.85rem] text-bad'
 
+// A card's title opens its video. Before, the only way in was the Comment
+// button, which nobody would guess.
+const TITLE_LINK = 'cursor-pointer text-left hover:text-brand hover:underline focus-visible:underline'
+
 function App() {
   const { isLoaded, isSignedIn, user } = useUser()
   const { getToken } = useAuth()
@@ -1468,6 +1472,11 @@ function App() {
               analysis_status: updated.analysis_status ?? item.analysis_status,
               analysis_stage: updated.analysis_stage ?? item.analysis_stage,
               analysis_progress: updated.analysis_progress ?? 0,
+              // The badge shows the derived state, not the raw fields above.
+              // Without these it kept saying "Not started" after approval
+              // until the page was reloaded.
+              state: updated.state ?? item.state,
+              state_label: updated.state_label ?? item.state_label,
             }
           : item
 
@@ -1521,6 +1530,11 @@ function App() {
               analysis_stage: updated.analysis_stage ?? 'queued',
               analysis_progress: updated.analysis_progress ?? 0,
               analysis_error: updated.analysis_error ?? '',
+              // A re-run goes back to review, and the badge reads the derived
+              // state -- both have to follow, or the old status stays up.
+              approval_status: updated.approval_status ?? item.approval_status,
+              state: updated.state ?? item.state,
+              state_label: updated.state_label ?? item.state_label,
             }
           : item
 
@@ -1746,7 +1760,7 @@ function App() {
         <span className="text-muted">{formatTimestamp(post.created_at)}</span>
       </div>
 
-      <h2 className="mt-2 text-[clamp(1.15rem,1.6vw,1.5rem)] font-bold leading-tight text-ink">{post.title}</h2>
+      <h2 className="mt-2 text-[clamp(1.15rem,1.6vw,1.5rem)] font-bold leading-tight text-ink"><button type="button" className={TITLE_LINK} onClick={() => openDetail(post.id)}>{post.title}</button></h2>
 
       {renderTagPills(post.id, post.tags || [])}
       {renderAnalysisStatus(post)}
@@ -2290,7 +2304,7 @@ const MODERATION_ACCENT = {
                 <span className="text-muted">{formatTimestamp(post.created_at)}</span>
               </div>
 
-              <h2 className="mt-2 text-[clamp(1.15rem,1.6vw,1.5rem)] font-bold leading-tight text-ink">{post.title}</h2>
+              <h2 className="mt-2 text-[clamp(1.15rem,1.6vw,1.5rem)] font-bold leading-tight text-ink"><button type="button" className={TITLE_LINK} onClick={() => openDetail(post.id)}>{post.title}</button></h2>
 
               {renderTagPills(post.id, adminTagEditsByPostId[post.id] || post.tags || [], { editable: true })}
 

@@ -35,6 +35,19 @@ def _place(lat, lon) -> str:
     return f'{abs(lat):.6f}{"N" if lat >= 0 else "S"} {abs(lon):.6f}{"E" if lon >= 0 else "W"}'
 
 
+def _score(value) -> str:
+    try:
+        return f'{float(value):.2f}'
+    except (TypeError, ValueError):
+        return '--'
+
+
+def _latest_attempt(payload: dict):
+    attempts = [a.get('attempt_number') for a in payload.get('artifacts') or []
+                if a.get('kind') != 'photo' and a.get('attempt_number') is not None]
+    return max(attempts) if attempts else None
+
+
 def _moment_rows(moments: list[dict]) -> list[str]:
     rows = ['| Video time | Dashcam clock | Speed | Position | Score | Why |', '|---|---|---|---|---|---|']
     for moment in moments:
@@ -42,7 +55,7 @@ def _moment_rows(moments: list[dict]) -> list[str]:
         speed = f"{seen['speed']} {seen.get('speed_unit', '')}".strip() if 'speed' in seen else '--'
         rows.append('| {t:.1f}s | {clock} | {speed} | {place} | {score} | {why} |'.format(
             t=moment.get('t_seconds', 0), clock=_fmt(seen.get('clock')), speed=speed,
-            place=_place(seen.get('lat'), seen.get('lon')), score=_fmt(moment.get('score')),
+            place=_place(seen.get('lat'), seen.get('lon')), score=_score(moment.get('score')),
             why='; '.join(moment.get('reasons') or []) or '--'))
     return rows
 
@@ -122,7 +135,12 @@ def build_markdown(video, payload: dict, files: list[tuple[str, str]], generated
     if notes:
         lines += ['', '## Owner notes', '', notes]
 
-    lines += ['', '## Files', '', 'SHA-256 of every file in this package is in SHA256SUMS.txt.', '']
+    lines += ['', '## Files', '', 'SHA-256 of every file in this package is in SHA256SUMS.txt.']
+    latest = _latest_attempt(payload)
+    if latest is not None:
+        lines.append(f'Images from the latest analysis are in `images/attempt-{latest}/`; the timeline above '
+                     f'describes that attempt. Folders for earlier attempts are kept as they were produced.')
+    lines.append('')
     lines += [f'- `{path}` -- `{digest}`' for path, digest in files]
     return '\n'.join(lines) + '\n'
 
@@ -153,7 +171,15 @@ def build_zip(video, payload: dict, fetch, now: datetime | None = None) -> tuple
         if not path:
             continue
         extension = path.rsplit('.', 1)[-1]
-        folder = 'photos' if artifact.get('kind') == 'photo' else 'images'
+        # Images are grouped by the analysis attempt that made them: a re-run
+        # produces a second burst and contact sheet, and mixed together the
+        # two could not be told apart. Photos are the owner's, not a run's.
+        if artifact.get('kind') == 'photo':
+            folder = 'photos'
+        elif artifact.get('attempt_number') is not None:
+            folder = f"images/attempt-{artifact['attempt_number']}"
+        else:
+            folder = 'images'
         name = f"{folder}/{artifact.get('kind')}_{artifact.get('id')}.{extension}"
         try:
             data = fetch(path)

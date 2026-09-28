@@ -265,7 +265,14 @@ LOW_LIGHT_BRIGHTNESS = 65.0
 # conditions" measures 55.8 contrast against 67-80 for every other daylight
 # clip. One positive example is thin evidence, so this is deliberately the
 # single strongest discriminator rather than a combination tuned to fit it.
+#
+# It is reported as what it measures -- low contrast -- not as fog. The first
+# production run called an overcast highway "fog" at 58.6, 2.8 from the
+# whiteout clip's 55.8; a threshold moved between two points would only fit
+# them. Fog, falling snow and a flat overcast sky all wash contrast out, and
+# the summary says so instead of choosing one.
 FOG_MAX_CONTRAST = 62.0
+LOW_CONTRAST_MEANING = 'low contrast (fog, snow or an overcast sky)'
 
 
 def frame_appearance(frame) -> tuple[float, float, float]:
@@ -300,7 +307,7 @@ def summarize_conditions(appearances: Iterable[tuple[float, float, float]]) -> d
     elif contrast < FOG_MAX_CONTRAST:
         # Only checked in daylight. A dark clip is low-contrast because it is
         # dark, which says nothing about fog.
-        conditions.append('fog')
+        conditions.append('low contrast')
 
     return {
         'conditions': conditions,
@@ -753,7 +760,8 @@ def summarize(metadata: dict, detection: dict) -> str:
     # thing a person says about a night clip, and on a clip with nothing
     # detectable it is the only thing the analyzer can honestly offer.
     conditions = (detection.get('appearance') or {}).get('conditions') or []
-    shot_in = f' Shot in {" and ".join(conditions)}.' if conditions else ''
+    described = [LOW_CONTRAST_MEANING if c == 'low contrast' else c for c in conditions]
+    shot_in = f' Shot in {" and ".join(described)}.' if conditions else ''
 
     counts = detection.get('counts') or {}
     if not counts:

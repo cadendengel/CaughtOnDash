@@ -86,6 +86,12 @@ class PlateTests(unittest.TestCase):
         self.assertEqual(position['could_be'], ['X'])
         self.assertAlmostEqual(position['agreement'], 0.67, places=2)
 
+    def test_one_stray_read_among_many_is_not_a_doubt(self):
+        reads = ['AHC 3434'] * 9 + ['AXC 3434']
+        self.assertEqual(photo_text.plate_consensus(reads)['uncertain'], [])
+        reads = ['AHC 3434'] * 8 + ['AXC 3434'] * 2
+        self.assertEqual([u['index'] for u in photo_text.plate_consensus(reads)['uncertain']], [1])
+
     def test_too_few_plausible_reads_is_no_plate(self):
         self.assertIsNone(photo_text.plate_consensus(['S39 SCA']))
         self.assertIsNone(photo_text.plate_consensus(['CIQROP', 'NEN', 'AE']))   # no digits

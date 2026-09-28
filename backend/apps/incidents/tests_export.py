@@ -74,7 +74,7 @@ class ExportTests(TestCase):
     def test_report_reads_like_the_case_summary(self, _sign):
         report = zipfile.ZipFile(io.BytesIO(self._export().content)).read('report.md').decode()
         self.assertIn('Automated readings', report)
-        self.assertIn('| 26.1s | 2026-09-26T12:16:45 | 80 mph | 30.228611N 97.619722W | 1.0 |', report)
+        self.assertIn('| 26.1s | 2026-09-26T12:16:45 | 80 mph | 30.228611N 97.619722W | 1.00 |', report)
         self.assertIn('Exported through an iPhone.', report)
         self.assertIn("`S39 SCA`", report)
         self.assertIn("position 4 read 'S', could be 5/8/9", report)
@@ -88,6 +88,20 @@ class ExportTests(TestCase):
         archive = zipfile.ZipFile(io.BytesIO(response.content))
         self.assertNotIn(b'\xff\xd8\xff tampered', [archive.read(n) for n in archive.namelist()])
         self.assertIn('## Not included', archive.read('report.md').decode())
+
+    def test_images_are_grouped_by_the_attempt_that_made_them(self, _sign):
+        from apps.videos.worker_services import open_analysis_run
+
+        first, second = open_analysis_run(self.video), open_analysis_run(self.video)
+        EvidenceArtifact.objects.filter(kind='contact_sheet').update(run=first)
+        newer = b'\xff\xd8\xff newer sheet'
+        EvidenceArtifact.objects.create(video=self.video, run=second, kind='contact_sheet',
+                                        storage_path='v/sheet2.jpg', sha256=hashlib.sha256(newer).hexdigest())
+
+        archive = zipfile.ZipFile(io.BytesIO(self._export(store={**STORE, 'v/sheet2.jpg': newer}).content))
+        folders = {name.rsplit('/', 1)[0] for name in archive.namelist() if name.startswith('images/')}
+        self.assertEqual(folders, {f'images/attempt-{first.attempt_number}', f'images/attempt-{second.attempt_number}'})
+        self.assertIn(f'`images/attempt-{second.attempt_number}/`', archive.read('report.md').decode())
 
     def test_only_owner_and_admin_and_every_export_is_logged(self, _sign):
         self.assertEqual(self._export(caller=STRANGER).status_code, 404)

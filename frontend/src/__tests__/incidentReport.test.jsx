@@ -27,8 +27,9 @@ const REPORT = {
         score: 1.0,
         reasons: ['sharp sound at 26.1s', 'both signals agree within a second'],
         overlay: { clock: '2026-09-26T12:16:45', speed: 80, speed_unit: 'mph', lat: 30.228611, lon: -97.619722 },
+        closest_vehicle: { label: 'bus', t_seconds: 26.1, largest_frame_share: 0.401 },
       }],
-      possible: [{ t_seconds: 15.7, score: 0.58 }],
+      possible: [{ t_seconds: 15.7, score: 0.577 }],
     },
   },
   report: { notes: 'Truck cut into my lane.' },
@@ -88,6 +89,8 @@ describe('IncidentReport', () => {
     expect(within(moment).getByText(/30\.22861°N 97\.61972°W/)).toBeTruthy()
     expect(within(moment).getByText('both signals agree within a second')).toBeTruthy()
     expect(screen.getByText(/Worth a glance/).closest('p').textContent).toContain('0:15.7 (0.58)')
+    expect(within(moment).getByText('score 1.00')).toBeTruthy()
+    expect(within(moment).getByText(/A vehicle filling 40% of the frame/).textContent).toContain("detector's guess: bus")
     expect(screen.getByText('Exported through an iPhone, not the original.')).toBeTruthy()
   })
 
