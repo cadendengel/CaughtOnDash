@@ -52,6 +52,21 @@ brew install ffmpeg          # macOS
 winget install ffmpeg        # Windows -- open a new terminal afterwards
 ```
 
+### Tesseract (recommended)
+
+Reads the dashcam's burned-in clock, speed and GPS (see *Overlay* below).
+Called as a program, like ffprobe, rather than through a Python OCR package:
+those bundle their own opencv, and two opencv installs break each other.
+Without it the step is skipped and the report says so.
+
+```bash
+brew install tesseract                                   # macOS
+winget install UB-Mannheim.TesseractOCR                  # Windows
+```
+
+The Windows installer does not add itself to PATH; the analyzer also looks in
+`C:\Program Files\Tesseract-OCR`, and `TESSERACT_PATH` overrides both.
+
 ## Point the worker at it
 
 In the worker's `appsettings.json` (also gitignored):
@@ -200,6 +215,23 @@ reported and skipped.
   finds 26.2 s; a 20 s stretch with a semi passing close finds nothing. The
   closest-vehicle step is exercised only with a stand-in model in tests. Label
   more clips before trusting the thresholds.
+- *Overlay* (`private.overlay`): the dashcam's burned-in text, read by
+  Tesseract once a second from whichever band -- top or bottom -- holds it.
+  Returns the dashcam clock as a mapping from video time, and a per-second
+  track of speed and position; each candidate moment gains the clock time,
+  speed and position at that moment. No single OCR reading is trusted: each
+  frame is read three ways, an `S` touching digits is tried as 8 and as 9, the
+  clock is the median offset over every reading, and speed and position settle
+  against their neighbours before a five-sample median filter. That filter
+  passes braking and acceleration through unchanged and removes one- or
+  two-sample misreads. The clock is the dashcam's own, time zone unknown, to
+  within a second.
+
+  On the collision clip: clock on 49/49 frames (240 of 246 readings agree),
+  speed on 49, position on 45, and the moment at 26.1 s reads 12:16:45 PM,
+  80 mph, N30.2286 W97.6197 -- the case timeline, to the overlay's 1-second
+  and 1-arcsecond resolution. About 0.4 s per sampled second, capped at 120
+  samples.
 
 ## Tests
 

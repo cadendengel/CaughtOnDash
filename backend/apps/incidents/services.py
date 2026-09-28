@@ -41,13 +41,16 @@ def record_upload(video, data: bytes, filename: str, content_type: str, uploaded
             uploaded_at=now,
         )
 
-    if record.sha256 != digest:
+    # A record with no upload fingerprint was made by a worker check on a
+    # video uploaded before fingerprinting: there is no earlier upload to
+    # keep, only this first one to record.
+    if record.sha256 and record.sha256 != digest:
         record.history = [*record.history, {
             'sha256': record.sha256,
             'size_bytes': record.size_bytes,
             'original_filename': record.original_filename,
             'uploaded_by': record.uploaded_by,
-            'uploaded_at': record.uploaded_at.isoformat(),
+            'uploaded_at': record.uploaded_at.isoformat() if record.uploaded_at else None,
             'replaced_at': now.isoformat(),
         }]
         logger.warning('Video %s file replaced: %s -> %s', video.id, record.sha256, digest)
@@ -61,11 +64,10 @@ def record_upload(video, data: bytes, filename: str, content_type: str, uploaded
     record.worker_sha256 = ''
     record.worker_id = ''
     record.worker_checked_at = None
-    # Provenance and moments described the old file too.
-    record.provenance = {}
-    record.provenance_at = None
-    record.moments = {}
-    record.moments_at = None
+    # Provenance, moments and overlay described the old file too.
+    for key in ('provenance', 'moments', 'overlay'):
+        setattr(record, key, {})
+        setattr(record, f'{key}_at', None)
     record.save()
     return record
 
@@ -109,7 +111,7 @@ def record_private_evidence(video_id, private: dict | None) -> None:
 
     now = timezone.now()
     fields = {}
-    for key in ('provenance', 'moments'):
+    for key in ('provenance', 'moments', 'overlay'):
         value = private.get(key)
         if isinstance(value, dict) and value:
             fields[key] = value

@@ -31,7 +31,7 @@ import os
 import sys
 import time
 
-ANALYZER_VERSION = 'detect-4.2'
+ANALYZER_VERSION = 'detect-4.3'
 
 
 def emit(payload: dict) -> None:
@@ -225,6 +225,24 @@ def main(argv: list[str]) -> int:
     except Exception as exc:
         log(f'Moment detection skipped: {exc}')
         private['moments'] = {'available': False, 'reason': str(exc)}
+
+    # The dashcam's own overlay: clock, speed, position. The uploader's
+    # location and speed, so private like the rest. Never fails the job.
+    try:
+        import overlay
+
+        progress('analyzing', 89)
+        private['overlay'] = overlay.read(args.video_path, metadata, log=log)
+        # Put a time, speed and place on each candidate moment -- the
+        # timeline row the manual investigation had to assemble by hand.
+        for key in ('moments', 'possible'):
+            for moment in (private.get('moments') or {}).get(key) or []:
+                seen = overlay.at_time(private['overlay'], moment['t_seconds'])
+                if seen:
+                    moment['overlay'] = seen
+    except Exception as exc:
+        log(f'Overlay reading skipped: {exc}')
+        private['overlay'] = {'available': False, 'reason': str(exc)}
 
     progress('uploading_results', 90)
 

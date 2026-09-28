@@ -57,6 +57,12 @@ class EvidenceRecord(models.Model):
     moments = models.JSONField(default=dict, blank=True)
     moments_at = models.DateTimeField(null=True, blank=True)
 
+    # What the dashcam's burned-in overlay said, read by OCR: its clock, and a
+    # per-second track of the camera car's speed and position. The uploader's
+    # own location and speed -- the most sensitive thing stored here.
+    overlay = models.JSONField(default=dict, blank=True)
+    overlay_at = models.DateTimeField(null=True, blank=True)
+
     @property
     def custody_status(self) -> str:
         if not self.worker_sha256 or not self.sha256:
@@ -81,6 +87,8 @@ class EvidenceRecord(models.Model):
             'provenance_at': self.provenance_at.isoformat() if self.provenance_at else None,
             'moments': self.moments,
             'moments_at': self.moments_at.isoformat() if self.moments_at else None,
+            'overlay': self.overlay,
+            'overlay_at': self.overlay_at.isoformat() if self.overlay_at else None,
         }
 
 
