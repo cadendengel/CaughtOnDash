@@ -17,6 +17,7 @@ from apps.incidents.models import (
     EvidenceRecord,
     IncidentAccessLog,
     IncidentReport,
+    MomentLabel,
     OtherParty,
 )
 from apps.incidents import export, photos
@@ -85,6 +86,11 @@ def _report_payload(video: Video) -> dict:
         'artifacts': [
             _serialize_artifact(a)
             for a in EvidenceArtifact.objects.filter(video=video).select_related('run')
+        ],
+        # Verdicts on the moments the current analysis listed.
+        'moment_labels': [
+            label.to_dict()
+            for label in MomentLabel.objects.filter(video=video, analyzer_version=video.analyzer_version)
         ],
         'access_log': [
             entry.to_dict()
@@ -372,3 +378,74 @@ def incident_export_view(request, video_id):
     stamp = timezone.now().strftime('%Y%m%d-%H%M%S')
     response['Content-Disposition'] = f'attachment; filename="incident-{video.id}-{stamp}.zip"'
     return response
+
+
+# How close a label's time must be to a listed moment's: they come from the
+# same number, so this only absorbs float formatting.
+LABEL_TIME_TOLERANCE = 0.05
+
+
+def _listed_moment(video: Video, t_seconds: float):
+    """The moment or possible the current analysis listed at t, as
+    (moment, 'moment' | 'possible'), or (None, None)."""
+    record = EvidenceRecord.objects.filter(video=video).first()
+    found = (record.moments if record else {}) or {}
+    for listed_as, key in (('moment', 'moments'), ('possible', 'possible')):
+        for moment in found.get(key) or []:
+            if abs(float(moment.get('t_seconds', -1)) - t_seconds) <= LABEL_TIME_TOLERANCE:
+                return moment, listed_as
+    return None, None
+
+
+@csrf_exempt
+def incident_moment_label_view(request, video_id):
+    """POST /api/videos/<video_id>/incident/moments/label/ -- owner and admins.
+
+    Body: {"t_seconds": 26.1, "verdict": "incident" | "not_incident" | null}.
+    Only a moment the current analysis actually listed can be labelled; null
+    clears a verdict. Each verdict is a labelled example for tuning the
+    thresholds (export_moment_labels).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'detail': 'Method not allowed.', 'allowed': ['POST']}, status=405)
+
+    caller = current_clerk_user_id(request)
+    if not caller:
+        return JsonResponse({'detail': 'Authentication required.'}, status=401)
+    video = Video.objects.filter(id=video_id, deleted_at__isnull=True).first()
+    if video is None:
+        return _not_found()
+    is_owner = caller == video.owner_clerk_user_id
+    is_admin = AdminUser.is_admin_for(caller)
+    if not (is_owner or is_admin):
+        return _not_found()
+
+    try:
+        payload = parse_json_request_strict(request)
+        t_seconds = float(payload.get('t_seconds'))
+    except (MalformedJSON, TypeError, ValueError):
+        return JsonResponse({'detail': 't_seconds must be a number.'}, status=400)
+    verdict = payload.get('verdict')
+    if verdict is not None and verdict not in dict(MomentLabel.VERDICT_CHOICES):
+        return JsonResponse({'detail': 'verdict must be "incident", "not_incident" or null.'}, status=400)
+
+    moment, listed_as = _listed_moment(video, t_seconds)
+    if moment is None:
+        return JsonResponse({'detail': 'There is no listed moment at that time in the current analysis.'}, status=404)
+
+    version = video.analyzer_version
+    t_listed = float(moment['t_seconds'])
+    if verdict is None:
+        MomentLabel.objects.filter(video=video, t_seconds=t_listed, analyzer_version=version).delete()
+    else:
+        MomentLabel.objects.update_or_create(
+            video=video, t_seconds=t_listed, analyzer_version=version,
+            defaults={
+                'verdict': verdict, 'listed_as': listed_as, 'score': moment.get('score'),
+                'signals': {'audio': moment.get('audio'), 'jolt': moment.get('jolt')},
+                'labelled_by': caller,
+            })
+    IncidentAccessLog.objects.create(
+        video=video, clerk_user_id=caller, action='update', as_admin=is_admin and not is_owner)
+    labels = MomentLabel.objects.filter(video=video, analyzer_version=version)
+    return JsonResponse(response_envelope('moment-labels', {'moment_labels': [label.to_dict() for label in labels]}))
