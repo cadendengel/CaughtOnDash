@@ -205,6 +205,9 @@ class IncidentAccessLog(models.Model):
         # A download of everything, other party included: the access that
         # matters most, so it is named rather than folded into 'view'.
         ('export', 'Exported'),
+        # An owner's photo removed from the report. Named so the log shows it:
+        # the photo's fingerprint is gone with it, and this is the trace.
+        ('delete', 'Deleted a photo'),
     )
 
     video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='incident_access_log')

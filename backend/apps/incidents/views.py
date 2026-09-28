@@ -21,7 +21,7 @@ from apps.incidents.models import (
 )
 from apps.incidents import export, photos
 from apps.incidents.services import sha256_hex
-from apps.storage import download_private_bytes, signed_object_url, upload_private_bytes
+from apps.storage import delete_private_objects, download_private_bytes, signed_object_url, upload_private_bytes
 from apps.store import MalformedJSON, current_clerk_user_id, parse_json_request_strict, response_envelope
 from apps.videos.models import Video
 
@@ -234,8 +234,24 @@ def incident_photos_view(request, video_id):
         return JsonResponse({'detail': 'Only JPEG, PNG and HEIC photos are accepted.'}, status=400)
     content_type, extension = sniffed
 
+    # The browser normally sends the viewable preview alongside the original,
+    # made from pixels it already decoded to show the photo. Then the server
+    # reads only the metadata and never decodes the image: a 24 MP HEIC peaks
+    # at +165 MB here even shrunk first, on a 512 MB instance. A client that
+    # sends no preview -- or one that fails the check -- gets the old path.
     try:
-        processed = photos.process(data)
+        preview_upload = request.FILES.get('preview')
+        preview = photos.check_preview(preview_upload.read()) if preview_upload is not None else None
+    except ValueError as exc:
+        logger.info('Ignoring the preview sent for %s: %s', video.id, exc)
+        preview = None
+    try:
+        if preview is not None:
+            metadata = photos.read_metadata(data)
+            preview_bytes = preview
+        else:
+            processed = photos.process(data)
+            metadata, preview_bytes = processed['metadata'], processed['preview']
     except Exception as exc:
         logger.warning('Photo for %s could not be read: %s', video.id, exc)
         return JsonResponse({'detail': 'The photo could not be read. It may be damaged.'}, status=400)
@@ -245,12 +261,10 @@ def incident_photos_view(request, video_id):
     preview_path = f'{video.id}/photos/{artifact_id}.preview.jpg'
     try:
         upload_private_bytes(original_path, data, content_type)
-        upload_private_bytes(preview_path, processed['preview'], 'image/jpeg')
+        upload_private_bytes(preview_path, preview_bytes, 'image/jpeg')
     except Exception as exc:
         logger.error('Photo upload failed for %s: %s', video.id, exc)
         return JsonResponse({'detail': 'Storage rejected the photo.'}, status=502)
-
-    metadata = processed['metadata']
     taken = metadata.get('taken_at', '')
     artifact = EvidenceArtifact.objects.create(
         id=artifact_id,
@@ -269,6 +283,52 @@ def incident_photos_view(request, video_id):
     IncidentAccessLog.objects.create(
         video=video, clerk_user_id=caller, action='update', as_admin=is_admin and not is_owner)
     return JsonResponse(response_envelope('incident-photo', {'artifact': _serialize_artifact(artifact)}), status=201)
+
+
+@csrf_exempt
+def incident_photo_delete_view(request, video_id, artifact_id):
+    """DELETE /api/videos/<video_id>/incident/photos/<artifact_id>/
+
+    Removes a photo the owner added -- a wrong upload, a duplicate -- with the
+    plate crops read from it. Only photos: what the worker produced from the
+    video is evidence of the analysis and is not deletable here. Storage goes
+    first, so a failure leaves the report as it was rather than rows pointing
+    at nothing; the access log records who removed it.
+    """
+    if request.method != 'DELETE':
+        return JsonResponse({'detail': 'Method not allowed.', 'allowed': ['DELETE']}, status=405)
+
+    caller = current_clerk_user_id(request)
+    if not caller:
+        return JsonResponse({'detail': 'Authentication required.'}, status=401)
+    video = Video.objects.filter(id=video_id, deleted_at__isnull=True).first()
+    if video is None:
+        return _not_found()
+    is_owner = caller == video.owner_clerk_user_id
+    is_admin = AdminUser.is_admin_for(caller)
+    if not (is_owner or is_admin):
+        return _not_found()
+
+    photo = EvidenceArtifact.objects.filter(id=artifact_id, video=video, kind='photo').first()
+    if photo is None:
+        return _not_found()
+    crops = list(EvidenceArtifact.objects.filter(
+        video=video, kind='plate_crop', metadata__source_artifact_id=str(photo.id)))
+
+    paths = [photo.storage_path, photo.preview_path, *[c.storage_path for c in crops]]
+    try:
+        delete_private_objects(paths)
+    except Exception as exc:
+        logger.error('Could not delete photo %s from storage: %s', photo.id, exc)
+        return JsonResponse({'detail': 'Storage would not delete the photo; nothing was removed.'}, status=502)
+
+    with transaction.atomic():
+        EvidenceArtifact.objects.filter(id__in=[photo.id, *[c.id for c in crops]]).delete()
+        IncidentAccessLog.objects.create(
+            video=video, clerk_user_id=caller, action='delete', as_admin=is_admin and not is_owner)
+    logger.info('Photo %s (sha256 %s) and %d crop(s) deleted from %s by %s',
+                photo.id, photo.sha256, len(crops), video.id, caller)
+    return JsonResponse(response_envelope('incident-photo-deleted', {'artifact_id': str(photo.id), 'crops_removed': len(crops)}))
 
 
 def incident_export_view(request, video_id):

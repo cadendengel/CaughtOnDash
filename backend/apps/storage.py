@@ -114,6 +114,30 @@ def signed_object_url(object_path: str, expires_in: int = SIGNED_URL_SECONDS) ->
     return f"{SUPABASE_URL.rstrip('/')}/storage/v1{resp.json()['signedURL']}"
 
 
+def delete_private_objects(object_paths: list[str]) -> None:
+    """Remove objects from the private evidence bucket. Raises on failure.
+
+    Supabase deletes by prefix list in one call; an object that is already
+    gone is not an error.
+    """
+    if not SUPABASE_URL:
+        raise RuntimeError('SUPABASE_URL is not configured')
+    if SUPABASE_SERVICE_KEY is None:
+        raise RuntimeError('SUPABASE_SERVICE_KEY is not configured')
+    paths = [path for path in object_paths if path]
+    if not paths:
+        return
+
+    resp = requests.delete(
+        f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/{SUPABASE_EVIDENCE_BUCKET}",
+        headers={'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}'},
+        json={'prefixes': paths},
+        timeout=60,
+    )
+    if not resp.ok:
+        raise RuntimeError(f'Could not delete {len(paths)} object(s): {resp.status_code} {resp.text}')
+
+
 def download_private_bytes(object_path: str) -> bytes:
     """Fetch one object from the private evidence bucket, server-side."""
     if not SUPABASE_URL:

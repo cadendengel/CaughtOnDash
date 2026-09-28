@@ -18,11 +18,26 @@ Scores combine as a noisy-OR: two signals agreeing within a second make a
 strong candidate, and one alone has to be strong on its own. These are
 *candidates*, never "collisions": a person looks at the burst and decides.
 
-The thresholds are set from one labelled clip, and it shows. The collision
-scores 1.0; a car carrier passing close in the same drive scores 0.69 (a hard
-jolt, a faint sound). The bar sits between them, and anything from 0.5 up to
-it is still listed as `possible` -- without images -- because a near miss is
-worth a glance too. Tune both against a labelled set before trusting them.
+A moment needs both signals. Either one alone is capped below the bar, so it
+can only ever be `possible` (listed, without images). That rule comes from
+reviewing every moment the production corpus produced (detect-4.5, 19 videos):
+of 17 flagged moments only the 2026-09-26 collision was an incident, and it was
+the only one where sound and jolt agreed. The other 16, checked frame by frame
+in their bursts, were:
+- the first half-second of a clip (3) -- encoder start-up, not motion;
+- edits: cuts between shots, a multi-camera mosaic, a TikTok end card (4);
+- turns and kerb bumps (3) -- real jolts, but driving, not incidents;
+- repeated or dropped frames (the rest) -- a duplicated frame reads as no
+  motion then double motion, which is exactly the shape of a jolt.
+So: events in the first second and last half-second are dropped; a repeated
+frame is skipped and motion is measured per frame step, so a stutter is not a
+jerk; a scene cut (the picture changes wholesale) is detected, reported, and
+events beside it dropped; and a jerk is never measured across a gap.
+
+The collision still scores 0.91 (sound 6.6 dB, jolt 15x, agreeing). A car
+carrier passing close in the same drive stays `possible`, as does the jolt
+alone when the audio is stripped. These judgements are one reviewer's reading
+of the frames, not labels from the people who filmed them.
 
 When the detection model is available, the closest vehicle around each
 candidate is measured and cropped. That is reported as an observation and does
@@ -54,11 +69,27 @@ JOLT_MIN_Z = 4.0
 JOLT_FULL_Z = 12.0
 
 AGREE_SECONDS = 1.0
+# The most either signal can contribute alone -- below MIN_SCORE, so a moment
+# needs both. Two signals at this strength combine to 0.91.
+SINGLE_SIGNAL_MAX = 0.7
 MIN_SCORE = 0.75
 MIN_POSSIBLE_SCORE = 0.5
 MAX_POSSIBLE = 3
 MIN_SEPARATION_SECONDS = 3.0
 MAX_MOMENTS = 2
+
+# Clip edges, where encoders start and stop and nothing is measured reliably.
+EDGE_START_SECONDS = 1.0
+EDGE_END_SECONDS = 0.5
+# Two samples this similar (mean absolute grey difference, 0-255) are the same
+# frame repeated -- a stutter, not a stop.
+DUPLICATE_MAX_DIFF = 0.5
+# Colour-histogram correlation below this between consecutive samples is a cut
+# to a different shot, not camera motion.
+CUT_MAX_CORRELATION = 0.5
+CUT_GUARD_SECONDS = 0.5
+# Consecutive shifts more than this many sample steps apart are not compared.
+MAX_STEP_GAP = 1.5
 
 BURST_FRAMES = 20
 BURST_SPAN_SECONDS = 1.0     # either side of the moment
@@ -118,10 +149,13 @@ def audio_rises(samples, rate: int = AUDIO_RATE) -> list[dict]:
 def jolt_scores(shifts: list[tuple[float, float, float, float]]) -> list[dict]:
     """Sudden changes in whole-image shift.
 
-    `shifts` holds (t_seconds, dx, dy, response) between consecutive samples.
-    The jerk is how far the shift changed from one pair to the next, scored
-    as robust z against the clip's own median, so a bumpy road raises its own
-    baseline instead of producing a candidate every second.
+    `shifts` holds (t_seconds, dx, dy, response) per sample step -- motion per
+    step, so a pair that spans a skipped duplicate frame is not double. The
+    jerk is how far that changed from one sample to the next, scored as robust
+    z against the clip's own median, so a bumpy road raises its own baseline.
+    It is only measured between samples that are actually adjacent: across a
+    dropped pair (a duplicate, a cut, an unreliable correlation) there is no
+    telling what happened in between.
     """
     import numpy as np
 
@@ -130,14 +164,21 @@ def jolt_scores(shifts: list[tuple[float, float, float, float]]) -> list[dict]:
         return []
 
     times = np.array([s[0] for s in usable])
+    gaps = np.diff(times)
+    step = float(np.median(gaps)) if len(gaps) else 0.1
+    adjacent = gaps <= step * MAX_STEP_GAP
     dx = np.array([s[1] for s in usable])
     dy = np.array([s[2] for s in usable])
     jerk = np.hypot(np.diff(dx), np.diff(dy))
-    median = float(np.median(jerk))
-    spread = float(np.median(np.abs(jerk - median))) or 1e-6
+    if not adjacent.any():
+        return []
+    median = float(np.median(jerk[adjacent]))
+    spread = float(np.median(np.abs(jerk[adjacent] - median))) or 1e-6
 
     events = []
     for index, value in enumerate(jerk):
+        if not adjacent[index]:
+            continue
         z = (float(value) - median) / spread
         if z > JOLT_MIN_Z:
             events.append({
@@ -147,6 +188,32 @@ def jolt_scores(shifts: list[tuple[float, float, float, float]]) -> list[dict]:
                 'strength': round(_ramp(z, JOLT_MIN_Z, JOLT_FULL_Z), 3),
             })
     return events
+
+
+def usable_events(events: list[dict], duration: float, cuts: list[float]) -> list[dict]:
+    """Events away from the clip's edges and from any scene cut."""
+    kept = []
+    for event in events:
+        t = event['t_seconds']
+        if t < EDGE_START_SECONDS or (duration and t > duration - EDGE_END_SECONDS):
+            continue
+        if any(abs(t - cut) <= CUT_GUARD_SECONDS for cut in cuts):
+            continue
+        kept.append(event)
+    return kept
+
+
+def burst_window(t: float, duration: float, span: float = BURST_SPAN_SECONDS) -> tuple[float, float]:
+    """(start, end) of the burst around t, shifted -- not clipped -- at the
+    clip's edges, so a moment near the start does not repeat frame zero."""
+    width = 2 * span
+    if duration and duration <= width:
+        return 0.0, duration
+    start = t - span
+    if duration:
+        start = min(start, duration - width)
+    start = max(0.0, start)
+    return start, start + width
 
 
 def _strongest_near(events: list[dict], t: float) -> dict | None:
@@ -165,8 +232,9 @@ def find_moments(audio: list[dict], jolt: list[dict], max_moments: int = MAX_MOM
     for event in [*audio, *jolt]:
         a = _strongest_near(audio, event['t_seconds'])
         j = _strongest_near(jolt, event['t_seconds'])
-        a_strength = a['strength'] if a else 0.0
-        j_strength = j['strength'] if j else 0.0
+        # Each capped below the bar: a moment needs the two to agree.
+        a_strength = min(a['strength'], SINGLE_SIGNAL_MAX) if a else 0.0
+        j_strength = min(j['strength'], SINGLE_SIGNAL_MAX) if j else 0.0
         score = 1 - (1 - a_strength) * (1 - j_strength)
         if score < min_score:
             continue
@@ -220,17 +288,25 @@ def read_audio(path: str):
     return np.frombuffer(completed.stdout, dtype=np.float32)
 
 
-def measure_shifts(capture, fps: float, box: dict | None) -> list[tuple[float, float, float, float]]:
-    """Whole-image shift between consecutive 10 fps samples."""
+def measure_shifts(capture, fps: float, box: dict | None) -> tuple[list[tuple[float, float, float, float]], list[float]]:
+    """Whole-image shift between 10 fps samples, and the times of scene cuts.
+
+    A sample identical to the last is a repeated frame and is skipped; the
+    shift to the next real frame is divided by the steps it spans. A sample
+    whose colours share little with the last is a cut: no shift is recorded
+    across it, and its time is returned.
+    """
     import cv2
     import numpy as np
 
     import detection
 
-    step = max(1, round((fps or 30.0) / JOLT_FPS))
+    fps = fps or 30.0
+    step = max(1, round(fps / JOLT_FPS))
     capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    shifts = []
-    previous = None
+    shifts, cuts = [], []
+    previous = previous_hist = None
+    previous_index = 0
     index = 0
     while True:
         # grab() skips the decode-to-image for frames that are not sampled.
@@ -243,12 +319,21 @@ def measure_shifts(capture, fps: float, box: dict | None) -> list[tuple[float, f
                 height, width = frame.shape[:2]
                 small = cv2.resize(frame, (JOLT_WIDTH, max(1, round(height * JOLT_WIDTH / width))))
                 grey = np.float32(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY))
+                hist = cv2.calcHist([cv2.cvtColor(small, cv2.COLOR_BGR2HSV)], [0, 1], None, [16, 16], [0, 180, 0, 256])
+                cv2.normalize(hist, hist)
                 if previous is not None and previous.shape == grey.shape:
-                    (dx, dy), response = cv2.phaseCorrelate(previous, grey)
-                    shifts.append((index / (fps or 30.0), float(dx), float(dy), float(response)))
-                previous = grey
+                    if float(np.mean(np.abs(grey - previous))) <= DUPLICATE_MAX_DIFF:
+                        index += 1
+                        continue   # a repeated frame: wait for the next real one
+                    if cv2.compareHist(previous_hist, hist, cv2.HISTCMP_CORREL) < CUT_MAX_CORRELATION:
+                        cuts.append(round(index / fps, 2))
+                    else:
+                        steps = max(1.0, (index - previous_index) / step)
+                        (dx, dy), response = cv2.phaseCorrelate(previous, grey)
+                        shifts.append((index / fps, float(dx) / steps, float(dy) / steps, float(response)))
+                previous, previous_hist, previous_index = grey, hist, index
         index += 1
-    return shifts
+    return shifts, cuts
 
 
 def _read_at(capture, seconds: float, fps: float, frame_count: int):
@@ -347,7 +432,10 @@ def find(path: str, metadata: dict, out_dir: str | None, model=None, device: str
         frame_count = metadata.get('frame_count') or 0
         box = detection.content_box(
             capture, detection.frame_indices(frame_count, fps, 1.0, 60))
-        jolt = jolt_scores(measure_shifts(capture, fps, box))
+        duration = metadata.get('duration_seconds') or (frame_count / fps if fps else 0)
+        shifts, cuts = measure_shifts(capture, fps, box)
+        audio = usable_events(audio, duration, cuts)
+        jolt = usable_events(jolt_scores(shifts), duration, cuts)
         moments = find_moments(audio, jolt)
         possible = [m for m in find_moments(audio, jolt, MAX_POSSIBLE, MIN_POSSIBLE_SCORE, exclude=moments)
                     if m['score'] < MIN_SCORE]
@@ -357,9 +445,10 @@ def find(path: str, metadata: dict, out_dir: str | None, model=None, device: str
             if out_dir:
                 os.makedirs(out_dir, exist_ok=True)
                 frames = []
+                start, end = burst_window(t, duration)
                 for step in range(BURST_FRAMES):
-                    seconds = t - BURST_SPAN_SECONDS + step * (2 * BURST_SPAN_SECONDS) / (BURST_FRAMES - 1)
-                    frame, at = _read_at(capture, max(0.0, seconds), fps, frame_count)
+                    seconds = start + step * (end - start) / (BURST_FRAMES - 1)
+                    frame, at = _read_at(capture, seconds, fps, frame_count)
                     if frame is not None:
                         frames.append((detection.crop_to_content(frame, box), evidence.format_timestamp(at)))
                 sheet = evidence.write_sheet(frames, os.path.join(out_dir, f'moment{number}_burst.jpg'), max_columns=5)
@@ -367,7 +456,7 @@ def find(path: str, metadata: dict, out_dir: str | None, model=None, device: str
                     sheet.pop('grid')
                     sheet.pop('tiles')
                     artifacts.append({**sheet, 'kind': 'burst', 't_seconds': t,
-                                      'label': f'Moment {number}: {len(frames)} frames, {t - BURST_SPAN_SECONDS:.1f}-{t + BURST_SPAN_SECONDS:.1f}s'})
+                                      'label': f'Moment {number}: {len(frames)} frames, {start:.1f}-{end:.1f}s'})
 
                 for offset in KEY_FRAME_OFFSETS:
                     frame, at = _read_at(capture, max(0.0, t + offset), fps, frame_count)
@@ -404,6 +493,9 @@ def find(path: str, metadata: dict, out_dir: str | None, model=None, device: str
             'audio': 'measured' if audio_samples is not None and len(audio_samples) else 'unavailable',
             'jolt': 'measured',
             'closest_vehicle': 'measured' if model is not None else 'unavailable',
+            # An edited clip -- cuts between shots -- is not continuous footage,
+            # and a reader should know the moments were found around its cuts.
+            'scene_cuts': len(cuts),
         },
         'moments': moments,
         'possible': possible,

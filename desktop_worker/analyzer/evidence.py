@@ -210,10 +210,13 @@ def write_sheet(frames: list, target: str, max_columns: int = 6,
         height, width = frame.shape[:2]
         tile_height = max(1, round(height * tile_width / width))
         tile = cv2.resize(frame, (tile_width, tile_height), interpolation=cv2.INTER_AREA)
-        # Outlined so it reads on snow and on night footage alike.
-        for colour, thickness in (((0, 0, 0), 4), ((255, 255, 255), 1)):
-            cv2.putText(tile, label, (8, tile_height - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6, colour, thickness, cv2.LINE_AA)
+        # On a dark box: dashcams burn their own clock into the same corner,
+        # and an outline alone left "0:00.0" printed over "16:36:21".
+        (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
+        top = tile_height - 10 - text_height - 4
+        cv2.rectangle(tile, (4, top), (12 + text_width, tile_height - 10 + baseline), (20, 20, 20), -1)
+        cv2.putText(tile, label, (8, tile_height - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6, (255, 255, 255), 1, cv2.LINE_AA)
         tiles.append(tile)
 
     if not tiles:

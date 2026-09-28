@@ -134,6 +134,22 @@ describe('IncidentReport', () => {
     expect(body.notes).toBe('Truck cut into my lane.')
   })
 
+  it('removes a photo only after confirming', async () => {
+    const { calls } = renderReport()
+    await screen.findByTestId('photo')
+    const confirm = vi.spyOn(window, 'confirm')
+
+    confirm.mockReturnValueOnce(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove photo' }))
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false)
+
+    confirm.mockReturnValueOnce(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove photo' }))
+    await screen.findByText('Removed IMG_3110.HEIC.')
+    expect(calls.find((c) => c.method === 'DELETE').url).toMatch(/\/incident\/photos\/p1\/$/)
+    confirm.mockRestore()
+  })
+
   it('uploads photos and then offers to read them', async () => {
     const { calls } = renderReport()
     await screen.findByTestId('photo')
