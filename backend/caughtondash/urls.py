@@ -8,6 +8,7 @@ from django.urls import include, path
 
 from apps.incidents.views import (
     incident_export_view,
+    incident_moment_label_view,
     incident_photo_delete_view,
     incident_photos_view,
     incident_view,
@@ -26,6 +27,8 @@ urlpatterns = [
     path('api/videos/<uuid:video_id>/incident/photos/<uuid:artifact_id>/', incident_photo_delete_view,
          name='video-incident-photo-delete'),
     path('api/videos/<uuid:video_id>/incident/export/', incident_export_view, name='video-incident-export'),
+    path('api/videos/<uuid:video_id>/incident/moments/label/', incident_moment_label_view,
+         name='video-incident-moment-label'),
     path('api/videos/worker/jobs/<uuid:job_id>/artifacts/', upload_artifact_view, name='worker-job-artifacts'),
     path('api/videos/', include('apps.videos.urls')),
     path('api/feed/', include('apps.feed.urls')),

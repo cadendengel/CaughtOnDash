@@ -163,6 +163,19 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
       if (fileInput.current) fileInput.current.value = ''
     })
 
+  // A verdict on one moment. Clicking the verdict already given clears it.
+  const labelMoment = (tSeconds, verdict) =>
+    run('label', async () => {
+      const response = await authFetch(`${base}/incident/moments/label/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ t_seconds: tSeconds, verdict }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.detail || 'Could not save that.')
+      setReport((current) => ({ ...current, moment_labels: data.moment_labels || [] }))
+    })
+
   const removePhoto = (photo) => {
     const name = photo.original_filename || 'this photo'
     if (!window.confirm(`Remove ${name} from the report? Its fingerprint and any plate crops read from it go too.`)) {
@@ -238,6 +251,37 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
     current.filter((a) => ['burst', 'frame', 'vehicle_crop'].includes(a.kind) && a.t_seconds != null &&
       Math.abs(a.t_seconds - moment.t_seconds) <= 2.5)
 
+  const verdictFor = (tSeconds) =>
+    (report.moment_labels || []).find((label) => Math.abs(label.t_seconds - tSeconds) < 0.05)?.verdict || null
+
+  // The two verdict buttons, as toggles. Every verdict becomes a labelled
+  // example the moment thresholds are tuned against.
+  const renderVerdict = (tSeconds) => {
+    const verdict = verdictFor(tSeconds)
+    const options = [
+      ['incident', 'This is the incident', 'border-green-700 bg-green-700 text-white'],
+      ['not_incident', 'Not an incident', 'border-ink bg-ink text-white'],
+    ]
+    return (
+      <div className="flex flex-wrap items-center gap-2" data-testid={`verdict-${tSeconds}`}>
+        {options.map(([value, label, pressed]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={verdict === value}
+            disabled={busy === 'label'}
+            onClick={() => labelMoment(tSeconds, verdict === value ? null : value)}
+            className={`cursor-pointer rounded-full border px-3 py-1 text-[0.82rem] font-semibold disabled:cursor-wait disabled:opacity-60 ${
+              verdict === value ? pressed : 'border-ink/20 bg-white text-ink hover:bg-ink/5'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   const renderMoment = (moment, number) => {
     const seen = moment.overlay || {}
     const place = formatPlace(seen.lat, seen.lon)
@@ -281,6 +325,7 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
         <ul className="list-disc pl-5 text-[0.9rem] text-body">
           {(moment.reasons || []).map((reason) => <li key={reason}>{reason}</li>)}
         </ul>
+        {renderVerdict(moment.t_seconds)}
         {burst ? <Image artifact={burst} alt={burst.label || `Frames around moment ${number}`} /> : null}
         {others.length ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
@@ -438,10 +483,17 @@ function IncidentReport({ videoId, videoTitle, apiBase, authFetch, onBack }) {
           </p>
         )}
         {(moments.possible || []).length ? (
-          <p className="mt-4 text-[0.9rem] text-body">
-            <span className="font-semibold">Worth a glance: </span>
-            {moments.possible.map((m) => `${formatSeconds(m.t_seconds)} (${formatScore(m.score)})`).join(', ')}
-          </p>
+          <div className="mt-4 grid gap-2">
+            <p className="text-[0.9rem] font-semibold text-body">Worth a glance</p>
+            {moments.possible.map((m) => (
+              <div key={m.t_seconds} className="flex flex-wrap items-center justify-between gap-2 text-[0.9rem] text-body">
+                <span>
+                  {formatSeconds(m.t_seconds)} <span className="text-muted">({formatScore(m.score)})</span>
+                </span>
+                {renderVerdict(m.t_seconds)}
+              </div>
+            ))}
+          </div>
         ) : null}
         {current.find((a) => a.kind === 'contact_sheet') ? (
           <div className="mt-4">

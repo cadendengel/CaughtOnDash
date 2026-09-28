@@ -1,5 +1,5 @@
 import { expect, vi, describe, it } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 import IncidentReport from '../IncidentReport'
 import { LOOKUPS } from '../incidentHelpers'
@@ -88,7 +88,7 @@ describe('IncidentReport', () => {
     expect(within(moment).getByText('80 mph')).toBeTruthy()
     expect(within(moment).getByText(/30\.22861°N 97\.61972°W/)).toBeTruthy()
     expect(within(moment).getByText('both signals agree within a second')).toBeTruthy()
-    expect(screen.getByText(/Worth a glance/).closest('p').textContent).toContain('0:15.7 (0.58)')
+    expect(screen.getByTestId('verdict-15.7').parentElement.textContent).toContain('0:15.7 (0.58)')
     expect(within(moment).getByText('score 1.00')).toBeTruthy()
     expect(within(moment).getByText(/A vehicle filling 40% of the frame/).textContent).toContain("detector's guess: bus")
     expect(screen.getByText('Exported through an iPhone, not the original.')).toBeTruthy()
@@ -132,6 +132,34 @@ describe('IncidentReport', () => {
     expect(body.other_party.claim_number).toBe('CLM-42')
     expect(body.other_party.insurer).toBe('Acme Mutual')
     expect(body.notes).toBe('Truck cut into my lane.')
+  })
+
+  it('records a verdict on a moment, and clears it on a second click', async () => {
+    let labels = []
+    const { calls } = renderReport({
+      'POST /incident/moments/label/': async (options) => {
+        const { t_seconds, verdict } = JSON.parse(options.body)
+        labels = verdict ? [{ t_seconds, verdict, analyzer_version: 'detect-4.6' }] : []
+        return { ok: true, json: async () => ({ moment_labels: labels }) }
+      },
+    })
+    const verdicts = await screen.findByTestId('verdict-26.1')
+    const yes = within(verdicts).getByRole('button', { name: 'This is the incident' })
+    expect(yes.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(yes)
+    await waitFor(() => expect(yes.getAttribute('aria-pressed')).toBe('true'))
+    expect(JSON.parse(calls.find((c) => c.method === 'POST').body)).toEqual({ t_seconds: 26.1, verdict: 'incident' })
+
+    fireEvent.click(yes)
+    await waitFor(() => expect(yes.getAttribute('aria-pressed')).toBe('false'))
+    expect(JSON.parse(calls.filter((c) => c.method === 'POST').at(-1).body).verdict).toBeNull()
+  })
+
+  it('offers verdicts on the weaker candidates too', async () => {
+    renderReport()
+    const possible = await screen.findByTestId('verdict-15.7')
+    expect(within(possible).getByRole('button', { name: 'Not an incident' })).toBeTruthy()
   })
 
   it('removes a photo only after confirming', async () => {

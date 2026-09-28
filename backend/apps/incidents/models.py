@@ -227,3 +227,47 @@ class IncidentAccessLog(models.Model):
             'as_admin': self.as_admin,
             'at': self.at.isoformat(),
         }
+
+
+class MomentLabel(models.Model):
+    """A person's verdict on one candidate moment: was it the incident?
+
+    The moment thresholds were set from one confirmed incident and one
+    reviewer's reading of the rest. Every verdict given on a real report is a
+    labelled example to tune them against instead. Kept per analyzer version,
+    because a moment is a claim a particular version made; the signals it had
+    are copied in, so a label still says what it was judging after re-analysis
+    replaces the moments on the evidence record.
+    """
+
+    VERDICT_CHOICES = (
+        ('incident', 'This is the incident'),
+        ('not_incident', 'Not an incident'),
+    )
+
+    video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='moment_labels')
+    t_seconds = models.FloatField()
+    analyzer_version = models.CharField(max_length=50, blank=True, default='')
+    verdict = models.CharField(max_length=20, choices=VERDICT_CHOICES)
+    # 'moment' or 'possible': which list the analyzer put it in.
+    listed_as = models.CharField(max_length=10, default='moment')
+    score = models.FloatField(null=True, blank=True)
+    signals = models.JSONField(default=dict, blank=True)
+    labelled_by = models.CharField(max_length=255)
+    labelled_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['video', 't_seconds']
+        constraints = [
+            models.UniqueConstraint(fields=['video', 't_seconds', 'analyzer_version'], name='one_label_per_moment'),
+        ]
+
+    def to_dict(self) -> dict:
+        return {
+            't_seconds': self.t_seconds,
+            'analyzer_version': self.analyzer_version,
+            'verdict': self.verdict,
+            'listed_as': self.listed_as,
+            'labelled_by': self.labelled_by,
+            'labelled_at': self.labelled_at.isoformat(),
+        }
