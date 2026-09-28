@@ -183,6 +183,7 @@ class ChainOfCustodyTests(TestCase):
     def test_upload_is_fingerprinted(self):
         self.assertEqual(self._upload(self.CONTENT).status_code, 200)
         record = EvidenceRecord.objects.get(video=self.video)
+        self.assertEqual(record.uploaded_by, OWNER)   # the caller, as the owner check saw them
         self.assertEqual(record.sha256, self.DIGEST)
         self.assertEqual(record.size_bytes, len(self.CONTENT))
         self.assertEqual(record.custody_status, 'unverified')

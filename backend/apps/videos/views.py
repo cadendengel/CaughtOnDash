@@ -370,9 +370,10 @@ def upload_file_view(request):
 
     # Fingerprinted from the same bytes that were stored, after storage
     # accepted them, so the record never describes a file that is not there.
-    record_upload(
-        video, data, upload_file.name, content_type or '',
-        resolve_current_clerk_user_id(request) or video.owner_clerk_user_id)
+    # Attributed to whoever the owner check just let through -- not to the
+    # owner by default. The default once recorded an anonymous replacement,
+    # made before that check existed, as the owner's own upload.
+    record_upload(video, data, upload_file.name, content_type or '', caller)
 
     # A poster frame captured in the browser, if one came with the upload.
     # Analysis cannot supply this: approval happens first, and you cannot
