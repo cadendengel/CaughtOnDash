@@ -271,6 +271,12 @@ def upload_url_view(request):
     if not is_authenticated(identity):
         return _auth_required()
 
+    # Checked, not stored as sent: an unknown value used to be saved as-is,
+    # and every visibility check compares against these three.
+    visibility = str(payload.get('visibility') or 'public').strip() or 'public'
+    if visibility not in dict(Video.VISIBILITY_CHOICES):
+        return JsonResponse({'detail': 'visibility must be public, unlisted or private.'}, status=400)
+
     # Ensure profile exists. get_or_create, NOT update_or_create: identity's
     # username/display_name are id-derived placeholders when the caller omits
     # them, and overwriting an existing good profile with those downgraded every
@@ -291,7 +297,7 @@ def upload_url_view(request):
         owner_clerk_user_id=identity['clerk_user_id'],
         title=str(payload.get('title') or 'Untitled dashcam clip').strip(),
         description=str(payload.get('description') or '').strip(),
-        visibility=str(payload.get('visibility') or 'public').strip() or 'public',
+        visibility=visibility,
         status='pending',
         original_filename=str(payload.get('original_filename') or payload.get('filename') or ''),
         duration_seconds=max(0, int(float(payload.get('duration_seconds') or 0))),
@@ -339,6 +345,15 @@ def upload_file_view(request):
         video = Video.objects.get(id=video_uuid)
     except Video.DoesNotExist:
         return JsonResponse({'detail': 'Video not found.'}, status=404)
+
+    # Only the video's owner may put a file behind it. Without this, anyone who
+    # knew a video's id could replace its footage -- and since the upload is
+    # fingerprinted as incident evidence, replace the evidence behind someone's
+    # report. Identity is resolved the same way upload-url resolved it when the
+    # record was created, so the two calls of one upload always agree.
+    caller = get_identity(request)['clerk_user_id']
+    if not _is_owner(caller, video.owner_clerk_user_id):
+        return JsonResponse({'detail': 'You can only upload the file for your own video.'}, status=403)
 
     upload_file = request.FILES.get('file')
     if upload_file is None:

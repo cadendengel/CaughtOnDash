@@ -170,7 +170,7 @@ class ChainOfCustodyTests(TestCase):
             return self.client.post('/api/videos/upload/', {
                 'video_id': str(self.video.id),
                 'file': SimpleUploadedFile('dash.mp4', content, content_type='video/mp4'),
-            })
+            }, HTTP_X_CLERK_USER_ID=OWNER)
 
     def _complete(self, source_sha256):
         self.video.refresh_from_db()
@@ -192,7 +192,7 @@ class ChainOfCustodyTests(TestCase):
             self.client.post('/api/videos/upload/', {
                 'video_id': str(self.video.id),
                 'file': SimpleUploadedFile('dash.mp4', self.CONTENT, content_type='video/mp4'),
-            })
+            }, HTTP_X_CLERK_USER_ID=OWNER)
         self.assertFalse(EvidenceRecord.objects.exists())
 
     def test_matching_worker_hash_verifies(self):

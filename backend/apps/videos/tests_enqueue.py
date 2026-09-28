@@ -58,7 +58,7 @@ class UploadEnqueuesAnalysisTests(TestCase):
             return self.client.post('/api/videos/upload/', {
                 'video_id': video_id,
                 'file': SimpleUploadedFile('dash.mp4', b'bytes', content_type='video/mp4'),
-            })
+            }, HTTP_X_CLERK_USER_ID='user_owner')
 
     def test_video_is_not_claimable_before_the_file_arrives(self):
         self._create_video_record()
@@ -92,7 +92,7 @@ class UploadEnqueuesAnalysisTests(TestCase):
                 'video_id': video_id,
                 'file': SimpleUploadedFile('dash.mp4', b'bytes', content_type='video/mp4'),
                 'thumbnail': SimpleUploadedFile('poster.jpg', b'jpegbytes', content_type='image/jpeg'),
-            })
+            }, HTTP_X_CLERK_USER_ID='user_owner')
 
         self.assertEqual(response.status_code, 200)
         video = Video.objects.get(id=video_id)
@@ -119,7 +119,7 @@ class UploadEnqueuesAnalysisTests(TestCase):
                 'video_id': video_id,
                 'file': SimpleUploadedFile('dash.mp4', b'bytes', content_type='video/mp4'),
                 'thumbnail': SimpleUploadedFile('poster.jpg', b'jpegbytes', content_type='image/jpeg'),
-            })
+            }, HTTP_X_CLERK_USER_ID='user_owner')
 
         self.assertEqual(response.status_code, 200)
         video = Video.objects.get(id=video_id)
@@ -166,7 +166,7 @@ class UploadEnqueuesAnalysisTests(TestCase):
             response = self.client.post('/api/videos/upload/', {
                 'video_id': video_id,
                 'file': SimpleUploadedFile('dash.mp4', b'bytes', content_type='video/mp4'),
-            })
+            }, HTTP_X_CLERK_USER_ID='user_owner')
 
         self.assertEqual(response.status_code, 500)
         video = Video.objects.get(id=video_id)
