@@ -51,6 +51,12 @@ class EvidenceRecord(models.Model):
     provenance = models.JSONField(default=dict, blank=True)
     provenance_at = models.DateTimeField(null=True, blank=True)
 
+    # Candidate incident moments from the latest analysis: when a sharp sound
+    # and a camera jolt suggest something happened, with the reasons. Private
+    # because "something happened at 0:26" belongs with the evidence.
+    moments = models.JSONField(default=dict, blank=True)
+    moments_at = models.DateTimeField(null=True, blank=True)
+
     @property
     def custody_status(self) -> str:
         if not self.worker_sha256 or not self.sha256:
@@ -73,6 +79,8 @@ class EvidenceRecord(models.Model):
             'worker_checked_at': self.worker_checked_at.isoformat() if self.worker_checked_at else None,
             'provenance': self.provenance,
             'provenance_at': self.provenance_at.isoformat() if self.provenance_at else None,
+            'moments': self.moments,
+            'moments_at': self.moments_at.isoformat() if self.moments_at else None,
         }
 
 

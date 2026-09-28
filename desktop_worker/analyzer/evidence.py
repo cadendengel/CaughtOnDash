@@ -181,11 +181,11 @@ def contact_sheet_indices(frame_count: int, fps: float, max_tiles: int = CONTACT
     return sorted({int(round(i * step)) for i in range(wanted)})
 
 
-def grid_shape(tiles: int) -> tuple[int, int]:
-    """(columns, rows), at most six across, as square as that allows."""
+def grid_shape(tiles: int, max_columns: int = 6) -> tuple[int, int]:
+    """(columns, rows), at most `max_columns` across, as square as that allows."""
     if tiles <= 0:
         return (0, 0)
-    columns = min(6, max(1, math.ceil(math.sqrt(tiles * 1.5))))
+    columns = min(max_columns, max(1, math.ceil(math.sqrt(tiles * 1.5))))
     return columns, math.ceil(tiles / columns)
 
 
@@ -194,14 +194,53 @@ def format_timestamp(seconds: float) -> str:
     return f'{int(minutes)}:{secs:04.1f}'
 
 
+def write_sheet(frames: list, target: str, max_columns: int = 6,
+                tile_width: int = CONTACT_SHEET_TILE_WIDTH) -> dict | None:
+    """Tile (frame, label) pairs into one JPEG, each stamped with its label.
+
+    Shared by the contact sheet and the burst around each candidate moment.
+    Returns the artifact fields other than kind and label, or None.
+    """
+    import cv2
+    import numpy as np
+
+    tiles = []
+    for frame, label in frames:
+        height, width = frame.shape[:2]
+        tile_height = max(1, round(height * tile_width / width))
+        tile = cv2.resize(frame, (tile_width, tile_height), interpolation=cv2.INTER_AREA)
+        # Outlined so it reads on snow and on night footage alike.
+        for colour, thickness in (((0, 0, 0), 4), ((255, 255, 255), 1)):
+            cv2.putText(tile, label, (8, tile_height - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6, colour, thickness, cv2.LINE_AA)
+        tiles.append(tile)
+
+    if not tiles:
+        return None
+
+    columns, rows = grid_shape(len(tiles), max_columns)
+    tile_height = tiles[0].shape[0]
+    sheet = np.zeros((rows * tile_height, columns * tile_width, 3), dtype=np.uint8)
+    for position, tile in enumerate(tiles):
+        row, column = divmod(position, columns)
+        tile = tile[:tile_height]
+        sheet[row * tile_height:row * tile_height + tile.shape[0],
+              column * tile_width:(column + 1) * tile_width] = tile
+
+    os.makedirs(os.path.dirname(target) or '.', exist_ok=True)
+    if not cv2.imwrite(target, sheet, [cv2.IMWRITE_JPEG_QUALITY, CONTACT_SHEET_JPEG_QUALITY]):
+        return None
+    return {'path': target, 'width': int(sheet.shape[1]), 'height': int(sheet.shape[0]),
+            'tiles': len(tiles), 'grid': (columns, rows)}
+
+
 def contact_sheet(path: str, metadata: dict, out_dir: str) -> dict | None:
-    """Tile evenly spaced frames, each stamped with its time, into one JPEG.
+    """Evenly spaced frames across the whole clip, each stamped with its time.
 
     The first thing anyone reviewing an incident wants: the whole clip at a
     glance, and the second to jump to.
     """
     import cv2
-    import numpy as np
 
     import detection
 
@@ -211,49 +250,22 @@ def contact_sheet(path: str, metadata: dict, out_dir: str) -> dict | None:
     try:
         indices = contact_sheet_indices(metadata.get('frame_count') or 0, metadata.get('fps') or 0.0)
         box = detection.content_box(capture, indices)
-        tiles = []
+        frames = []
         for index in indices:
             capture.set(cv2.CAP_PROP_POS_FRAMES, index)
             ok, frame = capture.read()
-            if not ok:
-                continue
-            frame = detection.crop_to_content(frame, box)
-            height, width = frame.shape[:2]
-            tile_height = max(1, round(height * CONTACT_SHEET_TILE_WIDTH / width))
-            tile = cv2.resize(frame, (CONTACT_SHEET_TILE_WIDTH, tile_height), interpolation=cv2.INTER_AREA)
-            label = format_timestamp(detection._frame_seconds(index, metadata))
-            # Outlined so it reads on snow and on night footage alike.
-            for colour, thickness in (((0, 0, 0), 4), ((255, 255, 255), 1)):
-                cv2.putText(tile, label, (8, tile_height - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.6, colour, thickness, cv2.LINE_AA)
-            tiles.append(tile)
+            if ok:
+                frames.append((detection.crop_to_content(frame, box),
+                               format_timestamp(detection._frame_seconds(index, metadata))))
     finally:
         capture.release()
 
-    if not tiles:
+    sheet = write_sheet(frames, os.path.join(out_dir, 'contact_sheet.jpg'))
+    if sheet is None:
         return None
-
-    columns, rows = grid_shape(len(tiles))
-    tile_height = tiles[0].shape[0]
-    sheet = np.zeros((rows * tile_height, columns * CONTACT_SHEET_TILE_WIDTH, 3), dtype=np.uint8)
-    for position, tile in enumerate(tiles):
-        row, column = divmod(position, columns)
-        tile = tile[:tile_height]
-        sheet[row * tile_height:row * tile_height + tile.shape[0],
-              column * CONTACT_SHEET_TILE_WIDTH:(column + 1) * CONTACT_SHEET_TILE_WIDTH] = tile
-
-    os.makedirs(out_dir, exist_ok=True)
-    target = os.path.join(out_dir, 'contact_sheet.jpg')
-    if not cv2.imwrite(target, sheet, [cv2.IMWRITE_JPEG_QUALITY, CONTACT_SHEET_JPEG_QUALITY]):
-        return None
-
-    return {
-        'path': target,
-        'kind': 'contact_sheet',
-        'label': f'{len(tiles)} frames, {columns}x{rows}',
-        'width': int(sheet.shape[1]),
-        'height': int(sheet.shape[0]),
-    }
+    columns, rows = sheet.pop('grid')
+    tiles = sheet.pop('tiles')
+    return {**sheet, 'kind': 'contact_sheet', 'label': f'{tiles} frames, {columns}x{rows}'}
 
 
 def collect(path: str, metadata: dict, out_dir: str | None, log=lambda message: None) -> tuple[dict, list[dict]]:

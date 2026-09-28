@@ -102,7 +102,8 @@ namespace CaughtOnDash.Worker.Core.Tests
                                 "\"metadata\":{\"analyzer_version\":\"detect-4.1\"}," +
                                 "\"private\":{\"provenance\":{\"available\":true}}," +
                                 "\"artifacts\":[{\"path\":\"/tmp/a/contact_sheet.jpg\",\"kind\":\"contact_sheet\"," +
-                                "\"label\":\"24 frames\",\"width\":1920,\"height\":720,\"t_seconds\":25.1}]}";
+                                "\"label\":\"24 frames\",\"width\":1920,\"height\":720,\"t_seconds\":25.1," +
+                                "\"bbox\":[1480,310,420,390]}]}";
 
             var result = Assert.IsType<AnalyzerProtocol.ResultLine>(AnalyzerProtocol.Parse(json)).Result;
 
@@ -113,6 +114,7 @@ namespace CaughtOnDash.Worker.Core.Tests
             Assert.Equal("contact_sheet", artifact.Kind);
             Assert.Equal(1920, artifact.Width);
             Assert.Equal(25.1, artifact.TSeconds);
+            Assert.Equal(new[] { 1480, 310, 420, 390 }, artifact.Bbox);
         }
 
         [Fact]

@@ -61,9 +61,11 @@ def record_upload(video, data: bytes, filename: str, content_type: str, uploaded
     record.worker_sha256 = ''
     record.worker_id = ''
     record.worker_checked_at = None
-    # Provenance described the old file too.
+    # Provenance and moments described the old file too.
     record.provenance = {}
     record.provenance_at = None
+    record.moments = {}
+    record.moments_at = None
     record.save()
     return record
 
@@ -104,11 +106,18 @@ def record_private_evidence(video_id, private: dict | None) -> None:
     """
     if not isinstance(private, dict):
         return
-    provenance = private.get('provenance')
-    if not isinstance(provenance, dict) or not provenance:
+
+    now = timezone.now()
+    fields = {}
+    for key in ('provenance', 'moments'):
+        value = private.get(key)
+        if isinstance(value, dict) and value:
+            fields[key] = value
+            fields[f'{key}_at'] = now
+    if not fields:
         return
 
     record, _ = EvidenceRecord.objects.get_or_create(video_id=video_id)
-    record.provenance = provenance
-    record.provenance_at = timezone.now()
-    record.save(update_fields=['provenance', 'provenance_at'])
+    for name, value in fields.items():
+        setattr(record, name, value)
+    record.save(update_fields=list(fields))
