@@ -1,8 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
+using Avalonia.Collections;
 using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Data.Converters;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -20,7 +25,6 @@ namespace CaughtOnDash.Worker.Mac
         private QueueSnapshot _snapshot = new();
         private readonly ThumbnailCache _thumbnails = new();
         private DispatcherTimer? _queuePollTimer;
-        private bool _showingReviewQueue = true;
 
         public MainWindow()
         {
@@ -31,8 +35,14 @@ namespace CaughtOnDash.Worker.Mac
             _session.LogAppended += OnLogAppended;
             _session.QueueChanged += OnQueueChanged;
 
-            QueueGrid.ItemsSource = _rows;
-            ShowReviewQueue();
+            // One list, grouped by band. Groups appear in the order their first
+            // row does, which QueueList.Build makes the order things happen:
+            // running, queued, needs review, failed.
+            var view = new DataGridCollectionView(_rows);
+            view.GroupDescriptions.Add(new DataGridPathGroupDescription(nameof(QueueRow.GroupHeader)));
+            QueueGrid.ItemsSource = view;
+
+            RebuildRows();
             Render(_session.State);
             _session.Log("Application started");
 
@@ -44,9 +54,8 @@ namespace CaughtOnDash.Worker.Mac
 
             _ = _session.RefreshQueuesAsync();
 
-            // The worker no longer auto-starts: with an approval gate, starting
-            // it before anything is approved just polls an empty queue. Choose a
-            // batch and press Start Batch, or Start to run whatever is queued.
+            // The worker never connects on its own: nothing runs until you press
+            // Connect, or queue a batch.
             StartQueuePolling();
         }
 
@@ -55,8 +64,7 @@ namespace CaughtOnDash.Worker.Mac
         /// </summary>
         /// <remarks>
         /// Ten seconds is a compromise: uploads arrive rarely, but a batch you
-        /// just started should visibly drain. Phase 3 replaces this with pushed
-        /// updates.
+        /// just started should visibly drain. Each poll is one request.
         /// </remarks>
         private void StartQueuePolling()
         {
@@ -92,7 +100,8 @@ namespace CaughtOnDash.Worker.Mac
         }
 
         /// <summary>
-        /// Repopulate the table, preserving ticks across a refresh.
+        /// Repopulate the list, preserving ticks and the highlighted row across
+        /// a refresh.
         /// </summary>
         /// <remarks>
         /// A poll every ten seconds that silently cleared your selection would
@@ -100,53 +109,95 @@ namespace CaughtOnDash.Worker.Mac
         /// </remarks>
         private void RebuildRows()
         {
-            var selected = new HashSet<Guid>();
+            var selected = new HashSet<Guid>(_rows.Where(r => r.IsSelected).Select(r => r.Entry.VideoId));
+            var highlighted = (QueueGrid.SelectedItem as QueueRow)?.Entry.VideoId;
+
             foreach (var row in _rows)
             {
-                if (row.IsSelected)
-                {
-                    selected.Add(row.Entry.VideoId);
-                }
+                row.PropertyChanged -= OnRowChanged;
             }
-
-            var entries = _showingReviewQueue ? _snapshot.AwaitingReview : _snapshot.Queued;
-
             _rows.Clear();
-            foreach (var entry in entries)
+
+            foreach (var row in QueueList.Build(_snapshot))
             {
-                var row = new QueueRow(entry) { IsSelected = selected.Contains(entry.VideoId) };
+                row.IsSelected = selected.Contains(row.Entry.VideoId);
+                row.PropertyChanged += OnRowChanged;
                 _rows.Add(row);
                 _ = LoadThumbnail(row);
             }
 
-            QueueHeading.Text = _showingReviewQueue ? "Not started" : "Run queue";
-            QueueCountText.Text = _rows.Count == 0
-                ? (_showingReviewQueue ? "Nothing waiting to start" : "Queue empty")
-                : $"{_rows.Count} video{(_rows.Count == 1 ? "" : "s")}";
+            QueueGrid.SelectedItem = _rows.FirstOrDefault(r => r.Entry.VideoId == highlighted);
+            QueueCountText.Text = QueueList.Summary(_rows);
+            EmptyText.IsVisible = _rows.Count == 0;
+            UpdateActionBar();
+        }
 
-            // Reordering works on both tabs: arrange the review list, tick a
-            // batch, and Start Batch runs it in that order. Priority is stored
-            // per video regardless of approval state, and approving does not
-            // reset it, so the order you set here survives the decision.
-            MoveUpButton.IsEnabled = true;
-            MoveDownButton.IsEnabled = true;
-            // Start Batch works on both tabs. It was review-only on the
-            // reasoning that approving is a no-op for already-approved videos
-            // and the Status panel's Start button covers the queue -- which is
-            // true of the implementation and useless to the person looking at
-            // a list of queued videos with no way to say "run these". The
-            // control that starts them lived in another panel under another
-            // name. Approving an approved video is idempotent, so this is
-            // safe; on the queued tab it means "run these next".
-            StartBatchButton.IsEnabled = true;
+        private void OnRowChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(QueueRow.IsSelected))
+            {
+                UpdateActionBar();
+            }
+        }
 
-            // Reject stays review-only: rejecting is a decision about whether
-            // a video should be analyzed at all, which has already been made
-            // for anything in the run queue.
-            RejectButton.IsEnabled = _showingReviewQueue;
+        /// <summary>Show only the actions that make sense for what is ticked.</summary>
+        private void UpdateActionBar()
+        {
+            var selection = QueueSelection.For(_rows);
+            SelectionText.Text = selection.Summary;
+            MoveUpButton.IsVisible = selection.CanMove;
+            MoveDownButton.IsVisible = selection.CanMove;
+            RejectButton.IsVisible = selection.CanSkip;
+            StartBatchButton.IsVisible = selection.CanStart;
+            StartBatchButton.Content = selection.StartLabel;
+            PreviewButton.IsEnabled = _rows.Count > 0;
+        }
 
-            ReviewTabButton.FontWeight = _showingReviewQueue ? FontWeight.Bold : FontWeight.Normal;
-            QueuedTabButton.FontWeight = _showingReviewQueue ? FontWeight.Normal : FontWeight.Bold;
+        private static readonly IValueConverter TickedTint = new FuncValueConverter<bool, IBrush>(
+            ticked => ticked ? SolidColorBrush.Parse("#FFFBEB") : Brushes.Transparent);
+
+        /// <summary>Tint ticked rows: they are what a batch acts on.</summary>
+        private void QueueGrid_LoadingRow(object? sender, DataGridRowEventArgs e)
+        {
+            e.Row.Bind(DataGridRow.BackgroundProperty,
+                new Binding(nameof(QueueRow.IsSelected)) { Converter = TickedTint });
+        }
+
+        /// <summary>
+        /// Colour each group's band. Set in code because Avalonia has no data
+        /// triggers. The group is looked up by the band's title, and set again
+        /// whenever a recycled band is handed another group -- at LoadingRowGroup
+        /// the band's group is not always attached yet.
+        /// </summary>
+        private void QueueGrid_LoadingRowGroup(object? sender, DataGridRowGroupHeaderEventArgs e)
+        {
+            var header = e.RowGroupHeader;
+            ColourBand(header);
+            header.DataContextChanged -= OnBandContextChanged;
+            header.DataContextChanged += OnBandContextChanged;
+        }
+
+        private void OnBandContextChanged(object? sender, EventArgs e)
+        {
+            if (sender is DataGridRowGroupHeader header)
+            {
+                ColourBand(header);
+            }
+        }
+
+        private void ColourBand(DataGridRowGroupHeader header)
+        {
+            if (header.DataContext is not DataGridCollectionViewGroup group)
+            {
+                return;
+            }
+
+            var first = _rows.FirstOrDefault(r => Equals(r.GroupHeader, group.Key));
+            if (first != null)
+            {
+                header.Background = GroupColour.ForBand(first.Group, "band");
+                header.Foreground = GroupColour.ForBand(first.Group, "bandInk");
+            }
         }
 
         /// <summary>
@@ -177,20 +228,6 @@ namespace CaughtOnDash.Worker.Mac
                 // Not an image, or one Avalonia cannot decode. The placeholder
                 // stands; a broken thumbnail must not disturb the queue.
             }
-        }
-
-        private void ShowReviewQueue()
-        {
-            _showingReviewQueue = true;
-            RebuildRows();
-        }
-
-        private void ReviewTab_Click(object? sender, RoutedEventArgs e) => ShowReviewQueue();
-
-        private void QueuedTab_Click(object? sender, RoutedEventArgs e)
-        {
-            _showingReviewQueue = false;
-            RebuildRows();
         }
 
         private async void RefreshQueueButton_Click(object? sender, RoutedEventArgs e)
@@ -240,24 +277,12 @@ namespace CaughtOnDash.Worker.Mac
             }
         }
 
-        private List<Guid> SelectedIds()
-        {
-            var ids = new List<Guid>();
-            foreach (var row in _rows)
-            {
-                if (row.IsSelected)
-                {
-                    ids.Add(row.Entry.VideoId);
-                }
-            }
-            return ids;
-        }
-
-        /// <summary>Open the highlighted video so it can be judged before approving.</summary>
+        /// <summary>Open the highlighted video so it can be judged before starting it.</summary>
         private void Preview_Click(object? sender, RoutedEventArgs e)
         {
             var row = QueueGrid.SelectedItem as QueueRow
-                      ?? (_rows.Count > 0 ? _rows[0] : null);
+                      ?? _rows.FirstOrDefault(r => r.IsSelected)
+                      ?? _rows.FirstOrDefault();
 
             if (row == null || string.IsNullOrWhiteSpace(row.Entry.VideoUrl))
             {
@@ -281,72 +306,49 @@ namespace CaughtOnDash.Worker.Mac
         private async void MoveDown_Click(object? sender, RoutedEventArgs e) => await Move(1);
 
         /// <summary>
-        /// Move the ticked rows one place, then send the whole order to the
-        /// backend -- priority lives server-side so every host agrees on it.
+        /// Move the ticked rows one place within their group, then send the
+        /// whole order to the backend -- priority lives server-side so every
+        /// host agrees on it.
         /// </summary>
         private async System.Threading.Tasks.Task Move(int direction)
         {
-            var order = new List<QueueRow>(_rows);
-            var indexes = new List<int>();
-            for (var i = 0; i < order.Count; i++)
+            var selection = QueueSelection.For(_rows);
+            if (selection.MoveGroup is not QueueGroup group)
             {
-                if (order[i].IsSelected)
-                {
-                    indexes.Add(i);
-                }
-            }
-
-            if (indexes.Count == 0)
-            {
-                _session.Log("Tick a row first.", Logger.LogLevel.Warning);
+                _session.Log("Tick queued videos, or videos needing review, to reorder them.",
+                    Logger.LogLevel.Warning);
                 return;
             }
 
-            // Walk from the edge the rows are moving toward, so a block of
-            // adjacent selections shifts together instead of collapsing.
-            if (direction < 0)
-            {
-                foreach (var index in indexes)
-                {
-                    if (index == 0) break;
-                    (order[index - 1], order[index]) = (order[index], order[index - 1]);
-                }
-            }
-            else
-            {
-                indexes.Reverse();
-                foreach (var index in indexes)
-                {
-                    if (index >= order.Count - 1) break;
-                    (order[index + 1], order[index]) = (order[index], order[index + 1]);
-                }
-            }
+            var isReview = group == QueueGroup.Review;
+            var entries = isReview ? _snapshot.AwaitingReview : _snapshot.Queued;
+            var ticked = new HashSet<Guid>(_rows.Where(r => r.IsSelected).Select(r => r.Entry.VideoId));
+            var order = QueueOrdering.Move(entries.Select(e => e.VideoId).ToList(), ticked, direction);
 
-            _rows.Clear();
-            foreach (var row in order)
-            {
-                _rows.Add(row);
-            }
+            // Show the new order now rather than after the round trip.
+            var byId = entries.ToDictionary(e => e.VideoId);
+            var reordered = order.Select(id => byId[id]).ToList();
+            if (isReview) _snapshot.AwaitingReview = reordered; else _snapshot.Queued = reordered;
+            RebuildRows();
 
-            await _session.ReorderAsync(GlobalOrder(order));
+            // Shared with the WPF host so the two cannot disagree: send one order
+            // spanning both groups, or reordering one renumbers it into the
+            // other's priority band.
+            await _session.ReorderAsync(QueueOrdering.GlobalOrder(
+                _snapshot.Queued, _snapshot.AwaitingReview, order, isReview));
         }
 
-        /// <summary>Shared with the WPF host so the two cannot disagree.</summary>
-        private List<Guid> GlobalOrder(IReadOnlyList<QueueRow> reordered)
-        {
-            var ids = new List<Guid>();
-            foreach (var row in reordered) ids.Add(row.Entry.VideoId);
-
-            return QueueOrdering.GlobalOrder(
-                _snapshot.Queued, _snapshot.AwaitingReview, ids, _showingReviewQueue);
-        }
-
+        /// <summary>
+        /// Queue the ticked videos for analysis. Retrying a failed video is the
+        /// same request: approving puts it back in the queue.
+        /// </summary>
         private async void StartBatch_Click(object? sender, RoutedEventArgs e)
         {
-            var ids = SelectedIds();
+            var ids = QueueSelection.For(_rows).DecisionIds;
             if (ids.Count == 0)
             {
-                _session.Log("Tick the videos you want to run first.", Logger.LogLevel.Warning);
+                _session.Log("Tick videos needing review, or failed ones, to start them.",
+                    Logger.LogLevel.Warning);
                 return;
             }
 
@@ -357,16 +359,17 @@ namespace CaughtOnDash.Worker.Mac
             }
             finally
             {
-                StartBatchButton.IsEnabled = _showingReviewQueue;
+                StartBatchButton.IsEnabled = true;
             }
         }
 
         private async void Reject_Click(object? sender, RoutedEventArgs e)
         {
-            var ids = SelectedIds();
+            var ids = QueueSelection.For(_rows).DecisionIds;
             if (ids.Count == 0)
             {
-                _session.Log("Tick the videos you want to skip first.", Logger.LogLevel.Warning);
+                _session.Log("Tick videos needing review, or failed ones, to skip them.",
+                    Logger.LogLevel.Warning);
                 return;
             }
 
@@ -382,39 +385,45 @@ namespace CaughtOnDash.Worker.Mac
 
         private void Render(WorkerSessionState state)
         {
-            StatusText.Text = state.Status;
-            StatusText.Foreground = state.Status switch
+            // The pill: green while heartbeats land, red when they are refused
+            // or something is wrong, grey when disconnected.
+            var (pill, ink, dot) = state.HeartbeatOk switch
             {
-                "Processing" => Brushes.RoyalBlue,
-                "Idle" => Brushes.Gray,
-                "Error" => Brushes.Red,
-                "Missing config" => Brushes.Red,
-                _ => Brushes.Gray,
+                true => ("#DCFCE7", "#14532D", "#15803D"),
+                false => ("#FEE2E2", "#7F1D1D", "#B91C1C"),
+                _ when !state.IsConfigured || state.Status == "Error" => ("#FEE2E2", "#7F1D1D", "#B91C1C"),
+                _ => ("#EEF0F3", "#57606A", "#8C959F"),
             };
+            ConnectionPill.Background = SolidColorBrush.Parse(pill);
+            ToolTip.SetTip(ConnectionPill, state.ConnectionTooltip);
+            ConnectionDot.Fill = SolidColorBrush.Parse(dot);
+            StatusText.Foreground = SolidColorBrush.Parse(ink);
+            LastHeartbeatText.Foreground = SolidColorBrush.Parse(ink);
+            StatusText.Text = state.Status;
+            LastHeartbeatText.Text = state.LastHeartbeat.HasValue
+                ? $"· heartbeat {state.LastHeartbeatDisplay}"
+                : "";
 
             BackendUrlDisplay.Text = state.BackendUrl;
-            ConnectionDot.Fill = new SolidColorBrush(Color.Parse(state.ConnectionColour));
-            ToolTip.SetTip(ConnectionDot, state.ConnectionTooltip);
-            LastHeartbeatText.Text = state.LastHeartbeatDisplay;
             CurrentJobText.Text = state.CurrentJob;
             StageText.Text = state.Stage;
             JobProgressBar.Value = state.Progress;
             ProgressText.Text = state.ProgressDisplay;
 
-            JobDetailsText.Text = state.CurrentJob == "None"
-                ? "No active job"
-                : $"{state.CurrentJob}\nStage: {state.Stage}\nProgress: {state.ProgressDisplay}";
-
-            // Show the progress card only while a job is actually running.
+            // Show the progress card only while a job is actually running. A bar
+            // sitting at 0% reads as stuck; nothing there reads as nothing running.
             var isProcessing = state.Status == "Processing";
             ProcessingPanel.IsVisible = isProcessing;
-            IdlePanel.IsVisible = !isProcessing;
+            IdleText.IsVisible = !isProcessing;
             IdleText.Text = state.IsConfigured
-                ? state.CanStop ? "Waiting for a job." : "Disconnected."
+                ? state.CanStop ? "Connected, waiting for a job." : "Not connected. Nothing runs until you connect."
                 : "Worker is not configured.";
 
+            // One switch: Connect while disconnected, Disconnect while connected.
             StartButton.IsEnabled = state.CanStart;
             StopButton.IsEnabled = state.CanStop;
+            StartButton.IsVisible = !state.CanStop;
+            StopButton.IsVisible = state.CanStop;
             CancelJobButton.IsEnabled = state.CanCancelJob;
         }
 
@@ -448,8 +457,8 @@ namespace CaughtOnDash.Worker.Mac
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = entry.Level switch
                     {
-                        Logger.LogLevel.Error => Brushes.Red,
-                        Logger.LogLevel.Warning => Brushes.Orange,
+                        Logger.LogLevel.Error => Brushes.Firebrick,
+                        Logger.LogLevel.Warning => Brushes.DarkOrange,
                         _ => Brushes.Black,
                     },
                 };
