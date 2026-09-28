@@ -29,6 +29,7 @@ namespace CaughtOnDash.Worker.Services
 
         public async Task<AnalysisResult> AnalyzeAsync(
             string videoPath,
+            string outputDirectory,
             IProgress<(string stage, int progress)> progress,
             CancellationToken cancellationToken)
         {
@@ -51,6 +52,8 @@ namespace CaughtOnDash.Worker.Services
             };
             startInfo.ArgumentList.Add(scriptPath);
             startInfo.ArgumentList.Add(videoPath);
+            startInfo.ArgumentList.Add("--out-dir");
+            startInfo.ArgumentList.Add(outputDirectory);
 
             using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
 

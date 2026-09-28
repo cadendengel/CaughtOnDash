@@ -8,7 +8,13 @@ namespace CaughtOnDash.Worker.Services
 {
     public interface IAnalyzer
     {
-        Task<AnalysisResult> AnalyzeAsync(string videoPath, IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken);
+        /// <param name="outputDirectory">
+        /// Where the analyzer may write evidence images. The worker uploads
+        /// them privately and deletes the directory afterwards.
+        /// </param>
+        Task<AnalysisResult> AnalyzeAsync(
+            string videoPath, string outputDirectory,
+            IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken);
 
         /// <summary>
         /// The analyzer's version string -- the same value it stamps into each
@@ -32,7 +38,9 @@ namespace CaughtOnDash.Worker.Services
         public Task<string> GetVersionAsync(CancellationToken cancellationToken = default)
             => Task.FromResult("placeholder");
 
-        public async Task<AnalysisResult> AnalyzeAsync(string videoPath, IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken)
+        public async Task<AnalysisResult> AnalyzeAsync(
+            string videoPath, string outputDirectory,
+            IProgress<(string stage, int progress)> progress, CancellationToken cancellationToken)
         {
             Logger.Log($"Starting placeholder analysis of: {videoPath}");
 

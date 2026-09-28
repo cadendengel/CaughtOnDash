@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -342,7 +344,10 @@ namespace CaughtOnDash.Worker.Services
                 metadata = analysisResult.Metadata,
                 // The chain-of-custody check. Sent beside the metadata, not in
                 // it: metadata is public, and this is between worker and backend.
-                source_sha256 = sourceSha256
+                source_sha256 = sourceSha256,
+                // Provenance, for the same reason. Stored in the private
+                // evidence record, never with the video.
+                @private = analysisResult.PrivateData
             };
 
             var result = await SendRequest<dynamic>("POST", $"/api/videos/worker/jobs/{jobId}/complete/", completeRequest, cancellationToken);
@@ -354,6 +359,68 @@ namespace CaughtOnDash.Worker.Services
 
             Logger.Log($"Failed to complete job {jobId}", Logger.LogLevel.Error);
             return false;
+        }
+
+        /// <summary>
+        /// Send one evidence image to the backend's private store.
+        /// </summary>
+        /// <remarks>
+        /// The worker's SHA-256 travels with the file and the backend recomputes
+        /// it, so an image damaged in transit is refused rather than stored as
+        /// evidence. Returns false on any failure: a missing image is reported,
+        /// not fatal to the job.
+        /// </remarks>
+        public async Task<bool> UploadArtifact(
+            Guid jobId, string workerId, AnalysisArtifact artifact, string analyzerVersion,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var bytes = await File.ReadAllBytesAsync(artifact.Path, cancellationToken);
+                var sha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+                using var form = new MultipartFormDataContent();
+                form.Add(new StringContent(workerId), "worker_id");
+                form.Add(new StringContent(artifact.Kind), "kind");
+                form.Add(new StringContent(artifact.Label ?? ""), "label");
+                form.Add(new StringContent(sha256), "sha256");
+                form.Add(new StringContent(analyzerVersion ?? ""), "analyzer_version");
+                form.Add(new StringContent(artifact.Width.ToString(CultureInfo.InvariantCulture)), "width");
+                form.Add(new StringContent(artifact.Height.ToString(CultureInfo.InvariantCulture)), "height");
+                if (artifact.TSeconds is double seconds)
+                {
+                    form.Add(new StringContent(seconds.ToString(CultureInfo.InvariantCulture)), "t_seconds");
+                }
+
+                var file = new ByteArrayContent(bytes);
+                file.Headers.ContentType = new MediaTypeHeaderValue(ArtifactUploads.ContentTypeFor(artifact.Path));
+                form.Add(file, "file", Path.GetFileName(artifact.Path));
+
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Post, $"{_backendUrl}/api/videos/worker/jobs/{jobId}/artifacts/");
+                request.Headers.Add("Authorization", GetAuthorizationHeader());
+                request.Content = form;
+
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var error = await response.Content.ReadAsStringAsync(cancellationToken);
+                    Logger.Log($"Artifact {artifact.Kind} rejected ({(int)response.StatusCode}): {error}", Logger.LogLevel.Warning);
+                    return false;
+                }
+
+                Logger.Log($"Uploaded {artifact.Kind} ({bytes.Length:N0} bytes, sha256 {sha256})");
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to upload artifact {artifact.Path}: {ex.Message}", Logger.LogLevel.Warning);
+                return false;
+            }
         }
 
         public async Task<bool> FailJob(Guid jobId, string workerId, string error, string stage = "", CancellationToken cancellationToken = default)

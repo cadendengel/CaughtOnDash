@@ -51,6 +51,9 @@ def _serialize_artifact(artifact: EvidenceArtifact) -> dict:
         'height': artifact.height,
         'label': artifact.label,
         'analyzer_version': artifact.analyzer_version,
+        # Which attempt made it, so images from a re-run can be told apart.
+        'attempt_number': artifact.run.attempt_number if artifact.run else None,
+        'created_at': artifact.created_at.isoformat(),
     }
 
 
@@ -63,7 +66,10 @@ def _report_payload(video: Video) -> dict:
         'evidence': record.to_dict() if record else None,
         'report': report.to_dict() if report else None,
         'other_party': other_party.to_dict() if other_party else None,
-        'artifacts': [_serialize_artifact(a) for a in EvidenceArtifact.objects.filter(video=video)],
+        'artifacts': [
+            _serialize_artifact(a)
+            for a in EvidenceArtifact.objects.filter(video=video).select_related('run')
+        ],
         'access_log': [
             entry.to_dict()
             for entry in IncidentAccessLog.objects.filter(video=video)[:ACCESS_LOG_ENTRIES]

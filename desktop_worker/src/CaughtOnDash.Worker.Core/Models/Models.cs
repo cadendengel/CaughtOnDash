@@ -192,6 +192,36 @@ namespace CaughtOnDash.Worker.Models
         public List<string> Tags { get; set; } = new();
         public List<AnalysisEvent> Events { get; set; } = new();
         public Dictionary<string, object> Metadata { get; set; } = new();
+
+        /// <summary>
+        /// Private evidence (file provenance). Never merged into Metadata:
+        /// metadata is published with the video, and this can carry GPS.
+        /// </summary>
+        public Dictionary<string, object> PrivateData { get; set; } = new();
+
+        /// <summary>Evidence images the analyzer wrote into its output directory.</summary>
+        public List<AnalysisArtifact> Artifacts { get; set; } = new();
+    }
+
+    public class AnalysisArtifact
+    {
+        [JsonProperty("path")]
+        public string Path { get; set; } = "";
+
+        [JsonProperty("kind")]
+        public string Kind { get; set; } = "";
+
+        [JsonProperty("t_seconds")]
+        public double? TSeconds { get; set; }
+
+        [JsonProperty("label")]
+        public string Label { get; set; } = "";
+
+        [JsonProperty("width")]
+        public int Width { get; set; }
+
+        [JsonProperty("height")]
+        public int Height { get; set; }
     }
 
     public class AnalysisEvent

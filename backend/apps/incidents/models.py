@@ -12,7 +12,7 @@ import uuid
 from django.db import models
 
 from apps.incidents.crypto import EncryptedTextField
-from apps.videos.models import Video
+from apps.videos.models import AnalysisRun, Video
 
 
 class EvidenceRecord(models.Model):
@@ -28,12 +28,14 @@ class EvidenceRecord(models.Model):
     CUSTODY_MISMATCH = 'mismatch'
 
     video = models.OneToOneField(Video, on_delete=models.CASCADE, related_name='evidence_record')
-    sha256 = models.CharField(max_length=64, help_text='SHA-256 of the bytes received at upload')
+    # Blank only for videos uploaded before fingerprinting existed: their
+    # record is created by the first worker check, with nothing to compare to.
+    sha256 = models.CharField(max_length=64, blank=True, default='', help_text='SHA-256 of the bytes received at upload')
     size_bytes = models.BigIntegerField(default=0)
     original_filename = models.CharField(max_length=255, blank=True, default='')
     content_type = models.CharField(max_length=255, blank=True, default='')
     uploaded_by = models.CharField(max_length=255, blank=True, default='')
-    uploaded_at = models.DateTimeField()
+    uploaded_at = models.DateTimeField(null=True, blank=True)
     # Earlier fingerprints, if the file was ever replaced. The upload endpoint
     # accepts a second file for the same video, so a replacement is recorded
     # rather than silently overwriting the evidence it replaced.
@@ -43,9 +45,15 @@ class EvidenceRecord(models.Model):
     worker_id = models.CharField(max_length=255, blank=True, default='')
     worker_checked_at = models.DateTimeField(null=True, blank=True)
 
+    # Where the file came from, read by ffprobe on the worker: container tags,
+    # codecs, and hints such as "this is an iPhone export, not the original".
+    # Here rather than in ai_metadata because it can include the uploader's GPS.
+    provenance = models.JSONField(default=dict, blank=True)
+    provenance_at = models.DateTimeField(null=True, blank=True)
+
     @property
     def custody_status(self) -> str:
-        if not self.worker_sha256:
+        if not self.worker_sha256 or not self.sha256:
             return self.CUSTODY_UNVERIFIED
         if self.worker_sha256 == self.sha256:
             return self.CUSTODY_VERIFIED
@@ -57,12 +65,14 @@ class EvidenceRecord(models.Model):
             'size_bytes': self.size_bytes,
             'original_filename': self.original_filename,
             'content_type': self.content_type,
-            'uploaded_at': self.uploaded_at.isoformat(),
+            'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None,
             'history': self.history,
             'custody_status': self.custody_status,
             'worker_sha256': self.worker_sha256,
             'worker_id': self.worker_id,
             'worker_checked_at': self.worker_checked_at.isoformat() if self.worker_checked_at else None,
+            'provenance': self.provenance,
+            'provenance_at': self.provenance_at.isoformat() if self.provenance_at else None,
         }
 
 
@@ -140,6 +150,10 @@ class EvidenceArtifact(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='evidence_artifacts')
+    # Which analysis attempt produced it. Earlier runs' images are kept, not
+    # replaced -- evidence is not deleted because a newer analyzer ran.
+    run = models.ForeignKey(
+        AnalysisRun, on_delete=models.SET_NULL, null=True, blank=True, related_name='evidence_artifacts')
     kind = models.CharField(max_length=20, choices=KIND_CHOICES)
     storage_path = models.CharField(max_length=512)
     content_type = models.CharField(max_length=100, default='image/jpeg')

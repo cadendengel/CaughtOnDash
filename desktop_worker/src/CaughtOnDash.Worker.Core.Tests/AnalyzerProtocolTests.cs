@@ -1,3 +1,5 @@
+using System.IO;
+using System.Linq;
 using CaughtOnDash.Worker.Services;
 using Xunit;
 
@@ -91,6 +93,65 @@ namespace CaughtOnDash.Worker.Core.Tests
         {
             var message = AnalyzerProtocol.DescribeExitCode(4, "moov atom not found");
             Assert.Contains("moov atom not found", message);
+        }
+
+        [Fact]
+        public void PrivateEvidenceIsParsedApartFromMetadata()
+        {
+            const string json = "{\"type\":\"result\",\"summary\":\"s\",\"tags\":[],\"events\":[]," +
+                                "\"metadata\":{\"analyzer_version\":\"detect-4.1\"}," +
+                                "\"private\":{\"provenance\":{\"available\":true}}," +
+                                "\"artifacts\":[{\"path\":\"/tmp/a/contact_sheet.jpg\",\"kind\":\"contact_sheet\"," +
+                                "\"label\":\"24 frames\",\"width\":1920,\"height\":720,\"t_seconds\":25.1}]}";
+
+            var result = Assert.IsType<AnalyzerProtocol.ResultLine>(AnalyzerProtocol.Parse(json)).Result;
+
+            Assert.True(result.PrivateData.ContainsKey("provenance"));
+            // The whole point of the separate field: nothing private rides in metadata.
+            Assert.False(result.Metadata.ContainsKey("provenance"));
+            var artifact = Assert.Single(result.Artifacts);
+            Assert.Equal("contact_sheet", artifact.Kind);
+            Assert.Equal(1920, artifact.Width);
+            Assert.Equal(25.1, artifact.TSeconds);
+        }
+
+        [Fact]
+        public void OlderAnalyzersWithoutEvidenceStillParse()
+        {
+            var result = Assert.IsType<AnalyzerProtocol.ResultLine>(AnalyzerProtocol.Parse(
+                "{\"type\":\"result\",\"summary\":\"s\",\"private\":null,\"artifacts\":\"nonsense\"}")).Result;
+
+            Assert.Empty(result.PrivateData);
+            Assert.Empty(result.Artifacts);
+        }
+    }
+
+    public class ArtifactUploadsTests
+    {
+        private static readonly string Root = Path.Combine(Path.GetTempPath(), "caught_on_dash_worker", "artifacts_job");
+
+        [Fact]
+        public void AcceptsFilesInsideTheJobDirectory()
+        {
+            Assert.True(ArtifactUploads.IsInsideDirectory(Root, Path.Combine(Root, "contact_sheet.jpg")));
+            Assert.True(ArtifactUploads.IsInsideDirectory(Root, Path.Combine(Root, "burst", "f_001.jpg")));
+        }
+
+        [Theory]
+        [InlineData("..", "secrets.txt")]
+        [InlineData("..", "artifacts_job_other", "x.jpg")]
+        public void RefusesFilesOutsideIt(params string[] parts)
+        {
+            var path = Path.Combine(new[] { Root }.Concat(parts).ToArray());
+            Assert.False(ArtifactUploads.IsInsideDirectory(Root, path));
+        }
+
+        [Fact]
+        public void RefusesTheDirectoryItselfAndBlanks()
+        {
+            Assert.False(ArtifactUploads.IsInsideDirectory(Root, Root));
+            Assert.False(ArtifactUploads.IsInsideDirectory(Root, ""));
+            Assert.False(ArtifactUploads.IsInsideDirectory("", Path.Combine(Root, "a.jpg")));
         }
     }
 }

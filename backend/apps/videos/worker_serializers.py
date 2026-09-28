@@ -146,6 +146,9 @@ class JobCompleteSerializer(serializers.Serializer):
     # worker built before it existed can still complete jobs.
     source_sha256 = serializers.RegexField(
         r'^[0-9a-fA-F]{64}$', required=False, allow_blank=True, default='')
+    # The analyzer's private output -- file provenance, which can include GPS.
+    # Its own field so it can never be mistaken for, or merged into, metadata.
+    private = serializers.JSONField(required=False, default=dict)
 
 
 class JobFailSerializer(serializers.Serializer):
