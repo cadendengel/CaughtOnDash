@@ -301,7 +301,7 @@ namespace CaughtOnDash.Worker.Services
                     ReportProgress(job, report.stage, report.progressValue, cancellationToken));
 
                 ReportProgress(job, stage, 0, cancellationToken);
-                await _apiClient.DownloadVideo(
+                var sourceSha256 = await _apiClient.DownloadVideo(
                     job.VideoUrl,
                     downloadedPath,
                     new Progress<int>(percent => ReportProgress(job, "downloading", percent, cancellationToken)),
@@ -317,7 +317,8 @@ namespace CaughtOnDash.Worker.Services
                 // Anything still queued in Progress<T> is stale by definition.
                 _jobFinishing = true;
 
-                var success = await _apiClient.CompleteJob(job.JobId, _config.WorkerId, result, cancellationToken);
+                var success = await _apiClient.CompleteJob(
+                    job.JobId, _config.WorkerId, result, sourceSha256, cancellationToken);
                 if (success)
                 {
                     // Close the bar out locally. Deliberately not sent to the

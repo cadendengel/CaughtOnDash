@@ -35,6 +35,15 @@ Backend:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_KEY`
 - `SUPABASE_BUCKET`
+- `SUPABASE_EVIDENCE_BUCKET` — private bucket for incident frames and crops,
+  default `evidence`. Create it as **private** in Supabase; its objects are
+  served only through 15-minute signed URLs, never a public link.
+- `INCIDENT_ENCRYPTION_KEYS` — Fernet keys encrypting incident notes and
+  other-party details, comma-separated, newest first. Generate one with
+  `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+  Unset, the site runs but refuses to store or read those fields rather than
+  write them in plaintext. Rotate by prepending a new key; **never remove a
+  key while rows encrypted with it remain** — they become unreadable.
 - `WORKER_API_TOKEN` — shared bearer token for the desktop worker API.
 - `CLERK_ISSUER` — e.g. `https://<slug>.clerk.accounts.dev`. Required for
   session-token verification; without it no token can be verified.
