@@ -102,7 +102,8 @@ namespace CaughtOnDash.Worker.Core.Tests
                                 "\"metadata\":{\"analyzer_version\":\"detect-4.1\"}," +
                                 "\"private\":{\"provenance\":{\"available\":true}}," +
                                 "\"artifacts\":[{\"path\":\"/tmp/a/contact_sheet.jpg\",\"kind\":\"contact_sheet\"," +
-                                "\"label\":\"24 frames\",\"width\":1920,\"height\":720,\"t_seconds\":25.1}]}";
+                                "\"label\":\"24 frames\",\"width\":1920,\"height\":720,\"t_seconds\":25.1," +
+                                "\"bbox\":[1480,310,420,390]}]}";
 
             var result = Assert.IsType<AnalyzerProtocol.ResultLine>(AnalyzerProtocol.Parse(json)).Result;
 
@@ -113,6 +114,32 @@ namespace CaughtOnDash.Worker.Core.Tests
             Assert.Equal("contact_sheet", artifact.Kind);
             Assert.Equal(1920, artifact.Width);
             Assert.Equal(25.1, artifact.TSeconds);
+            Assert.Equal(new[] { 1480, 310, 420, 390 }, artifact.Bbox);
+        }
+
+        [Fact]
+        public void PlateCropsNameThePhotoTheyCameFrom()
+        {
+            var result = Assert.IsType<AnalyzerProtocol.ResultLine>(AnalyzerProtocol.Parse(
+                "{\"type\":\"result\",\"summary\":\"s\",\"artifacts\":[{\"path\":\"/a/p.jpg\",\"kind\":\"plate_crop\"," +
+                "\"source_artifact_id\":\"8f1c2d3e-0000-4000-8000-000000000001\"}]}")).Result;
+
+            Assert.Equal("8f1c2d3e-0000-4000-8000-000000000001", Assert.Single(result.Artifacts).SourceArtifactId);
+        }
+
+        [Fact]
+        public void JobsCarryTheirPhotosAndOlderBackendsNone()
+        {
+            var job = Newtonsoft.Json.JsonConvert.DeserializeObject<CaughtOnDash.Worker.Models.JobDto>(
+                "{\"job_id\":\"00000000-0000-0000-0000-000000000001\",\"photos\":[{\"artifact_id\":\"a\"," +
+                "\"url\":\"https://signed/p.heic\",\"sha256\":\"bb\",\"content_type\":\"image/heic\"}]}")!;
+            var photo = Assert.Single(job.Photos);
+            Assert.Equal("image/heic", photo.ContentType);
+            Assert.Equal("bb", photo.Sha256);
+
+            var older = Newtonsoft.Json.JsonConvert.DeserializeObject<CaughtOnDash.Worker.Models.JobDto>(
+                "{\"job_id\":\"00000000-0000-0000-0000-000000000001\"}")!;
+            Assert.Empty(older.Photos);
         }
 
         [Fact]

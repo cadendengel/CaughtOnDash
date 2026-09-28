@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -292,6 +293,7 @@ namespace CaughtOnDash.Worker.Services
             // file if the download is cancelled or fails part-way through.
             var downloadedPath = _storageService.GetVideoPath(job.VideoId);
             var artifactDirectory = _storageService.GetArtifactDirectory(job.VideoId);
+            var photoDirectory = _storageService.GetPhotoDirectory(job.VideoId);
             var stage = "downloading";
             ResetProgressThrottle();
             _jobFinishing = false;
@@ -312,7 +314,9 @@ namespace CaughtOnDash.Worker.Services
                 // Cleared first: an earlier run of the same video may have died
                 // before its cleanup, and its images must not be sent as this run's.
                 _storageService.CleanupDirectory(artifactDirectory);
-                var result = await _analyzer.AnalyzeAsync(downloadedPath, artifactDirectory, progress, cancellationToken);
+                var photos = await DownloadPhotos(job, photoDirectory, cancellationToken);
+                var result = await _analyzer.AnalyzeAsync(
+                    downloadedPath, artifactDirectory, progress, cancellationToken, photos);
 
                 stage = "uploading_results";
                 ReportProgress(job, stage, 92, cancellationToken);
@@ -355,8 +359,61 @@ namespace CaughtOnDash.Worker.Services
             {
                 _storageService.CleanupVideoFile(downloadedPath);
                 _storageService.CleanupDirectory(artifactDirectory);
+                _storageService.CleanupDirectory(photoDirectory);
             }
         }
+
+        /// <summary>
+        /// Fetch the owner's photos for this job, keeping only those whose bytes
+        /// match the fingerprint taken at upload. A photo that fails either way is
+        /// logged and left out: the video's analysis does not depend on it.
+        /// </summary>
+        private async Task<Dictionary<string, string>> DownloadPhotos(
+            JobDto job, string photoDirectory, CancellationToken cancellationToken)
+        {
+            var photos = new Dictionary<string, string>();
+            if (job.Photos.Count == 0)
+            {
+                return photos;
+            }
+
+            _storageService.CleanupDirectory(photoDirectory);
+            foreach (var photo in job.Photos)
+            {
+                if (!Guid.TryParse(photo.ArtifactId, out var id))
+                {
+                    continue;
+                }
+                var path = Path.Combine(photoDirectory, id + PhotoExtension(photo.ContentType));
+                try
+                {
+                    var sha256 = await _apiClient.DownloadVideo(photo.Url, path, null, cancellationToken);
+                    if (!string.Equals(sha256, photo.Sha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Logger.Log($"Photo {id} does not match its upload fingerprint; not reading it", Logger.LogLevel.Warning);
+                        continue;
+                    }
+                    photos[id.ToString()] = path;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Photo {id} could not be downloaded: {ex.Message}", Logger.LogLevel.Warning);
+                }
+            }
+            Logger.Log($"Downloaded {photos.Count} of {job.Photos.Count} report photo(s)");
+            return photos;
+        }
+
+        private static string PhotoExtension(string contentType) => contentType switch
+        {
+            "image/heic" => ".heic",
+            "image/png" => ".png",
+            _ => ".jpg",
+        };
 
         /// <summary>
         /// Upload the analyzer's evidence images before completing the job, so

@@ -31,7 +31,7 @@ import os
 import sys
 import time
 
-ANALYZER_VERSION = 'detect-4.1'
+ANALYZER_VERSION = 'detect-4.4'
 
 
 def emit(payload: dict) -> None:
@@ -124,6 +124,8 @@ def main(argv: list[str]) -> int:
                         help='Minimum detection confidence (default 0.5)')
     parser.add_argument('--out-dir', default=None,
                         help='Directory for evidence images. Omitted, none are written.')
+    parser.add_argument('--photo', action='append', default=[], metavar='ID=PATH',
+                        help="An owner's photo from the incident report, to read text from. Repeatable.")
     args = parser.parse_args(argv)
 
     started = time.monotonic()
@@ -203,6 +205,63 @@ def main(argv: list[str]) -> int:
     except ImportError as exc:
         log(f'Evidence skipped, missing dependency: {exc}')
         private, artifacts = {}, []
+
+    # Candidate incident moments. Private too: "something happened at 0:26"
+    # belongs with the evidence, not on the public video. Never fails the job.
+    try:
+        import moments
+
+        model, device = None, 'cpu'
+        if not args.no_detect:
+            try:
+                model, device = detection.load_model()
+            except Exception as exc:
+                log(f'Closest-vehicle measurement skipped: {exc}')
+        progress('analyzing', 89)
+        private['moments'], moment_artifacts = moments.find(
+            args.video_path, metadata, args.out_dir, model=model, device=device, log=log)
+        artifacts.extend(moment_artifacts)
+        found = private['moments'].get('moments') or []
+        log(f'Found {len(found)} candidate moment(s)'
+            + (': ' + ', '.join(f"{m['t_seconds']}s ({m['score']})" for m in found) if found else ''))
+    except Exception as exc:
+        log(f'Moment detection skipped: {exc}')
+        private['moments'] = {'available': False, 'reason': str(exc)}
+
+    # The dashcam's own overlay: clock, speed, position. The uploader's
+    # location and speed, so private like the rest. Never fails the job.
+    try:
+        import overlay
+
+        progress('analyzing', 89)
+        private['overlay'] = overlay.read(args.video_path, metadata, log=log)
+        # Put a time, speed and place on each candidate moment -- the
+        # timeline row the manual investigation had to assemble by hand.
+        for key in ('moments', 'possible'):
+            for moment in (private.get('moments') or {}).get(key) or []:
+                seen = overlay.at_time(private['overlay'], moment['t_seconds'])
+                if seen:
+                    moment['overlay'] = seen
+    except Exception as exc:
+        log(f'Overlay reading skipped: {exc}')
+        private['overlay'] = {'available': False, 'reason': str(exc)}
+
+    # Text on the owner's photos: where plates and fleet markings are actually
+    # legible. Each photo on its own, so one unreadable file costs only itself.
+    if args.photo:
+        import photo_text
+
+        private['photo_text'] = {}
+        for spec in args.photo:
+            artifact_id, _, path = spec.partition('=')
+            progress('analyzing', 89)
+            try:
+                findings, crops = photo_text.read(path, args.out_dir, artifact_id, log=log)
+            except Exception as exc:
+                log(f'Photo {artifact_id} skipped: {exc}')
+                findings, crops = {'available': False, 'reason': str(exc)}, []
+            private['photo_text'][artifact_id] = findings
+            artifacts.extend(crops)
 
     progress('uploading_results', 90)
 

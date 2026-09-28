@@ -31,7 +31,8 @@ namespace CaughtOnDash.Worker.Services
             string videoPath,
             string outputDirectory,
             IProgress<(string stage, int progress)> progress,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IReadOnlyDictionary<string, string>? photos = null)
         {
             var scriptPath = ResolveScriptPath();
             if (!File.Exists(scriptPath))
@@ -54,6 +55,11 @@ namespace CaughtOnDash.Worker.Services
             startInfo.ArgumentList.Add(videoPath);
             startInfo.ArgumentList.Add("--out-dir");
             startInfo.ArgumentList.Add(outputDirectory);
+            foreach (var (artifactId, path) in photos ?? new Dictionary<string, string>())
+            {
+                startInfo.ArgumentList.Add("--photo");
+                startInfo.ArgumentList.Add($"{artifactId}={path}");
+            }
 
             using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
 

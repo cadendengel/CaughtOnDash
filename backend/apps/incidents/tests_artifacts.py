@@ -126,6 +126,60 @@ class ArtifactUploadTests(TestCase):
         self.assertEqual(record.worker_sha256, 'a' * 64)
         self.assertEqual(record.custody_status, 'unverified')
 
+    def test_uploading_to_a_video_whose_record_the_worker_made(self):
+        # Regression: that record has no upload time, and the upload endpoint
+        # crashed building a history entry for an upload that never was.
+        from apps.incidents.services import record_upload
+        from apps.incidents.services import record_worker_check
+        record_worker_check(self.video.id, 'w1', 'a' * 64)
+
+        record = record_upload(self.video, b'bytes', 'dash.mp4', 'video/mp4', 'user_owner')
+
+        self.assertEqual(record.history, [])
+        self.assertEqual(record.sha256, hashlib.sha256(b'bytes').hexdigest())
+        self.assertIsNotNone(record.uploaded_at)
+
+    def test_crop_bounding_box_is_kept_and_bad_ones_dropped(self):
+        self._upload(kind='vehicle_crop', bbox='[1480, 310, 420, 390]', t_seconds='25.7')
+        self._upload(kind='vehicle_crop', bbox='[1, 2, "x", 4]')
+        boxes = list(EvidenceArtifact.objects.order_by('created_at').values_list('bbox', 't_seconds'))
+        self.assertEqual(boxes, [([1480, 310, 420, 390], 25.7), (None, None)])
+
+    def test_moments_are_stored_privately_on_complete(self):
+        moments = {'available': True, 'moments': [{'t_seconds': 26.1, 'score': 1.0,
+                                                   'reasons': ['sharp sound at 26.1s']}], 'possible': []}
+        self.client.post(
+            f'/api/videos/worker/jobs/{self.video.id}/complete/',
+            data=json.dumps({'worker_id': 'w1', 'summary': 's', 'private': {'moments': moments}}),
+            content_type='application/json', **self.auth)
+
+        record = EvidenceRecord.objects.get(video=self.video)
+        self.assertEqual(record.moments, moments)
+        self.assertEqual(record.provenance, {})  # a key that was not sent is left alone
+        self.assertNotIn('sharp sound', self.client.get(f'/api/videos/{self.video.id}/').content.decode())
+
+    def test_overlay_track_is_stored_privately_and_replaced_with_the_file(self):
+        overlay = {'available': True, 'clock': {'start': '2026-09-26T12:16:19'},
+                   'track': [{'t_seconds': 25.62, 'speed': 80, 'speed_unit': 'mph',
+                              'lat': 30.228611, 'lon': -97.619722}]}
+        self.client.post(
+            f'/api/videos/worker/jobs/{self.video.id}/complete/',
+            data=json.dumps({'worker_id': 'w1', 'summary': 's', 'private': {'overlay': overlay}}),
+            content_type='application/json', **self.auth)
+
+        record = EvidenceRecord.objects.get(video=self.video)
+        self.assertEqual(record.overlay, overlay)
+        for url in (f'/api/videos/{self.video.id}/', '/api/feed/'):
+            with self.subTest(url=url):
+                self.assertNotIn('97.619722', self.client.get(url).content.decode())
+
+        # A replaced file makes the old track meaningless.
+        from apps.incidents.services import record_upload
+        record_upload(self.video, b'new-bytes', 'new.mp4', 'video/mp4', 'user_owner')
+        record.refresh_from_db()
+        self.assertEqual(record.overlay, {})
+        self.assertIsNone(record.overlay_at)
+
     @patch('apps.incidents.views.signed_object_url', return_value='https://signed.example/x')
     def test_report_lists_images_with_their_attempt(self, _sign):
         self._upload()

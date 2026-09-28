@@ -51,6 +51,18 @@ class EvidenceRecord(models.Model):
     provenance = models.JSONField(default=dict, blank=True)
     provenance_at = models.DateTimeField(null=True, blank=True)
 
+    # Candidate incident moments from the latest analysis: when a sharp sound
+    # and a camera jolt suggest something happened, with the reasons. Private
+    # because "something happened at 0:26" belongs with the evidence.
+    moments = models.JSONField(default=dict, blank=True)
+    moments_at = models.DateTimeField(null=True, blank=True)
+
+    # What the dashcam's burned-in overlay said, read by OCR: its clock, and a
+    # per-second track of the camera car's speed and position. The uploader's
+    # own location and speed -- the most sensitive thing stored here.
+    overlay = models.JSONField(default=dict, blank=True)
+    overlay_at = models.DateTimeField(null=True, blank=True)
+
     @property
     def custody_status(self) -> str:
         if not self.worker_sha256 or not self.sha256:
@@ -73,6 +85,10 @@ class EvidenceRecord(models.Model):
             'worker_checked_at': self.worker_checked_at.isoformat() if self.worker_checked_at else None,
             'provenance': self.provenance,
             'provenance_at': self.provenance_at.isoformat() if self.provenance_at else None,
+            'moments': self.moments,
+            'moments_at': self.moments_at.isoformat() if self.moments_at else None,
+            'overlay': self.overlay,
+            'overlay_at': self.overlay_at.isoformat() if self.overlay_at else None,
         }
 
 
@@ -164,6 +180,12 @@ class EvidenceArtifact(models.Model):
     height = models.IntegerField(default=0)
     label = models.CharField(max_length=255, blank=True, default='')
     analyzer_version = models.CharField(max_length=50, blank=True, default='')
+    # For an owner's photo: the uploaded file's name, a browser-viewable JPEG
+    # beside the untouched original (HEIC does not display), and what was
+    # read from it -- EXIF on upload, text once a worker has looked.
+    original_filename = models.CharField(max_length=255, blank=True, default='')
+    preview_path = models.CharField(max_length=512, blank=True, default='')
+    metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -180,6 +202,9 @@ class IncidentAccessLog(models.Model):
     ACTION_CHOICES = (
         ('view', 'Viewed'),
         ('update', 'Updated'),
+        # A download of everything, other party included: the access that
+        # matters most, so it is named rather than folded into 'view'.
+        ('export', 'Exported'),
     )
 
     video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='incident_access_log')

@@ -112,3 +112,21 @@ def signed_object_url(object_path: str, expires_in: int = SIGNED_URL_SECONDS) ->
 
     # Supabase answers with a path relative to /storage/v1.
     return f"{SUPABASE_URL.rstrip('/')}/storage/v1{resp.json()['signedURL']}"
+
+
+def download_private_bytes(object_path: str) -> bytes:
+    """Fetch one object from the private evidence bucket, server-side."""
+    if not SUPABASE_URL:
+        raise RuntimeError('SUPABASE_URL is not configured')
+    if SUPABASE_SERVICE_KEY is None:
+        raise RuntimeError('SUPABASE_SERVICE_KEY is not configured')
+
+    encoded_path = '/'.join(quote(part, safe='') for part in object_path.split('/'))
+    resp = requests.get(
+        f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/{SUPABASE_EVIDENCE_BUCKET}/{encoded_path}",
+        headers={'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}'},
+        timeout=60,
+    )
+    if not resp.ok:
+        raise RuntimeError(f'Could not fetch {object_path}: {resp.status_code}')
+    return resp.content

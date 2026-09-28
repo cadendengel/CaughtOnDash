@@ -52,6 +52,21 @@ brew install ffmpeg          # macOS
 winget install ffmpeg        # Windows -- open a new terminal afterwards
 ```
 
+### Tesseract (recommended)
+
+Reads the dashcam's burned-in clock, speed and GPS (see *Overlay* below).
+Called as a program, like ffprobe, rather than through a Python OCR package:
+those bundle their own opencv, and two opencv installs break each other.
+Without it the step is skipped and the report says so.
+
+```bash
+brew install tesseract                                   # macOS
+winget install UB-Mannheim.TesseractOCR                  # Windows
+```
+
+The Windows installer does not add itself to PATH; the analyzer also looks in
+`C:\Program Files\Tesseract-OCR`, and `TESSERACT_PATH` overrides both.
+
 ## Point the worker at it
 
 In the worker's `appsettings.json` (also gitignored):
@@ -182,6 +197,64 @@ reported and skipped.
   should be preserved before loop recording overwrites it.
 - *Contact sheet*, written to `--out-dir`: up to 24 evenly spaced frames, one
   per second on short clips, letterbox-cropped and stamped with their time.
+- *Candidate moments* (`private.moments`): when something probably happened.
+  Two signals that fail differently -- the audio *peak* per 100 ms against the
+  surrounding three seconds (an impact is brief; road noise is loud but
+  steady), and a sudden change in whole-image shift at 10 fps (a jolted mount).
+  Agreement within a second scores high; one signal alone must be strong.
+  Each moment gets a 20-frame burst sheet over two seconds, three full-res
+  frames, and -- when the detection model is loaded -- the closest vehicle
+  measured and cropped with its box in the file's pixels. Weaker candidates
+  are listed as `possible`, without images. `signals` says which were
+  measured, so no moments on a muted clip is not read as "nothing happened".
+
+  Calibrated on one labelled clip, the 2026-09-26 collision: it reports one
+  moment at 26.1 s (score 1.0) -- the audio peak the manual investigation
+  found, -12.7 dBFS over a -19.3 median -- and lists a close car-carrier pass
+  at 15.7 s as possible (0.58). With the audio stripped, the jolt alone still
+  finds 26.2 s; a 20 s stretch with a semi passing close finds nothing. The
+  closest-vehicle step is exercised only with a stand-in model in tests. Label
+  more clips before trusting the thresholds.
+- *Overlay* (`private.overlay`): the dashcam's burned-in text, read by
+  Tesseract once a second from whichever band -- top or bottom -- holds it.
+  Returns the dashcam clock as a mapping from video time, and a per-second
+  track of speed and position; each candidate moment gains the clock time,
+  speed and position at that moment. No single OCR reading is trusted: each
+  frame is read three ways, an `S` touching digits is tried as 8 and as 9, the
+  clock is the median offset over every reading, and speed and position settle
+  against their neighbours before a five-sample median filter. That filter
+  passes braking and acceleration through unchanged and removes one- or
+  two-sample misreads. The clock is the dashcam's own, time zone unknown, to
+  within a second.
+
+  On the collision clip: clock on 49/49 frames (240 of 246 readings agree),
+  speed on 49, position on 45, and the moment at 26.1 s reads 12:16:45 PM,
+  80 mph, N30.2286 W97.6197 -- the case timeline, to the overlay's 1-second
+  and 1-arcsecond resolution. About 0.4 s per sampled second, capped at 120
+  samples.
+- *Photo text* (`private.photo_text`, per photo): the owner's photos from the
+  incident report, passed as `--photo ID=PATH` (HEIC via pillow-heif). The
+  dashcam never resolves writing on another vehicle at 720p; a phone photo
+  does. Each photo is read in tiles at two scales, and yields:
+  - `identifiers` -- USDOT and MC numbers (with FMCSA SAFER lookup links),
+    phone numbers, web domains (flagged `may_be_truncated` when they start
+    their line), and US state names;
+  - `legible` -- lines that look like signage: mostly capitals, real word
+    lengths, near-duplicate readings collapsed;
+  - `plates` -- plate-shaped rectangles read with several dark-pixel masks and
+    combined character by character. Characters from a confusable set (S 5 8 9,
+    0 O D Q, 1 I 7, 2 Z, B 8, G 6) are listed in `uncertain` with what they
+    could be, and each candidate's crop is written as a `plate_crop` artifact
+    tied to its photo. A plate reading is a lead to check against the crop,
+    never an answer.
+
+  On the case photo: Utah, cotrucks.com (truncated -- the sign says
+  barcotrucks.com), RENT-A-TRUCK, COMMERCIAL DUTY, BARCQ, and the plate as
+  `S39 SCA` with position 4 flagged "could be 5, 8, 9 or O" -- the plate says
+  S39 9CA, and every read agreed on S there, which is why confusable
+  characters are flagged even when the reads agree. About 15 s per photo.
+  Photos are read when the video is next analyzed: after adding photos to a
+  report, request analysis again.
 
 ## Tests
 
