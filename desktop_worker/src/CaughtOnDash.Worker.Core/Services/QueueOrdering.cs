@@ -67,6 +67,43 @@ namespace CaughtOnDash.Worker.Services
         }
 
         /// <summary>
+        /// Move the ticked videos one place up (-1) or down (+1) within a list.
+        ///
+        /// Walks from the edge the rows are moving toward, so a block of
+        /// adjacent selections shifts together instead of collapsing, and a
+        /// block already at the edge stays put.
+        /// </summary>
+        public static List<Guid> Move(IReadOnlyList<Guid> order, ISet<Guid> selected, int direction)
+        {
+            var moved = new List<Guid>(order);
+            var indexes = new List<int>();
+            for (var i = 0; i < moved.Count; i++)
+            {
+                if (selected.Contains(moved[i])) indexes.Add(i);
+            }
+
+            if (direction < 0)
+            {
+                foreach (var index in indexes)
+                {
+                    if (index == 0) break;
+                    (moved[index - 1], moved[index]) = (moved[index], moved[index - 1]);
+                }
+            }
+            else
+            {
+                indexes.Reverse();
+                foreach (var index in indexes)
+                {
+                    if (index >= moved.Count - 1) break;
+                    (moved[index + 1], moved[index]) = (moved[index], moved[index + 1]);
+                }
+            }
+
+            return moved;
+        }
+
+        /// <summary>
         /// The order to send when approving a batch: what is already queued,
         /// then the batch behind it, in the order it was arranged.
         /// </summary>

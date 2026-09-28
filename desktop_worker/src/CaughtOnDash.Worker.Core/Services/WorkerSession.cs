@@ -188,19 +188,36 @@ namespace CaughtOnDash.Worker.Services
 
             try
             {
-                var review = await _apiClient.GetReviewQueue(cancellationToken);
-                var run = await _apiClient.GetRunQueue(cancellationToken);
+                // One request for all four groups. A backend without the board
+                // endpoint (mid-deploy) still gets the two queues it has.
+                var board = await _apiClient.GetQueueBoard(cancellationToken);
+                var snapshot = board != null
+                    ? new QueueSnapshot
+                    {
+                        Running = board.Running,
+                        Queued = board.Queued,
+                        AwaitingReview = board.Review,
+                        Failed = board.Failed,
+                        Stuck = new HashSet<Guid>(board.Stuck),
+                    }
+                    : new QueueSnapshot
+                    {
+                        AwaitingReview = await _apiClient.GetReviewQueue(cancellationToken),
+                        Queued = await _apiClient.GetRunQueue(cancellationToken),
+                    };
 
                 // Only on a change: this polls every ten seconds, and a log line
                 // per poll would bury everything else.
+                var review = snapshot.AwaitingReview;
+                var run = snapshot.Queued;
                 if (review.Count != _lastReviewCount || run.Count != _lastQueuedCount)
                 {
                     _lastReviewCount = review.Count;
                     _lastQueuedCount = run.Count;
-                    Log($"Queue: {review.Count} not started, {run.Count} queued");
+                    Log($"Queue: {run.Count} queued, {review.Count} need review");
                 }
 
-                QueueChanged?.Invoke(new QueueSnapshot { AwaitingReview = review, Queued = run });
+                QueueChanged?.Invoke(snapshot);
             }
             catch (Exception ex)
             {
@@ -533,11 +550,14 @@ namespace CaughtOnDash.Worker.Services
         public WorkerSessionState Clone() => (WorkerSessionState)MemberwiseClone();
     }
 
-    /// <summary>Both queues as of the last refresh.</summary>
+    /// <summary>Every group the queue window lists, as of the last refresh.</summary>
     public class QueueSnapshot
     {
+        public List<QueueEntry> Running { get; set; } = new();
         public List<QueueEntry> AwaitingReview { get; set; } = new();
         public List<QueueEntry> Queued { get; set; } = new();
+        public List<QueueEntry> Failed { get; set; } = new();
+        public HashSet<Guid> Stuck { get; set; } = new();
     }
 
     public class BatchResult

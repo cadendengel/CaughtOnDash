@@ -27,6 +27,15 @@ namespace CaughtOnDash.Worker.Services
 
         public QueueEntry Entry { get; }
 
+        /// <summary>Which band of the one list this row sits in.</summary>
+        public QueueGroup Group { get; init; } = QueueGroup.Review;
+
+        /// <summary>The band's heading, and the key the list groups on.</summary>
+        public string GroupHeader { get; init; } = "";
+
+        /// <summary>The status chip: "Running 62%", "Queued #1", "Needs review", "Failed".</summary>
+        public string StatusLabel { get; init; } = "";
+
         public bool IsSelected
         {
             get => _isSelected;

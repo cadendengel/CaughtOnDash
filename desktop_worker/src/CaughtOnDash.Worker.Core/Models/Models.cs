@@ -135,6 +135,12 @@ namespace CaughtOnDash.Worker.Models
         [JsonProperty("analysis_priority")]
         public int AnalysisPriority { get; set; }
 
+        [JsonProperty("analysis_stage")]
+        public string AnalysisStage { get; set; } = "";
+
+        [JsonProperty("analysis_progress")]
+        public int AnalysisProgress { get; set; }
+
         [JsonProperty("attempt_number")]
         public int AttemptNumber { get; set; } = 1;
 

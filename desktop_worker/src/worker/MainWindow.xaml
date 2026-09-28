@@ -1,219 +1,359 @@
 <Window x:Class="CaughtOnDash.Worker.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CaughtOnDash Worker" Height="800" Width="1440" MinHeight="600" MinWidth="1100" 
-        Background="#F5F5F5"
+        Title="CaughtOnDash Worker" Height="820" Width="1440" MinHeight="600" MinWidth="1100"
+        Background="#EEF0F3"
         FontFamily="Segoe UI"
-        FontSize="12">
+        FontSize="12"
+        Foreground="#1F2328">
 
     <Window.Resources>
         <!-- Buttons shipped with the text against the edges; give them room. -->
         <Style TargetType="Button">
-            <Setter Property="Padding" Value="14,6"/>
-            <Setter Property="MinWidth" Value="70"/>
+            <Setter Property="Padding" Value="12,5"/>
+            <Setter Property="MinWidth" Value="64"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#C4CAD3"/>
         </Style>
+
+        <!-- Text cells, centred to line up with the checkbox and chip. -->
+        <Style x:Key="CellText" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#D8DCE2"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+
+        <!-- One status chip per row, coloured by group: green running, blue
+             queued, amber needs review, red failed. -->
+        <DataTemplate x:Key="StatusChip">
+            <Border x:Name="Chip" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left"
+                    VerticalAlignment="Center" Background="#FEF3C7">
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse x:Name="Dot" Width="7" Height="7" Fill="#B45309" Margin="0,0,6,0"
+                             VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ChipText" Text="{Binding StatusLabel}" Foreground="#78350F"
+                               FontWeight="SemiBold" FontSize="11"/>
+                </StackPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Group}" Value="Running">
+                    <Setter TargetName="Chip" Property="Background" Value="#DCFCE7"/>
+                    <Setter TargetName="Dot" Property="Fill" Value="#15803D"/>
+                    <Setter TargetName="ChipText" Property="Foreground" Value="#14532D"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Group}" Value="Queued">
+                    <Setter TargetName="Chip" Property="Background" Value="#DBEAFE"/>
+                    <Setter TargetName="Dot" Property="Fill" Value="#1D4ED8"/>
+                    <Setter TargetName="ChipText" Property="Foreground" Value="#1E3A8A"/>
+                </DataTrigger>
+                <!-- Running with no heartbeat: not healthy, whatever group it is in. -->
+                <DataTrigger Binding="{Binding StatusLabel}" Value="Stuck">
+                    <Setter TargetName="Chip" Property="Background" Value="#FEE2E2"/>
+                    <Setter TargetName="Dot" Property="Fill" Value="#B91C1C"/>
+                    <Setter TargetName="ChipText" Property="Foreground" Value="#7F1D1D"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Group}" Value="Failed">
+                    <Setter TargetName="Chip" Property="Background" Value="#FEE2E2"/>
+                    <Setter TargetName="Dot" Property="Fill" Value="#B91C1C"/>
+                    <Setter TargetName="ChipText" Property="Foreground" Value="#7F1D1D"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
     </Window.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Border Grid.Row="0" Background="#FFFFFF" BorderThickness="0,0,0,1" BorderBrush="#E0E0E0">
-            <StackPanel Margin="15">
-                <TextBlock Text="CaughtOnDash Desktop Worker" FontSize="18" FontWeight="Bold" Foreground="#1a1a1a"/>
-                <TextBlock Text="Process dashcam videos locally" Foreground="#666666" Margin="0,5,0,0"/>
-            </StackPanel>
+        <!-- Header: who this is, whether it is connected, and the one switch.
+             Connecting is always by hand: nothing runs until you say so. -->
+        <Border Grid.Row="0" Background="White" BorderThickness="0,0,0,1" BorderBrush="#D8DCE2">
+            <Grid Margin="24,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="CaughtOnDash Worker" FontSize="18" FontWeight="Bold"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <TextBlock Text="Backend " Foreground="#57606A"/>
+                        <TextBlock x:Name="BackendUrlDisplay" Text="Not configured" Foreground="#57606A"/>
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border x:Name="ConnectionPill" CornerRadius="14" Padding="12,5" Margin="0,0,12,0"
+                            Background="#EEF0F3" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="ConnectionDot" Width="9" Height="9" Fill="#8C959F"
+                                     Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="StatusText" Text="Disconnected" FontWeight="SemiBold" FontSize="13"/>
+                            <TextBlock x:Name="LastHeartbeatText" Text="" FontSize="13" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="StartButton" Content="Connect" Click="StartButton_Click"
+                            Background="#15803D" BorderBrush="#15803D" Foreground="White" FontWeight="SemiBold"
+                            Height="34" Margin="0,0,8,0"
+                            ToolTip="Go online and run whatever is queued"/>
+                    <Button x:Name="StopButton" Content="Disconnect" Click="StopButton_Click"
+                            BorderBrush="#B91C1C" Foreground="#B91C1C" FontWeight="SemiBold"
+                            Height="34" IsEnabled="False"/>
+                </StackPanel>
+            </Grid>
         </Border>
 
-        <!-- Main Content -->
-        <Grid Grid.Row="1" Margin="15">
-            <!-- Log on the right because it is the tall content; status and
-                 progress stack on the left. -->
+        <Grid Grid.Row="1" Margin="24,16">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="300"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="360"/>
+                <ColumnDefinition Width="340"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Left: Status & Controls -->
-            <Grid Grid.Column="0" Margin="0,0,10,0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <Border Grid.Row="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5" Margin="0,0,0,15">
-                    <StackPanel Margin="15">
-                        <TextBlock Text="Worker Status" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                        <StackPanel Margin="0,0,0,10">
-                            <TextBlock Text="Status:" FontWeight="SemiBold"/>
-                            <TextBlock x:Name="StatusText" Text="Disconnected" Foreground="#E74C3C" FontSize="13" Margin="0,3,0,0"/>
-                        </StackPanel>
-                        <StackPanel Margin="0,0,0,10">
-                            <TextBlock Text="Last Heartbeat:" FontWeight="SemiBold"/>
-                            <TextBlock x:Name="LastHeartbeatText" Text="Never" FontSize="13" Margin="0,3,0,0"/>
-                        </StackPanel>
-                        <StackPanel Margin="0,0,0,15">
-                            <TextBlock Text="Current Job:" FontWeight="SemiBold"/>
-                            <TextBlock x:Name="CurrentJobText" Text="None" FontSize="13" Margin="0,3,0,0"/>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button x:Name="StartButton" Content="Connect" Click="StartButton_Click" 
-                                    Background="#27AE60" Foreground="White" Margin="0,0,10,0" Height="35" Width="110"
-                                    ToolTip="Go online and run whatever is queued"/>
-                            <Button x:Name="StopButton" Content="Disconnect" Click="StopButton_Click" 
-                                    Background="#E74C3C" Foreground="White" Height="35" Width="110" IsEnabled="False"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <Border Grid.Row="1" x:Name="ProcessingPanel" Visibility="Collapsed" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
-                    <StackPanel Margin="15">
-                        <TextBlock Text="Processing" FontWeight="Bold" FontSize="14" Margin="0,0,0,15"/>
-
-                        <StackPanel Margin="0,0,0,15">
-                            <TextBlock Text="Progress:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                            <ProgressBar x:Name="ProgressBar" Height="20" Background="#E8E8E8" Foreground="#0066CC" Value="0" Minimum="0" Maximum="100"/>
-                            <TextBlock x:Name="ProgressText" Text="0%" Margin="0,5,0,0" TextAlignment="Center" Foreground="#666666"/>
-                        </StackPanel>
-
-                        <StackPanel Margin="0,0,0,15">
-                            <TextBlock Text="Stage:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                            <TextBlock x:Name="StageText" Text="Idle" FontSize="13" Foreground="#666666"/>
-                        </StackPanel>
-
-                        <StackPanel Margin="0,0,0,15">
-                            <TextBlock Text="Job Details:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                            <TextBlock x:Name="JobDetailsText" Text="No active job" FontSize="13" Foreground="#666666" TextWrapping="Wrap" Height="80"/>
-                        </StackPanel>
-
-                        <Button x:Name="CancelJobButton" Content="Cancel Current Job" 
-                                Background="#E67E22" Foreground="White" Height="35" IsEnabled="False"/>
-                    </StackPanel>
-                </Border>
-
-                <Border Grid.Row="1" x:Name="IdlePanel" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
-                    <StackPanel Margin="15">
-                        <TextBlock Text="Processing" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                        <TextBlock x:Name="IdleText" Text="No job running." FontSize="13" Foreground="#888888" TextWrapping="Wrap"/>
-                    </StackPanel>
-                </Border>
-            </Grid>
-
-            <Border Grid.Column="1" Margin="0,0,15,0" Background="White" BorderBrush="#E0E0E0"
-                    BorderThickness="1" CornerRadius="5">
-                <Grid Margin="15">
+            <!-- The queue: one list, grouped in the order things happen. -->
+            <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,16,0">
+                <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <Grid Grid.Row="0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="QueueHeading" Text="Not started" FontWeight="Bold" FontSize="14"/>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <Button x:Name="ResetStaleButton" Content="Free stuck"
-                                    Click="ResetStaleButton_Click" Padding="10,3" Margin="0,0,8,0"
-                                    ToolTip="Put jobs back in the queue when the worker that claimed them died"/>
-                            <Button x:Name="RequeueOutdatedButton" Content="Requeue outdated"
-                                    Click="RequeueOutdatedButton_Click" Padding="10,3" Margin="0,0,8,0"
-                                    ToolTip="Re-run every video not on the current analyzer version"/>
-                            <Button x:Name="RefreshQueueButton" Content="Refresh"
-                                    Click="RefreshQueueButton_Click" Padding="10,3"/>
-                        </StackPanel>
-                    </Grid>
+                    <Border BorderBrush="#E6E9EE" BorderThickness="0,0,0,1">
+                        <Grid Margin="16,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Queue" FontWeight="Bold" FontSize="15" Margin="0,0,12,0"/>
+                                <TextBlock x:Name="QueueCountText" Foreground="#57606A" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button x:Name="ResetStaleButton" Content="Free stuck"
+                                        Click="ResetStaleButton_Click" Margin="0,0,8,0"
+                                        ToolTip="Put jobs back in the queue when the worker that claimed them died"/>
+                                <Button x:Name="RequeueOutdatedButton" Content="Requeue outdated"
+                                        Click="RequeueOutdatedButton_Click" Margin="0,0,8,0"
+                                        ToolTip="Re-run every video not on the current analyzer version"/>
+                                <Button x:Name="RefreshQueueButton" Content="Refresh"
+                                        Click="RefreshQueueButton_Click"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
 
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,10">
-                        <Button x:Name="ReviewTabButton" Content="Not started" Click="ReviewTab_Click" Margin="0,0,8,8"/>
-                        <Button x:Name="QueuedTabButton" Content="Queued" Click="QueuedTab_Click" Margin="0,0,8,8"/>
-                        <TextBlock x:Name="QueueCountText" VerticalAlignment="Center" Foreground="#666666"/>
-                    </StackPanel>
-
-                    <DataGrid Grid.Row="2" x:Name="QueueGrid" AutoGenerateColumns="False"
-                              GridLinesVisibility="Horizontal" CanUserReorderColumns="False"
+                    <DataGrid Grid.Row="1" x:Name="QueueGrid" AutoGenerateColumns="False"
+                              GridLinesVisibility="None" CanUserReorderColumns="False"
                               CanUserSortColumns="False" CanUserAddRows="False"
+                              CanUserResizeRows="False" BorderThickness="0"
                               HeadersVisibility="Column" Background="White" SelectionMode="Single"
                               RowHeight="52">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Background" Value="White"/>
+                                <Setter Property="Foreground" Value="#57606A"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="Padding" Value="6,6"/>
+                                <Setter Property="BorderBrush" Value="#E6E9EE"/>
+                                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="BorderBrush" Value="#EEF0F3"/>
+                                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                <Style.Triggers>
+                                    <!-- Ticked rows are what a batch acts on. -->
+                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                        <Setter Property="Background" Value="#FFFBEB"/>
+                                    </DataTrigger>
+                                    <!-- The highlighted row is what Preview opens. -->
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="BorderBrush" Value="#1D4ED8"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Foreground" Value="#1F2328"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.CellStyle>
+                        <DataGrid.GroupStyle>
+                            <!-- A tinted band above each group, in the group's colour. -->
+                            <GroupStyle>
+                                <!-- DataGridRowsPresenter, not the default panel: without it
+                                     the grid cannot size columns and every one collapses to
+                                     its minimum width. -->
+                                <GroupStyle.Panel>
+                                    <ItemsPanelTemplate>
+                                        <DataGridRowsPresenter/>
+                                    </ItemsPanelTemplate>
+                                </GroupStyle.Panel>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <Border x:Name="Band" Background="#FFFBEB" Padding="12,6"
+                                                BorderBrush="#E6E9EE" BorderThickness="0,0,0,1">
+                                            <TextBlock x:Name="BandText" Text="{Binding Name}" FontWeight="Bold"
+                                                       Foreground="#78350F"/>
+                                        </Border>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding Items[0].Group}" Value="Running">
+                                                <Setter TargetName="Band" Property="Background" Value="#F0FDF4"/>
+                                                <Setter TargetName="BandText" Property="Foreground" Value="#14532D"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Items[0].Group}" Value="Queued">
+                                                <Setter TargetName="Band" Property="Background" Value="#EFF6FF"/>
+                                                <Setter TargetName="BandText" Property="Foreground" Value="#1E3A8A"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Items[0].Group}" Value="Failed">
+                                                <Setter TargetName="Band" Property="Background" Value="#FEF2F2"/>
+                                                <Setter TargetName="BandText" Property="Foreground" Value="#7F1D1D"/>
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                            </GroupStyle>
+                        </DataGrid.GroupStyle>
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Header="" Width="40"
-                                                    Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                            <!-- A plain CheckBox rather than DataGridCheckBoxColumn, which
+                                 needed one click to select the row and a second to tick it. -->
+                            <DataGridTemplateColumn Header="" Width="40">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  AutomationProperties.Name="Tick"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTemplateColumn Header="" Width="86" IsReadOnly="True">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Border Background="#EEEEEE" Width="76" Height="44"
-                                                Margin="2" CornerRadius="3">
+                                        <Border Background="#E6E9EE" Width="76" Height="44"
+                                                Margin="2" CornerRadius="4">
                                             <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
                                         </Border>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Title" Binding="{Binding Entry.Title}" Width="2*" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Length" Binding="{Binding Entry.DurationDisplay}" Width="84" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Attempt" Binding="{Binding Entry.AttemptDisplay}" Width="90" IsReadOnly="True"/>
-                            <!-- 3*, and a tooltip carrying the full text. HistoryDisplay runs to ~90
-                                 characters ("Attempt 2: " plus an 80-character summary) and the
-                                 columns are star-sized, so they always total the grid width: the text
-                                 was being clipped mid-sentence with no way to read the rest. -->
+                            <DataGridTextColumn Header="Title" Binding="{Binding Entry.Title}" Width="2*" IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource CellText}">
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                        <Setter Property="ToolTip" Value="{Binding Entry.Title}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Length" Binding="{Binding Entry.DurationDisplay}" Width="64" IsReadOnly="True"
+                                                ElementStyle="{StaticResource CellText}"/>
+                            <DataGridTextColumn Header="Attempt" Binding="{Binding Entry.AttemptDisplay}" Width="72" IsReadOnly="True"
+                                                ElementStyle="{StaticResource CellText}"/>
+                            <!-- Tooltip carries the full text: HistoryDisplay runs to ~90
+                                 characters and would otherwise be cut mid-sentence. -->
                             <DataGridTextColumn Header="Last result" Binding="{Binding Entry.HistoryDisplay}" Width="3*" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource CellText}">
+                                        <Setter Property="Foreground" Value="#424A53"/>
                                         <Setter Property="ToolTip" Value="{Binding Entry.HistoryDisplay}"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
+                            <DataGridTemplateColumn Header="Status" Width="130" IsReadOnly="True"
+                                                    CellTemplate="{StaticResource StatusChip}"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
-                    <WrapPanel Grid.Row="3" Orientation="Horizontal" Margin="0,12,0,0">
-                        <Button x:Name="SelectAllButton" Content="Select all" Click="SelectAll_Click" Margin="0,0,8,8"/>
-                        <Button x:Name="ClearSelectionButton" Content="Clear" Click="ClearSelection_Click" Margin="0,0,8,8"/>
-                        <Button x:Name="PreviewButton" Content="Preview" Click="Preview_Click" Margin="0,0,8,8"
-                                ToolTip="Open the selected video in your browser"/>
-                        <Button x:Name="MoveUpButton" Content="Up" Click="MoveUp_Click" Margin="0,0,8,8"/>
-                        <Button x:Name="MoveDownButton" Content="Down" Click="MoveDown_Click" Margin="0,0,8,8"/>
-                        <Button x:Name="RejectButton" Content="Skip" Click="Reject_Click" Margin="0,0,8,8"
-                                Background="#C0392B" Foreground="White"/>
-                        <Button x:Name="StartBatchButton" Content="Start selected" Click="StartBatch_Click"
-                                Background="#27AE60" Foreground="White" FontWeight="Bold" Padding="14,4"
-                                Margin="0,0,8,8"/>
-                    </WrapPanel>
+                    <TextBlock Grid.Row="1" x:Name="EmptyText" Visibility="Collapsed"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#57606A"
+                               TextAlignment="Center" FontSize="13"
+                               Text="Nothing waiting. New uploads appear here under Needs review."/>
+
+                    <!-- The action bar offers only what makes sense for what is ticked. -->
+                    <Border Grid.Row="2" Background="#FBF6EA" BorderBrush="#E6E9EE" BorderThickness="0,1,0,0"
+                            CornerRadius="0,0,8,8">
+                        <Grid Margin="16,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="SelectionText" Text="Tick videos to act on them"
+                                           FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                <Button x:Name="SelectAllButton" Content="Select all" Click="SelectAll_Click" Margin="0,0,8,0"/>
+                                <Button x:Name="ClearSelectionButton" Content="Clear" Click="ClearSelection_Click"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button x:Name="PreviewButton" Content="Preview" Click="Preview_Click" Margin="8,0,0,0"
+                                        ToolTip="Open the highlighted video in your browser"/>
+                                <Button x:Name="MoveUpButton" Content="Up" Click="MoveUp_Click" Margin="8,0,0,0"/>
+                                <Button x:Name="MoveDownButton" Content="Down" Click="MoveDown_Click" Margin="8,0,0,0"/>
+                                <Button x:Name="RejectButton" Content="Skip" Click="Reject_Click" Margin="8,0,0,0"
+                                        BorderBrush="#B91C1C" Foreground="#B91C1C" FontWeight="SemiBold"
+                                        ToolTip="Never analyze these"/>
+                                <Button x:Name="StartBatchButton" Content="Queue for analysis" Click="StartBatch_Click"
+                                        Background="#1D4ED8" BorderBrush="#1D4ED8" Foreground="White" FontWeight="SemiBold"
+                                        Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
                 </Grid>
             </Border>
 
-            <!-- Right: the activity log, full height -->
-            <Border Grid.Column="2" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
-                <Grid Margin="15">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Text="Activity Log" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                    <ListBox Grid.Row="1" x:Name="LogListBox" BorderThickness="0" Background="#F9F9F9" Margin="2"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
-                </Grid>
-            </Border>
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Now running: this machine's job. -->
+                <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                    <StackPanel Margin="16">
+                        <TextBlock Text="Now running" FontWeight="Bold" FontSize="15" Margin="0,0,0,10"/>
+                        <StackPanel x:Name="ProcessingPanel" Visibility="Collapsed">
+                            <TextBlock x:Name="CurrentJobText" Text="None" FontWeight="SemiBold" FontSize="13"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <ProgressBar x:Name="ProgressBar" Height="8" Margin="0,10,0,0" Background="#E6E9EE"
+                                         Foreground="#15803D" BorderThickness="0" Value="0" Minimum="0" Maximum="100"/>
+                            <Grid Margin="0,6,0,12">
+                                <TextBlock x:Name="StageText" Text="Idle" Foreground="#57606A"/>
+                                <TextBlock x:Name="ProgressText" Text="0%" Foreground="#57606A" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Button x:Name="CancelJobButton" Content="Cancel job" Click="CancelJobButton_Click"
+                                    HorizontalAlignment="Left" IsEnabled="False"/>
+                        </StackPanel>
+                        <TextBlock x:Name="IdlePanel" Foreground="#57606A" TextWrapping="Wrap">
+                            <Run x:Name="IdleText" Text="No job running."/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" Style="{StaticResource Card}">
+                    <Grid Margin="16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Activity" FontWeight="Bold" FontSize="15" Margin="0,0,0,10"/>
+                        <ListBox Grid.Row="1" x:Name="LogListBox" BorderThickness="0" Background="#F6F8FA"
+                                 FontFamily="Consolas" FontSize="11"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
-
-        <!-- Footer -->
-        <Border Grid.Row="2" Background="#FFFFFF" BorderThickness="0,1,0,0" BorderBrush="#E0E0E0">
-            <StackPanel Orientation="Horizontal" Margin="15">
-                <TextBlock Text="Version 0.1.0" Foreground="#999999" Margin="0,0,20,0"/>
-            <TextBlock Text="Backend:" Foreground="#666666" Margin="0,0,5,0"/>
-            <TextBlock x:Name="BackendUrlDisplay" Text="Not configured" Foreground="#0066CC"/>
-            </StackPanel>
-        </Border>
     </Grid>
 </Window>

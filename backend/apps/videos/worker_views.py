@@ -152,6 +152,32 @@ def list_review_queue(request):
 
 
 @require_http_methods(["GET"])
+@worker_required
+def queue_board(request):
+    """GET /api/videos/worker/jobs/board/ - every video the worker window lists.
+
+    One request for the four groups the window shows as a single list:
+    running, queued (in run order), awaiting review, and failed. The desktop
+    app polls this every ten seconds, and one call instead of four keeps it
+    well clear of the rate limit in front of the backend.
+
+    `stuck` names the running videos whose worker has gone quiet, by the same
+    rule "Free stuck" uses, so the window can say which ones that would free.
+    """
+    running = Video.objects.filter(
+        analysis_status='processing', deleted_at__isnull=True,
+    ).order_by('created_at')
+
+    return JsonResponse({
+        'running': _queue_payload(running),
+        'queued': _queue_payload(claimable_jobs()),
+        'review': _queue_payload(review_queue()),
+        'failed': _queue_payload(failed_analyses()),
+        'stuck': [str(video_id) for video_id in stuck_analyses().values_list('id', flat=True)],
+    })
+
+
+@require_http_methods(["GET"])
 @admin_required
 def all_videos(request):
     """GET /api/videos/admin/all/ - every video, with its state and details.

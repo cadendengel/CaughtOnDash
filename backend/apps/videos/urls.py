@@ -21,6 +21,7 @@ from .views import (
 from .worker_views import (
     list_queue,
     list_review_queue,
+    queue_board,
     reorder_queue_view,
     worker_decide_approval,
     worker_status,
@@ -83,6 +84,8 @@ urlpatterns = [
     path('worker/jobs/', list_queue, name='worker-jobs-list'),
     # GET /api/videos/worker/jobs/review/ - videos awaiting approval
     path('worker/jobs/review/', list_review_queue, name='worker-jobs-review'),
+    # GET /api/videos/worker/jobs/board/ - running, queued, review and failed at once
+    path('worker/jobs/board/', queue_board, name='worker-jobs-board'),
     # POST /api/videos/worker/jobs/reorder/ - set queue order
     path('worker/jobs/reorder/', reorder_queue_view, name='worker-jobs-reorder'),
     # POST /api/videos/worker/jobs/requeue-stale/ - requeue all videos not on the
