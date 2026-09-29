@@ -31,3 +31,42 @@ Reproduce with `python eval/nexar.py score` after `fetch` and `measure`.
 - Jolt-only `possible` entries (z >= 8) would appear on ~92% of ordinary clips like these.
   Not changed yet: that depends on how often a sound coincides with a random jolt,
   which needs footage with audio.
+
+# NINA audio results
+
+Audio signal (moments.audio_rises, detect-4.6) against NINA's labelled in-vehicle
+sounds, measured 2026-09-29. Of NINA's 212 YouTube source videos, 129 could still
+be downloaded; 83 are removed or private, and they held almost all the crash
+labels, so only **10 crash segments** remain. Reproduce with
+`python eval/nina.py fetch`, `measure`, `score`.
+
+Share of labelled segments holding a rise of at least 8 dB (full audio strength):
+
+| sound | segments | rise >= 8 dB |
+|---|---|---|
+| door | 3 | 100% |
+| pothole | 115 | 47% |
+| talking | 34 | 35% |
+| crash | 10 | 30% |
+| music | 17 | 24% |
+| horn | 13 | 23% |
+| meteo (rain, hail) | 77 | 18% |
+| driving | 18 | 17% |
+| sirens (ambulance, fire, police) | 275 | 0-3% |
+
+A 2 s stretch of ordinary driving holds a rise of >= 3 dB 48% of the time, >= 5 dB 17%,
+>= 8 dB 5%, >= 10 dB 0% (156 stretches).
+
+## Reading
+
+- Everyday sounds, potholes, doors and talking above all, trip the audio signal about
+  as readily as crashes do. Alone, the sound is as weak as the jolt: the evidence for
+  requiring both runs in both directions.
+- Too few crash segments survive to measure the audio hit rate.
+- `score` also combines these with Nexar's jolts assuming independence. That estimate
+  (about 325 false moments per hour) contradicts the only paired audio-and-video data
+  there is: the production corpus re-run on detect-4.6 produced no false moments. The
+  two datasets come from different cameras and microphones and do not combine; the
+  estimate is kept as a bound, not used for tuning.
+- No thresholds changed. Tuning the fused rule needs footage with sound and picture
+  recorded together: the owner's own labelled moments, or re-fetched DoTA/CCD sources.

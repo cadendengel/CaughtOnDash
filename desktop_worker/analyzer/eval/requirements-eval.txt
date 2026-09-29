@@ -1,3 +1,5 @@
 # Evaluation-only dependencies, on top of requirements.txt. Not needed to run
 # the analyzer; only to download labelled datasets (eval/nexar.py).
 huggingface_hub==2.0.0
+# NINA audio (eval/nina.py). Needs a JavaScript runtime for YouTube; Node works.
+yt-dlp==2026.8.19

@@ -354,3 +354,10 @@ python eval/nexar.py score            # hit rate and false alarms per jolt thres
 
 The licence forbids re-identifying people or vehicles: never run plate reading
 on these clips.
+
+`eval/nina.py` does the same for the audio signal, against
+[NINA](https://github.com/axa-rev-research/NINA-Dataset)'s labelled in-vehicle
+sounds (crashes, horns, potholes, doors, sirens, driving). Clone that repository
+to `~/datasets/nina`, then `fetch` (audio from YouTube via yt-dlp, which needs
+Node or another JavaScript runtime), `measure`, `score`. The audio is YouTube
+content: keep it local. Results for both are in `eval/RESULTS.md`.
