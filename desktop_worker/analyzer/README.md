@@ -336,3 +336,21 @@ Roughly, for a five-minute clip at one frame per second:
 | Laptop, Intel i7-10610U | `cpu` | 1-2 min |
 
 All workable. Lower `--sample-fps` if the slowest host becomes a problem.
+
+## Evaluating against labelled footage
+
+`eval/nexar.py` measures the moment detector's camera-jolt signal against the
+[Nexar collision-prediction set](https://huggingface.co/datasets/nexar-ai/nexar_collision_prediction):
+1,500 US dashcam clips, half with an annotated collision or near-miss time.
+Nexar removed the audio, so only the jolt half is tested. Access is gated: accept
+the licence on Hugging Face and sign in with `hf auth login` first.
+
+```bash
+./.venv/bin/pip install -r eval/requirements-eval.txt
+python eval/nexar.py fetch            # ~31 GB into ~/datasets/nexar; --limit N per class to start small
+python eval/nexar.py measure          # one pass over the video, cached per clip
+python eval/nexar.py score            # hit rate and false alarms per jolt threshold
+```
+
+The licence forbids re-identifying people or vehicles: never run plate reading
+on these clips.
