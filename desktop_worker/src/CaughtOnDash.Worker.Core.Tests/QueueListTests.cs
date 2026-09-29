@@ -150,6 +150,11 @@ namespace CaughtOnDash.Worker.Core.Tests
         }
 
         [Fact]
+        public void TheActivityLogCountsEveryGroup()
+            // Failures used to be missing from the log line entirely.
+            => Assert.Equal("1 running, 3 queued, 2 need review, 1 failed", WorkerSession.QueueSummary(Snapshot()));
+
+        [Fact]
         public void NothingTickedSaysHowToStart()
             => Assert.Equal("Tick videos to act on them", QueueSelection.For(QueueList.Build(Snapshot())).Summary);
 

@@ -23,8 +23,8 @@ namespace CaughtOnDash.Worker.Services
         private readonly WorkerConfig _config;
 
         private WorkerLoopService? _loop;
-        private int _lastReviewCount = -1;
-        private int _lastQueuedCount = -1;
+        private string _lastQueueSummary = "";
+        private bool _queueRefreshFailing;
 
         public event Action<WorkerSessionState>? StateChanged;
         public event Action<WorkerLogEntry>? LogAppended;
@@ -178,7 +178,7 @@ namespace CaughtOnDash.Worker.Services
             }
         }
 
-        /// <summary>Refetch both queues and publish them.</summary>
+        /// <summary>Refetch the queue and publish it.</summary>
         public async Task RefreshQueuesAsync(CancellationToken cancellationToken = default)
         {
             if (!_config.IsConfigured)
@@ -188,33 +188,44 @@ namespace CaughtOnDash.Worker.Services
 
             try
             {
-                // One request for all four groups. A backend without the board
-                // endpoint (mid-deploy) still gets the two queues it has.
+                // One request for all four groups.
                 var board = await _apiClient.GetQueueBoard(cancellationToken);
-                var snapshot = board != null
-                    ? new QueueSnapshot
+                if (board == null)
+                {
+                    // Keep showing the last list rather than blanking it: an
+                    // empty list would read as "nothing to do". Said once, not
+                    // every ten seconds while the backend is unreachable.
+                    if (!_queueRefreshFailing)
                     {
-                        Running = board.Running,
-                        Queued = board.Queued,
-                        AwaitingReview = board.Review,
-                        Failed = board.Failed,
-                        Stuck = new HashSet<Guid>(board.Stuck),
+                        _queueRefreshFailing = true;
+                        Log("Could not refresh the queue; showing the last one received.",
+                            Logger.LogLevel.Warning);
                     }
-                    : new QueueSnapshot
-                    {
-                        AwaitingReview = await _apiClient.GetReviewQueue(cancellationToken),
-                        Queued = await _apiClient.GetRunQueue(cancellationToken),
-                    };
+                    return;
+                }
+
+                if (_queueRefreshFailing)
+                {
+                    _queueRefreshFailing = false;
+                    Log("Queue refresh working again.");
+                }
+
+                var snapshot = new QueueSnapshot
+                {
+                    Running = board.Running,
+                    Queued = board.Queued,
+                    AwaitingReview = board.Review,
+                    Failed = board.Failed,
+                    Stuck = new HashSet<Guid>(board.Stuck),
+                };
 
                 // Only on a change: this polls every ten seconds, and a log line
                 // per poll would bury everything else.
-                var review = snapshot.AwaitingReview;
-                var run = snapshot.Queued;
-                if (review.Count != _lastReviewCount || run.Count != _lastQueuedCount)
+                var summary = QueueSummary(snapshot);
+                if (summary != _lastQueueSummary)
                 {
-                    _lastReviewCount = review.Count;
-                    _lastQueuedCount = run.Count;
-                    Log($"Queue: {run.Count} queued, {review.Count} need review");
+                    _lastQueueSummary = summary;
+                    Log($"Queue: {summary}");
                 }
 
                 QueueChanged?.Invoke(snapshot);
@@ -224,6 +235,14 @@ namespace CaughtOnDash.Worker.Services
                 Log($"Could not refresh the queue: {ex.Message}", Logger.LogLevel.Error);
             }
         }
+
+        /// <summary>
+        /// "1 running, 3 queued, 2 need review, 1 failed" -- every group, so a
+        /// failure shows up in the log and not only in the list.
+        /// </summary>
+        public static string QueueSummary(QueueSnapshot snapshot)
+            => $"{snapshot.Running.Count} running, {snapshot.Queued.Count} queued, " +
+               $"{snapshot.AwaitingReview.Count} need review, {snapshot.Failed.Count} failed";
 
         /// <summary>
         /// Requeue every analyzed video that is not on the current analyzer
@@ -335,16 +354,16 @@ namespace CaughtOnDash.Worker.Services
             // host may have approved something since the last refresh, and this
             // write decides the order everything runs in.
             List<Guid> order;
-            try
+            var current = await _apiClient.GetQueueBoard(cancellationToken);
+            if (current != null)
             {
-                order = QueueOrdering.BatchOrder(
-                    await _apiClient.GetRunQueue(cancellationToken), videoIds);
+                order = QueueOrdering.BatchOrder(current.Queued, videoIds);
             }
-            catch (Exception ex)
+            else
             {
                 // Fall back to ordering the batch alone. Worse than ideal -- it
                 // can interleave with queued work -- but better than not running.
-                Log($"Could not read the run queue, ordering the batch only: {ex.Message}",
+                Log("Could not read the run queue, ordering the batch only.",
                     Logger.LogLevel.Warning);
                 order = new List<Guid>(videoIds);
             }

@@ -137,22 +137,6 @@ def _queue_payload(queryset, limit=200):
 
 @require_http_methods(["GET"])
 @worker_required
-def list_queue(request):
-    """GET /api/videos/worker/jobs/ - the approved queue, in run order."""
-    entries = _queue_payload(claimable_jobs())
-    return JsonResponse({'count': len(entries), 'items': entries})
-
-
-@require_http_methods(["GET"])
-@worker_required
-def list_review_queue(request):
-    """GET /api/videos/worker/jobs/review/ - videos awaiting a decision."""
-    entries = _queue_payload(review_queue())
-    return JsonResponse({'count': len(entries), 'items': entries})
-
-
-@require_http_methods(["GET"])
-@worker_required
 def queue_board(request):
     """GET /api/videos/worker/jobs/board/ - every video the worker window lists.
 

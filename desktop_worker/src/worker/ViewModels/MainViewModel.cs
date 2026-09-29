@@ -89,13 +89,6 @@ namespace CaughtOnDash.Worker.ViewModels
 
         public async void CancelCurrentJob() => await _session.CancelCurrentJobAsync();
 
-        /// <summary>
-        /// Kept for the window's startup call. It no longer starts the worker:
-        /// with an approval gate, starting before anything is approved just
-        /// polls an empty queue.
-        /// </summary>
-        public Task StartAutomaticallyAsync() => _session.RefreshQueuesAsync();
-
         // ---- queue ----
 
         private void OnQueueChanged(QueueSnapshot snapshot)

@@ -226,28 +226,13 @@ namespace CaughtOnDash.Worker.Services
             return result != null;
         }
 
-        /// <summary>Videos waiting for someone to approve or reject them.</summary>
-        public Task<List<QueueEntry>> GetReviewQueue(CancellationToken cancellationToken = default)
-            => GetQueue("/api/videos/worker/jobs/review/", cancellationToken);
-
-        /// <summary>Approved videos, in the order they will run.</summary>
-        public Task<List<QueueEntry>> GetRunQueue(CancellationToken cancellationToken = default)
-            => GetQueue("/api/videos/worker/jobs/", cancellationToken);
-
         /// <summary>
         /// Everything the queue window lists, in one request: running, queued,
-        /// awaiting review and failed. Null when the request failed, or when the
-        /// backend predates the endpoint, so the caller can fall back to the two
-        /// separate queue calls.
+        /// awaiting review and failed. Null when the request failed.
         /// </summary>
         public Task<QueueBoard?> GetQueueBoard(CancellationToken cancellationToken = default)
             => SendRequest<QueueBoard>("GET", "/api/videos/worker/jobs/board/", cancellationToken: cancellationToken);
 
-        private async Task<List<QueueEntry>> GetQueue(string endpoint, CancellationToken cancellationToken)
-        {
-            var result = await SendRequest<QueueResponse>("GET", endpoint, cancellationToken: cancellationToken);
-            return result?.Items ?? new List<QueueEntry>();
-        }
 
         /// <summary>Approve or reject a video for analysis.</summary>
         public async Task<bool> DecideApproval(
@@ -275,14 +260,6 @@ namespace CaughtOnDash.Worker.Services
             return result != null;
         }
 
-        private class QueueResponse
-        {
-            [JsonProperty("count")]
-            public int Count { get; set; }
-
-            [JsonProperty("items")]
-            public List<QueueEntry> Items { get; set; } = new();
-        }
 
         public class RequeueResult
         {

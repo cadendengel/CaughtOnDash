@@ -19,8 +19,6 @@ from .views import (
     search_videos,
 )
 from .worker_views import (
-    list_queue,
-    list_review_queue,
     queue_board,
     reorder_queue_view,
     worker_decide_approval,
@@ -80,10 +78,6 @@ urlpatterns = [
     path('worker/heartbeat/', worker_heartbeat, name='worker-heartbeat'),
     # GET /api/videos/worker/jobs/next/ - get next pending job
     path('worker/jobs/next/', get_next_job, name='worker-jobs-next'),
-    # GET /api/videos/worker/jobs/ - the approved queue, in run order
-    path('worker/jobs/', list_queue, name='worker-jobs-list'),
-    # GET /api/videos/worker/jobs/review/ - videos awaiting approval
-    path('worker/jobs/review/', list_review_queue, name='worker-jobs-review'),
     # GET /api/videos/worker/jobs/board/ - running, queued, review and failed at once
     path('worker/jobs/board/', queue_board, name='worker-jobs-board'),
     # POST /api/videos/worker/jobs/reorder/ - set queue order
