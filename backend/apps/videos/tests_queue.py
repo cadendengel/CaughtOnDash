@@ -10,7 +10,9 @@ import json
 from datetime import timedelta
 from unittest import mock
 
+from django.db import connection
 from django.test import Client, TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from apps.videos.models import AnalysisRun, Video
@@ -122,26 +124,31 @@ class QueueEndpointTests(TestCase):
         return self.client.post(
             path, data=json.dumps(body), content_type='application/json', **self.auth)
 
+    def _board(self):
+        response = self._get('/api/videos/worker/jobs/board/')
+        self.assertEqual(response.status_code, 200)
+        return response.json()
+
     def test_queue_lists_approved_videos_in_run_order(self):
         _video('second', priority=0)
         _video('first', priority=3)
 
-        response = self._get('/api/videos/worker/jobs/')
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload['count'], 2)
-        self.assertEqual([i['title'] for i in payload['items']], ['first', 'second'])
+        self.assertEqual([i['title'] for i in self._board()['queued']], ['first', 'second'])
 
     def test_queue_excludes_videos_awaiting_review(self):
         _video('waiting', approved=False)
-        self.assertEqual(self._get('/api/videos/worker/jobs/').json()['count'], 0)
+        self.assertEqual(self._board()['queued'], [])
 
     def test_review_queue_lists_only_undecided_videos(self):
         _video('approved one')
         _video('waiting', approved=False)
 
-        payload = self._get('/api/videos/worker/jobs/review/').json()
-        self.assertEqual([i['title'] for i in payload['items']], ['waiting'])
+        self.assertEqual([i['title'] for i in self._board()['review']], ['waiting'])
+
+    def test_the_old_separate_queue_endpoints_are_gone(self):
+        # Both workers read the board now; these were its two halves.
+        self.assertEqual(self._get('/api/videos/worker/jobs/').status_code, 404)
+        self.assertEqual(self._get('/api/videos/worker/jobs/review/').status_code, 404)
 
     def test_board_lists_every_group_at_once(self):
         _video('queued')
@@ -164,7 +171,7 @@ class QueueEndpointTests(TestCase):
     def test_rows_carry_what_is_needed_to_decide(self):
         _video('clip', duration_seconds=42, playback_url='https://cdn/clip.mp4')
 
-        row = self._get('/api/videos/worker/jobs/').json()['items'][0]
+        row = self._board()['queued'][0]
         self.assertEqual(row['duration_seconds'], 42)
         self.assertEqual(row['video_url'], 'https://cdn/clip.mp4')
         self.assertEqual(row['attempt_number'], 1)
@@ -181,7 +188,7 @@ class QueueEndpointTests(TestCase):
         Video.objects.filter(id=video.id).update(
             approval_status='approved', analysis_status='pending')
 
-        row = self._get('/api/videos/worker/jobs/').json()['items'][0]
+        row = self._board()['queued'][0]
         self.assertEqual(row['attempt_number'], 2)
         self.assertEqual(row['previous_attempts'], 1)
         self.assertEqual(row['last_result']['summary'], 'a parking lot, no road')
@@ -221,8 +228,7 @@ class QueueEndpointTests(TestCase):
         video = _video('clip', approved=False)
         unauthenticated = Client()
 
-        self.assertEqual(unauthenticated.get('/api/videos/worker/jobs/').status_code, 401)
-        self.assertEqual(unauthenticated.get('/api/videos/worker/jobs/review/').status_code, 401)
+        self.assertEqual(unauthenticated.get('/api/videos/worker/jobs/board/').status_code, 401)
         self.assertEqual(
             unauthenticated.post('/api/videos/worker/jobs/reorder/',
                                  data='{}', content_type='application/json').status_code, 401)
@@ -231,10 +237,15 @@ class QueueEndpointTests(TestCase):
                                  data='{}', content_type='application/json').status_code, 401)
 
     def test_listing_does_not_scale_queries_with_queue_length(self):
-        for index in range(12):
-            _video(f'clip {index}')
+        # Per group, one query for the videos and one for their runs. Without
+        # the batched lookup this grew with the queue.
+        def queries():
+            with CaptureQueriesContext(connection) as captured:
+                self._board()
+            return len(captured)
 
-        # One for the videos, one for their runs. Without the batched lookup
-        # this grew with the queue.
-        with self.assertNumQueries(2):
-            self._get('/api/videos/worker/jobs/')
+        _video('clip 0')
+        with_one = queries()
+        for index in range(1, 12):
+            _video(f'clip {index}')
+        self.assertEqual(queries(), with_one)

@@ -15,8 +15,6 @@ namespace CaughtOnDash.Worker
             InitializeComponent();
             _viewModel = new MainViewModel(this);
             this.DataContext = _viewModel;
-
-            _ = _viewModel.StartAutomaticallyAsync();
         }
 
         private async void StartButton_Click(object sender, RoutedEventArgs e)
