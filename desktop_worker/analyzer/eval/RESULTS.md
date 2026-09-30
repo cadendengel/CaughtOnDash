@@ -70,3 +70,15 @@ A 2 s stretch of ordinary driving holds a rise of >= 3 dB 48% of the time, >= 5 
   estimate is kept as a bound, not used for tuning.
 - No thresholds changed. Tuning the fused rule needs footage with sound and picture
   recorded together: the owner's own labelled moments, or re-fetched DoTA/CCD sources.
+
+# Paired sound-and-picture footage: none left publicly (2026-09-30)
+
+Testing the fused rule needs crashes with sound and picture recorded together.
+`eval/dota.py` runs the full rule on DoTA's 2,724 ego-involved crash clips, but
+**all 188 of DoTA's YouTube source videos are now removed or private** (checked
+2026-09-30; YouTube's oEmbed lookup confirms 404/403, while still-listed videos
+return 200). CCD's clips are rebuilt from 10 fps frames and carry no audio. The
+tool is kept in case the sources resurface or local copies turn up.
+
+Until then, the only paired, labelled footage is the owner's own: moment
+verdicts recorded in the incident report (`export_moment_labels`).

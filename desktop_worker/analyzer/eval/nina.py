@@ -27,15 +27,15 @@ import argparse
 import bisect
 import json
 import math
-import random
 import sys
-import time
 from collections import defaultdict
 from pathlib import Path
 
 ANALYZER = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ANALYZER))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import youtube  # noqa: E402  (eval/ is on the path above)
 
 DEFAULT_DATA = Path.home() / 'datasets' / 'nina'
 DEFAULT_NEXAR = Path.home() / 'datasets' / 'nexar'
@@ -44,7 +44,6 @@ DEFAULT_NEXAR = Path.home() / 'datasets' / 'nexar'
 SWEEP_DB = (3, 4, 5, 6, 8, 10, 12)
 # A labelled segment's edges are hand-placed; allow this much either side.
 SEGMENT_SLACK_SECONDS = 0.5
-AUDIO_SUFFIXES = ('.m4a', '.webm', '.opus', '.mp3', '.wav', '.ogg', '.aac')
 
 
 # --- Labels -----------------------------------------------------------------
@@ -77,74 +76,12 @@ def read_labels(labels_dir: Path) -> dict[str, list[dict]]:
 # --- Fetch ------------------------------------------------------------------
 
 def _audio_file(audio_dir: Path, video_id: str) -> Path | None:
-    for suffix in AUDIO_SUFFIXES:
-        candidate = audio_dir / f'{video_id}{suffix}'
-        if candidate.exists():
-            return candidate
-    return None
+    return youtube.media_file(audio_dir, video_id)
 
 
 def fetch(data: Path, pause: float) -> None:
-    import yt_dlp
-
-    videos = read_labels(data / 'labels')
-    audio_dir = data / 'audio'
-    audio_dir.mkdir(parents=True, exist_ok=True)
-    unavailable_path = data / 'unavailable.json'
-    unavailable = json.loads(unavailable_path.read_text()) if unavailable_path.exists() else {}
-
-    todo = [v for v in videos if not _audio_file(audio_dir, v) and v not in unavailable]
-    print(f'{len(videos)} labelled videos; {len(todo)} to fetch, {len(unavailable)} known unavailable.')
-    options = {
-        'format': 'bestaudio/best',
-        'outtmpl': str(audio_dir / '%(id)s.%(ext)s'),
-        'quiet': True, 'no_warnings': True, 'noprogress': True,
-        'retries': 3,
-        # YouTube now gates downloads behind a JavaScript challenge; without a
-        # runtime yt-dlp is refused with 403s. Node is already installed for
-        # the frontend.
-        'js_runtimes': {'node': {}},
-    }
-    refused_in_a_row = 0
-    for number, video_id in enumerate(todo, start=1):
-        outcome = _download(yt_dlp, options, video_id, pause)
-        if outcome == 'ok':
-            refused_in_a_row = 0
-            print(f'  {number}/{len(todo)} {video_id} ok', flush=True)
-        elif outcome == 'refused':
-            # Skipped for this run, not recorded: YouTube refused, the video
-            # may be fine. Many refusals in a row is a block; stop and resume
-            # later rather than skip the whole list.
-            refused_in_a_row += 1
-            print(f'  {number}/{len(todo)} {video_id} refused, skipped for now', flush=True)
-            if refused_in_a_row >= 5:
-                print('  YouTube is refusing repeatedly; stopping. Re-run later to resume.')
-                break
-        else:
-            refused_in_a_row = 0
-            unavailable[video_id] = outcome
-            unavailable_path.write_text(json.dumps(unavailable, indent=2))
-            print(f'  {number}/{len(todo)} {video_id} unavailable: {outcome}', flush=True)
-        time.sleep(pause + random.uniform(0, pause / 2))
-
-
-REFUSALS = ('429', 'Too Many Requests', 'Sign in to confirm', '403')
-
-
-def _download(yt_dlp, options: dict, video_id: str, pause: float, attempts: int = 3) -> str:
-    """'ok', 'refused' (YouTube said no, possibly transiently), or why the video is gone."""
-    for attempt in range(1, attempts + 1):
-        try:
-            with yt_dlp.YoutubeDL(options) as ydl:
-                ydl.download([f'https://www.youtube.com/watch?v={video_id}'])
-            return 'ok'
-        except Exception as exc:
-            message = str(exc).splitlines()[0][:160]
-            if not any(sign in message for sign in REFUSALS):
-                return message
-            if attempt < attempts:
-                time.sleep(pause * 4)
-    return 'refused'
+    youtube.download_all(list(read_labels(data / 'labels')), data / 'audio', data / 'unavailable.json',
+                         fmt='bestaudio/best', pause=pause)
 
 
 # --- Measure ----------------------------------------------------------------
