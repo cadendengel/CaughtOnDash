@@ -21,7 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="appsettings.json">
+    <!-- Gitignored: it holds the API token. Copied only when present, so a
+         fresh clone (and CI) still builds; the worker reports missing config
+         at startup rather than the build failing. -->
+    <Content Include="appsettings.json" Condition="Exists('appsettings.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

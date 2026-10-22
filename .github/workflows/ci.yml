@@ -1,0 +1,100 @@
+# Every test suite in the repo, on every pull request and every push to main.
+#
+# Until this existed, a change was only ever tested on whichever machine made
+# it. Each job mirrors how its part is run for real: the backend on SQLite (its
+# test settings need no .env), the frontend tests plus a production build, the
+# worker on Windows because the WPF host only builds there, and the analyzer
+# without PyTorch or YOLO -- its tests use no model, and installing them would
+# add gigabytes to every run.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Django)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      # Outside tests the settings refuse to start without a real SECRET_KEY
+      # unless DEBUG is on. Neither command serves anything, so a throwaway
+      # key is safe; with no DATABASE_URL they run on SQLite.
+      - name: Settings and migrations are consistent
+        env:
+          DEBUG: 'True'
+          SECRET_KEY: ci-only-not-a-secret
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+      - run: python manage.py test apps
+
+  frontend:
+    name: Frontend (tests and build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx vitest run
+      - run: npm run build
+      # Shipped dependencies only: dev tooling never reaches a browser.
+      - run: npm audit --omit=dev --audit-level=high
+
+  worker:
+    name: Desktop worker (.NET)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop_worker/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet test CaughtOnDash.Worker.Core.Tests
+      - run: dotnet build worker
+      - run: dotnet build CaughtOnDash.Worker.Mac
+
+  analyzer:
+    name: Analyzer (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop_worker/analyzer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # The versions requirements.txt pins, minus ultralytics and torch. The
+      # headless OpenCV build is safe here because ultralytics, which needs
+      # the full one, is not installed.
+      - run: pip install numpy==2.5.1 opencv-python-headless==5.0.0.93 pillow pillow-heif==1.8.0
+      - run: python -m unittest discover -p "test_*.py" -v
